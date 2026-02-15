@@ -1,0 +1,105 @@
+'use client';
+
+import { useAuthStore } from '@/stores/auth-store';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { IconBell, IconMenu2, IconLogout, IconUser, IconSettings } from '@tabler/icons-react';
+import { useRouter } from 'next/navigation';
+
+export function Header() {
+    const router = useRouter();
+    const { user, logout } = useAuthStore();
+
+    const handleLogout = () => {
+        logout();
+        router.push('/login');
+    };
+
+    const getInitials = (name: string) => {
+        return name
+            .split(' ')
+            .map((n) => n[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 2);
+    };
+
+    return (
+        <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
+            {/* Mobile menu button */}
+            <button
+                type="button"
+                className="lg:hidden -m-2.5 p-2.5 text-gray-700"
+            >
+                <IconMenu2 className="h-6 w-6" />
+            </button>
+
+            {/* Separator */}
+            <div className="h-6 w-px bg-gray-200 lg:hidden" />
+
+            <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
+                {/* Search placeholder */}
+                <div className="flex flex-1 items-center">
+                    <h2 className="text-lg font-semibold text-gray-900">
+                        Xin chào, {user?.full_name || 'User'}!
+                    </h2>
+                </div>
+
+                <div className="flex items-center gap-x-4 lg:gap-x-6">
+                    {/* Notifications */}
+                    <Button variant="ghost" size="icon" className="relative">
+                        <IconBell className="h-5 w-5 text-gray-500" />
+                        <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[10px] font-medium text-white flex items-center justify-center">
+                            3
+                        </span>
+                    </Button>
+
+                    {/* User menu */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                                <Avatar className="h-10 w-10">
+                                    <AvatarFallback className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 text-white">
+                                        {user?.full_name ? getInitials(user.full_name) : 'U'}
+                                    </AvatarFallback>
+                                </Avatar>
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-56" align="end" forceMount>
+                            <DropdownMenuLabel className="font-normal">
+                                <div className="flex flex-col space-y-1">
+                                    <p className="text-sm font-medium leading-none">{user?.full_name}</p>
+                                    <p className="text-xs leading-none text-muted-foreground">
+                                        {user?.email}
+                                    </p>
+                                </div>
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => router.push('/profile')}>
+                                <IconUser className="mr-2 h-4 w-4" />
+                                Trang cá nhân
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => router.push('/settings')}>
+                                <IconSettings className="mr-2 h-4 w-4" />
+                                Cài đặt
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={handleLogout} className="text-red-600">
+                                <IconLogout className="mr-2 h-4 w-4" />
+                                Đăng xuất
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+            </div>
+        </header>
+    );
+}

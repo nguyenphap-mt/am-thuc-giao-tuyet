@@ -1,0 +1,77 @@
+/* Calendar Print Styles */
+@media print {
+
+    /* Hide non-essential UI */
+    nav,
+    header,
+    aside,
+    .no-print,
+    button[data-print="hide"],
+    [data-print="hide"] {
+        display: none !important;
+    }
+
+    /* Reset colors for print */
+    body {
+        background: white !important;
+        color: black !important;
+        font-size: 11pt;
+    }
+
+    /* Calendar grid clean */
+    .calendar-grid {
+        border: 1px solid #333 !important;
+        box-shadow: none !important;
+    }
+
+    .calendar-grid>div {
+        border: 1px solid #ddd !important;
+        box-shadow: none !important;
+    }
+
+    /* Event badges */
+    [data-event-type="ORDER"] {
+        background: #e8f5e9 !important;
+        color: #2e7d32 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    [data-event-type="LEAVE"] {
+        background: #ffebee !important;
+        color: #c62828 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    [data-event-type="SHIFT"] {
+        background: #e3f2fd !important;
+        color: #1565c0 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* Ensure color badges print */
+    .calendar-event-dot {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* Cards clean */
+    .card,
+    [class*="Card"] {
+        box-shadow: none !important;
+        border: 1px solid #eee !important;
+    }
+
+    /* Page breaks */
+    .calendar-card {
+        page-break-inside: avoid;
+    }
+
+    /* Stat cards in one row */
+    .stats-grid {
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important;
+    }
+}
