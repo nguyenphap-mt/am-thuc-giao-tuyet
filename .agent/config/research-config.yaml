@@ -1,0 +1,371 @@
+# Research Configuration v2.0
+# Enhanced settings for optimized deep-research skill and /research-prd workflow
+# Version: 2.0.0
+
+# ============================================================
+# GENERAL SETTINGS
+# ============================================================
+research:
+  # Maximum number of sources to analyze
+  max_sources: 20
+  
+  # Global timeout for URL reading (seconds)
+  timeout_seconds: 30
+  
+  # Default research depth
+  # Options: quick | standard | deep
+  default_depth: "standard"
+
+# ============================================================
+# ⚡ PARALLEL PROCESSING (NEW in v2.0)
+# ============================================================
+parallel:
+  # Enable parallel URL reading (70% latency reduction)
+  enabled: true
+  
+  # Maximum concurrent URL reads
+  max_concurrent: 10
+  
+  # Delay between batches to avoid rate limiting (ms)
+  batch_delay_ms: 500
+  
+  # Retry failed reads
+  retry_failed: true
+  retry_count: 2
+
+# ============================================================
+# 📊 RECENCY WEIGHTING (NEW in v2.0, ENHANCED in v2.2)
+# ============================================================
+recency:
+  # Enable recency-based source ranking
+  enabled: true
+  
+  # Maximum age for full score (months)
+  # Sources older than this get progressively penalized
+  max_age_months: 12
+  
+  # Penalty for sources with unknown publish date
+  unknown_date_penalty: 0.10
+  
+  # Maximum penalty for very old sources (50% reduction)
+  max_penalty: 0.50
+  
+  # ⭐ OPT-07: Boost for very recent content (<3 months)
+  fresh_content_boost:
+    enabled: true
+    threshold_months: 3
+    boost_percentage: 0.10   # +10% boost for content < 3 months old
+
+# ============================================================
+# 🔗 CHAIN OF DENSITY (NEW in v2.0)
+# ============================================================
+chain_of_density:
+  # Enable progressive summarization (25% token reduction)
+  enabled: true
+  
+  # Step 1: Individual summary max tokens
+  step1_max_tokens: 500
+  
+  # Step 2: Merged pairs max tokens
+  step2_max_tokens: 300
+  
+  # Step 3: Final synthesis uses WHAT-WHY-HOW framework
+  # (no token limit, but compressed input)
+  
+  # Preserve these elements during merge
+  # ⭐ OPT-02, OPT-06: Added numerical_data, citations, dates to prevent data loss
+  preserve_elements:
+    - "unique_insights"
+    - "contradictions"
+    - "consensus_points"
+    - "code_examples"
+    - "numerical_data"       # OPT-02: Statistics, metrics, percentages
+    - "citations"            # OPT-06: Source URLs, author names
+    - "dates"                # Publication dates, version numbers
+    - "version_numbers"      # Software versions for compatibility
+
+# ============================================================
+# ✅ CLAIM VERIFICATION (NEW in v2.0)
+# ============================================================
+verification:
+  # Enable claim verification layer (anti-hallucination)
+  enabled: true
+  
+  # Minimum sources needed for HIGH confidence
+  min_sources_for_high_confidence: 2
+  
+  # Flag unverified claims in output
+  flag_unverified: true
+  
+  # Confidence thresholds
+  thresholds:
+    high: 2      # >= 2 sources
+    medium: 1    # exactly 1 source
+    low: 0       # no direct source
+  
+  # Penalize PRD score if verification rate is low
+  low_rate_threshold: 0.70
+  score_penalty: 0.05   # 5% penalty
+  
+  # ⭐ OPT-08: Code references treated as high confidence
+  code_reference_as_high_confidence: true
+  
+  # ⭐ REC-4: Tiered Verification Thresholds by PRD type
+  tiered_thresholds:
+    enabled: true
+    default: 0.70
+    security_prd: 0.85      # Security-related PRDs
+    financial_prd: 0.90     # Financial/billing features
+    user_facing: 0.75       # Public features
+    internal_tool: 0.65     # Internal tools
+
+# ============================================================
+# 💰 TOKEN BUDGET (NEW in v2.0)
+# ============================================================
+token_budget:
+  # Enable token budget controller
+  enabled: true
+  
+  # Budget by depth level
+  quick: 50000
+  standard: 100000
+  deep: 200000
+  
+  # Warning thresholds (percentage of budget)
+  warning_threshold: 0.60   # Warn at 60%
+  stop_threshold: 0.90      # Stop reflexion at 90%
+
+# ============================================================
+# 🧠 SEMANTIC STAGNATION (NEW in v2.0, ENHANCED in v2.3)
+# ============================================================
+stagnation:
+  # Use cosine similarity for stagnation detection
+  use_semantic: true
+  
+  # ⭐ REC-1: Adaptive Stagnation Threshold
+  adaptive_threshold:
+    enabled: true
+    base_threshold: 0.92         # Start stricter at iteration 1
+    decay_per_iteration: 0.02    # Increase threshold each iteration
+    max_threshold: 0.98          # Cap at 98%
+  
+  # Legacy static threshold (fallback if adaptive disabled)
+  similarity_threshold: 0.95
+  
+  # Minimum score improvement (backup check)
+  min_score_improvement: 1
+  
+  # Combined check: stagnating if similarity > 0.90 AND score_improvement < 1
+  combined_check: true
+
+# ============================================================
+# 🔄 FALLBACK MODE (NEW in v2.0, ENHANCED in v2.2)
+# ============================================================
+fallback:
+  # Enable fallback to KB when web search fails
+  enabled: true
+  
+  # ⭐ OPT-01: Trigger fallback on empty results too
+  trigger_on_empty_results: true
+  
+  # KB sources to query in fallback mode
+  sources:
+    - ".agent/prds/*.md"
+    - ".agent/knowledge_base/*.md"
+    - "docs/**/*.md"
+  
+  # Max results from KB
+  max_results: 10
+  
+  # ⭐ OPT-03: KB content freshness validation
+  freshness_check:
+    enabled: true
+    max_age_months: 6          # Warn if KB content > 6 months old
+    warn_on_stale: true        # Log warning for stale content
+    reduce_confidence: true    # Reduce confidence for stale KB content
+
+# ============================================================
+# KNOWLEDGE BASE (Enhanced in v2.0, REC-3 in v2.3)
+# ============================================================
+knowledge_base:
+  # ⭐ REC-3: Vector Database Integration
+  vector_enabled: true
+  vector_backend: "chromadb"  # chromadb | pgvector | pinecone
+  
+  # ChromaDB settings
+  chromadb:
+    collection_name: "research_context"
+    persist_directory: ".agent/knowledge_base/chromadb"
+    embedding_model: "all-MiniLM-L6-v2"
+  
+  # pgvector settings (for PostgreSQL)
+  pgvector:
+    enabled: false
+    table_name: "knowledge_embeddings"
+    dimension: 384
+  
+  # Minimum similarity for vector search
+  min_similarity: 0.7
+  
+  # Top K results
+  top_k: 10
+  
+  # Fallback to glob search if vector search fails
+  fallback_to_glob: true
+
+# ============================================================
+# 🛟 RATE LIMITING (REC-5 in v2.3)
+# ============================================================
+rate_limiting:
+  enabled: true
+  
+  # ⭐ REC-5: Domain-specific rate limit strategies
+  domain_strategies:
+    "github.com":
+      base_delay: 1.0
+      max_retries: 5
+      backoff_multiplier: 2
+    "stackoverflow.com":
+      base_delay: 0.5
+      max_retries: 3
+      backoff_multiplier: 2
+    "medium.com":
+      base_delay: 0.3
+      max_retries: 2
+      backoff_multiplier: 1.5
+    "docs.python.org":
+      base_delay: 0.2
+      max_retries: 3
+      backoff_multiplier: 2
+    "default":
+      base_delay: 0.5
+      max_retries: 2
+      backoff_multiplier: 2
+  
+  # Global settings
+  global_min_delay: 100       # ms between any requests
+  max_concurrent_per_domain: 3
+
+# ============================================================
+# SOURCE PREFERENCES
+# ============================================================
+sources:
+  # Preferred domains (higher ranking)
+  preferred_domains:
+    - "github.com"
+    - "stackoverflow.com"
+    - "medium.com"
+    - "dev.to"
+    - "docs.microsoft.com"
+    - "developer.mozilla.org"
+    - "angular.io"
+    - "angular.dev"
+    - "react.dev"
+    - "vuejs.org"
+    - "fastapi.tiangolo.com"
+    - "docs.python.org"
+    
+  # Excluded domains (skip these)
+  excluded_domains:
+    - "pinterest.com"
+    - "facebook.com"
+    - "twitter.com"
+    - "instagram.com"
+    - "tiktok.com"
+    - "linkedin.com"
+    
+  # Source type weights for ranking
+  type_weights:
+    official_doc: 1.5
+    github: 1.3
+    stackoverflow: 1.2
+    tutorial: 1.0
+    blog: 0.9
+    forum: 0.7
+
+# ============================================================
+# DEPTH CONFIGURATIONS (Enhanced in v2.0)
+# ============================================================
+depth_settings:
+  quick:
+    max_sources: 5
+    search_queries: 3
+    include_visual: false
+    timeout_per_source: 10
+    chain_of_density: false   # Skip for speed
+    verification: false        # Skip for speed
+    
+  standard:
+    max_sources: 10
+    search_queries: 5
+    include_visual: false
+    timeout_per_source: 20
+    chain_of_density: true
+    verification: true
+    
+  deep:
+    max_sources: 20
+    search_queries: 8
+    include_visual: true
+    timeout_per_source: 30
+    chain_of_density: true
+    verification: true
+
+# ============================================================
+# QUALITY THRESHOLDS (Enhanced in v2.0)
+# ============================================================
+quality:
+  # Minimum quality score to pass
+  min_score: 70
+  
+  # Required source diversity (unique domains)
+  min_source_diversity: 3
+  
+  # Maximum age of sources (days, 0 = no limit)
+  max_source_age: 365
+  
+  # Required question coverage (%)
+  min_question_coverage: 80
+  
+  # Required verification rate (%)
+  min_verification_rate: 70
+
+# ============================================================
+# OUTPUT SETTINGS
+# ============================================================
+output:
+  # Path for research reports
+  report_path: ".artifacts/research"
+  
+  # Report format
+  format: "markdown"
+  
+  # Include source snippets
+  include_snippets: true
+  
+  # Maximum snippet length (characters)
+  max_snippet_length: 500
+  
+  # Visual references path
+  visual_path: ".artifacts/research/visuals"
+  
+  # Metrics export path
+  metrics_path: ".agent/metrics/research-metrics.jsonl"
+
+# ============================================================
+# PERFORMANCE METRICS (NEW in v2.0)
+# ============================================================
+metrics:
+  # Enable performance tracking
+  enabled: true
+  
+  # Track these metrics
+  track:
+    - parallel_read_time
+    - token_usage
+    - compression_rate
+    - verification_rate
+    - source_diversity
+  
+  # Export format
+  export_format: "jsonl"

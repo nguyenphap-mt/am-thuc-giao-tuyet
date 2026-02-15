@@ -1,0 +1,409 @@
+---
+description: Tự động phân tích QA và Code Review cho bất kỳ feature/module nào
+version: 1.0
+last_updated: 2026-01-30
+trigger_keywords: ["review", "qa", "kiểm tra code", "đánh giá", "audit code", "test coverage"]
+---
+
+# /qa-review Workflow
+
+> **Trigger**: Khi người dùng yêu cầu review/QA một feature hoặc module cụ thể.  
+> **Output**: Detailed QA Report (Markdown + JSON) với test results, bugs, và recommendations.
+
+// turbo-all
+
+---
+
+## Pre-Requisites
+
+Trước khi bắt đầu, cần xác định:
+
+| Variable | Description | Example |
+| :--- | :--- | :--- |
+| `{target_feature}` | Tên feature/module cần review | Quote Management |
+| `{module_path}` | Đường dẫn tới code | `backend/modules/quotes/` |
+| `{prd_path}` | Đường dẫn tới PRD/requirements (nếu có) | `.knowledges/quote_prd.md` |
+| `{tech_stack}` | Stack của module | FastAPI + Angular |
+
+---
+
+## Step 1: Context Gathering (Thu thập Context)
+
+### 1.1 Identify Module Scope
+
+```powershell
+# // turbo - List all files in module
+Get-ChildItem -Path "{module_path}" -Recurse -File | Select-Object FullName, Length
+```
+
+**Output Template**:
+| Metric | Value |
+| :--- | :---: |
+| Total Files | |
+| Python Files (.py) | |
+| TypeScript Files (.ts) | |
+| Test Files | |
+| LOC (Lines of Code) | |
+
+### 1.2 Load PRD/Requirements (if available)
+
+```powershell
+# // turbo - Check for PRD
+if (Test-Path "{prd_path}") { Get-Content "{prd_path}" -Head 50 }
+```
+
+### 1.3 Identify Dependencies
+
+```powershell
+# // turbo - Check imports (Python)
+Select-String -Path "{module_path}/*.py" -Pattern "^from|^import" | Select-Object -First 20
+```
+
+---
+
+## Step 2: Static Code Analysis (Phân tích Tĩnh)
+
+### 2.1 Code Complexity Analysis
+
+> [!IMPORTANT]
+> Sử dụng các metrics: Cyclomatic Complexity, Cognitive Complexity, LOC per function.
+
+**Backend (Python)**:
+```powershell
+# // turbo - Run radon for complexity
+cd backend && python -m radon cc {module_path} -a -s
+```
+
+**Frontend (Angular/TypeScript)**:
+```powershell
+# // turbo - Run ESLint with complexity rules
+cd frontend && npx eslint "{module_path}/**/*.ts" --format json > .debug/eslint-report.json
+```
+
+### 2.2 Code Duplication Detection
+
+```powershell
+# // turbo - Find duplicate code blocks
+cd backend && python -m pylint {module_path} --disable=all --enable=duplicate-code
+```
+
+### 2.3 Security Vulnerability Scan
+
+> [!CAUTION]
+> STRIDE compliance check mandatory.
+
+**Checklist**:
+| Vulnerability Type | Check | Status |
+| :--- | :--- | :---: |
+| SQL Injection | Raw queries without parameterization? | ⬜ |
+| XSS | Unescaped user input in templates? | ⬜ |
+| Auth Bypass | Missing permission checks? | ⬜ |
+| Sensitive Data Exposure | Secrets in code? | ⬜ |
+| Rate Limiting | Missing on public endpoints? | ⬜ |
+
+```powershell
+# // turbo - Run bandit for Python security
+cd backend && python -m bandit -r {module_path} -f json -o .debug/bandit-report.json
+```
+
+### 2.4 Code Style & Linting
+
+```powershell
+# // turbo - Backend linting
+cd backend && python -m pylint {module_path} --output-format=json > .debug/pylint-report.json
+
+# // turbo - Frontend linting  
+cd frontend && npx eslint "{module_path}/**/*.ts" --format json > .debug/eslint-report.json
+```
+
+**Static Analysis Summary**:
+| Category | Issues Found | Severity |
+| :--- | :---: | :---: |
+| Complexity | | |
+| Duplication | | |
+| Security | | |
+| Style | | |
+
+---
+
+## Step 3: Requirement Mapping (Đối chiếu PRD)
+
+### 3.1 Feature Completeness Matrix
+
+> [!IMPORTANT]
+> So sánh implementation với PRD requirements.
+
+| PRD Requirement | Implemented? | Location | Notes |
+| :--- | :---: | :--- | :--- |
+| {requirement_1} | ✅/❌ | | |
+| {requirement_2} | ✅/❌ | | |
+| {requirement_3} | ✅/❌ | | |
+
+### 3.2 API Contract Verification
+
+```powershell
+# // turbo - Check API routes match specification
+Select-String -Path "{module_path}/router.py" -Pattern "@router\.(get|post|put|delete)"
+```
+
+**API Endpoints Checklist**:
+| Endpoint | Method | PRD Required? | Implemented? |
+| :--- | :---: | :---: | :---: |
+| | | | |
+
+### 3.3 Data Model Verification
+
+```powershell
+# // turbo - Check models
+Select-String -Path "{module_path}/models.py" -Pattern "class.*Model"
+```
+
+---
+
+## Step 4: Automated Test Generation & Execution
+
+### 4.1 Check Existing Test Coverage
+
+```powershell
+# // turbo - Run pytest with coverage
+cd backend && pytest tests/{module}/ -v --cov={module_path} --cov-report=json:.debug/coverage.json
+```
+
+**Coverage Summary**:
+| Metric | Value | Target |
+| :--- | :---: | :---: |
+| Line Coverage | % | ≥70% |
+| Branch Coverage | % | ≥60% |
+| Function Coverage | % | ≥80% |
+
+### 4.2 Generate Missing Tests
+
+> [!NOTE]
+> Tự động generate test cho các functions chưa được cover.
+
+**Test Generation Template**:
+```python
+# Auto-generated test for {function_name}
+import pytest
+from {module_path} import {function_name}
+
+class TestAutoGenerated{FunctionName}:
+    """Auto-generated tests for {function_name}"""
+    
+    @pytest.mark.asyncio
+    async def test_{function_name}_happy_path(self):
+        """Test normal operation"""
+        # Arrange
+        # Act
+        # Assert
+        pass
+    
+    @pytest.mark.asyncio
+    async def test_{function_name}_edge_case_empty_input(self):
+        """Test with empty/null input"""
+        pass
+    
+    @pytest.mark.asyncio
+    async def test_{function_name}_edge_case_invalid_input(self):
+        """Test with invalid input"""
+        pass
+```
+
+### 4.3 Execute All Tests
+
+```powershell
+# // turbo - Run full test suite
+cd backend && pytest tests/{module}/ -v --tb=short --junitxml=.debug/test-results.xml
+```
+
+**Test Results Summary**:
+| Status | Count |
+| :--- | :---: |
+| ✅ Passed | |
+| ❌ Failed | |
+| ⚠️ Skipped | |
+| 🕐 Duration | s |
+
+### 4.4 Failed Test Analysis
+
+| Test Name | Error Type | Root Cause | Fix Priority |
+| :--- | :--- | :--- | :---: |
+| | | | |
+
+---
+
+## Step 5: Dynamic Analysis & Performance
+
+### 5.1 API Response Time Check
+
+```powershell
+# // turbo - Simple endpoint test
+Invoke-RestMethod -Uri "http://localhost:8000/api/{module}/health" -Method Get | Measure-Command
+```
+
+### 5.2 Memory & Resource Usage
+
+> [!NOTE]
+> Kiểm tra memory leaks và resource usage patterns.
+
+**Metrics to Check**:
+| Metric | Current | Threshold | Status |
+| :--- | :---: | :---: | :---: |
+| API Response Time | ms | <200ms | |
+| Memory per Request | MB | <50MB | |
+| DB Query Count | | <10 | |
+
+### 5.3 Browser Test (if UI module)
+
+1. Navigate to feature page
+2. Execute core user flow
+3. Capture console errors
+4. Check network failed requests
+5. Verify UI responsiveness
+
+---
+
+## Step 6: Reflexion & FMEA Analysis
+
+### 6.1 Failure Mode Identification
+
+> [!CAUTION]
+> Áp dụng FMEA logic từ `/fix-bug` workflow.
+
+| Component | Failure Mode | Severity | Occurrence | Detection | RPN |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| | | | | | |
+
+### 6.2 Code Quality Scoring
+
+| Dimension | Score (1-10) | Weight | Weighted Score |
+| :--- | :---: | :---: | :---: |
+| Readability | | 0.2 | |
+| Maintainability | | 0.2 | |
+| Testability | | 0.2 | |
+| Security | | 0.25 | |
+| Performance | | 0.15 | |
+| **Total** | | 1.0 | **/10** |
+
+### 6.3 Technical Debt Assessment
+
+| Debt Type | Description | Effort to Fix | Priority |
+| :--- | :--- | :---: | :---: |
+| | | | |
+
+---
+
+## Step 7: Generate Final Report
+
+### 7.1 Executive Summary
+
+```markdown
+## QA Review Report: {target_feature}
+
+**Date**: {date}
+**Reviewer**: AI Workforce
+**Module**: {module_path}
+
+### Overall Status: ✅ PASS / ⚠️ CONDITIONAL PASS / ❌ FAIL
+
+| Metric | Value | Status |
+| :--- | :---: | :---: |
+| Test Coverage | % | |
+| Critical Issues | | |
+| Security Score | /10 | |
+| Quality Score | /10 | |
+```
+
+### 7.2 JSON Report Output
+
+```json
+{
+  "report_id": "QA-{YYYYMMDD}-{module}",
+  "timestamp": "{ISO8601}",
+  "module": "{target_feature}",
+  "path": "{module_path}",
+  "status": "PASS|CONDITIONAL_PASS|FAIL",
+  "metrics": {
+    "test_coverage": 0.0,
+    "quality_score": 0.0,
+    "security_score": 0.0,
+    "complexity_avg": 0.0
+  },
+  "issues": [
+    {
+      "id": "ISS-001",
+      "type": "BUG|SECURITY|PERFORMANCE|STYLE",
+      "severity": "CRITICAL|HIGH|MEDIUM|LOW",
+      "location": "file:line",
+      "description": "",
+      "recommendation": ""
+    }
+  ],
+  "tests": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0
+  },
+  "recommendations": []
+}
+```
+
+### 7.3 Save Report
+
+```powershell
+# // turbo - Save report
+New-Item -Path ".reports/qa/{module}-{date}.md" -ItemType File -Force
+```
+
+---
+
+## Output Files
+
+| File | Location | Description |
+| :--- | :--- | :--- |
+| QA Report (MD) | `.reports/qa/{module}-{date}.md` | Human-readable report |
+| QA Report (JSON) | `.reports/qa/{module}-{date}.json` | Machine-readable for CI |
+| Test Results | `.debug/test-results.xml` | JUnit XML format |
+| Coverage Report | `.debug/coverage.json` | Coverage metrics |
+| Lint Reports | `.debug/{tool}-report.json` | Static analysis results |
+
+---
+
+## Pass/Fail Criteria
+
+| Criterion | Threshold | Weight |
+| :--- | :---: | :---: |
+| Test Coverage | ≥70% | Required |
+| Critical Issues | 0 | Required |
+| Security Score | ≥7/10 | Required |
+| Quality Score | ≥6/10 | Recommended |
+| All Tests Pass | 100% | Required |
+
+**Final Verdict**:
+- ✅ **PASS**: All required criteria met
+- ⚠️ **CONDITIONAL PASS**: Required met, recommended not met
+- ❌ **FAIL**: Any required criterion not met
+
+---
+
+## Quick Reference
+
+### Trigger Command
+```
+/qa-review {module_name}
+```
+
+### Example Usage
+```
+/qa-review quotes
+/qa-review hr
+/qa-review procurement
+```
+
+### Related Workflows
+| Workflow | When to Use |
+| :--- | :--- |
+| `/fix-bug` | When issues found need fixing |
+| `/refactor` | When technical debt identified |
+| `/prd-audit` | When requirement gaps found |

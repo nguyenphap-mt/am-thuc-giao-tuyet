@@ -1,0 +1,195 @@
+{
+    "audit_id": "audit_user_20260126_105241",
+    "module": "user",
+    "timestamp": "2026-01-26T10:52:41+07:00",
+    "workflow_version": "3.2.2",
+    "scores": {
+        "overall": 72,
+        "grade": "C",
+        "dimensions": {
+            "UX": {
+                "score": 18,
+                "max": 20
+            },
+            "UI": {
+                "score": 17,
+                "max": 20
+            },
+            "FE": {
+                "score": 18,
+                "max": 20
+            },
+            "BE": {
+                "score": 18,
+                "max": 20
+            },
+            "DA": {
+                "score": 17,
+                "max": 20
+            }
+        },
+        "business_flow": {
+            "total": 92
+        },
+        "feature_completeness": {
+            "expected": 10,
+            "found": 4,
+            "missing": 6,
+            "score": 47,
+            "grade": "F",
+            "by_priority": {
+                "CRITICAL": {
+                    "expected": 2,
+                    "found": 1,
+                    "missing": 1
+                },
+                "HIGH": {
+                    "expected": 4,
+                    "found": 1,
+                    "missing": 3
+                },
+                "MEDIUM": {
+                    "expected": 4,
+                    "found": 2,
+                    "missing": 2
+                }
+            }
+        }
+    },
+    "issues": {
+        "total": 11,
+        "by_severity": {
+            "CRITICAL": 1,
+            "HIGH": 4,
+            "MEDIUM": 4,
+            "LOW": 2
+        },
+        "list": [
+            {
+                "id": "FEAT_CHANGE_PASSWORD",
+                "severity": "CRITICAL",
+                "category": "FEATURE_GAP",
+                "description": "Missing feature: Đổi mật khẩu"
+            },
+            {
+                "id": "FEAT_MY_PROFILE",
+                "severity": "HIGH",
+                "category": "FEATURE_GAP",
+                "description": "Missing feature: Trang của tôi (My Profile)"
+            },
+            {
+                "id": "FEAT_ACTIVITY_LOG",
+                "severity": "HIGH",
+                "category": "FEATURE_GAP",
+                "description": "Missing feature: Nhật ký hoạt động"
+            },
+            {
+                "id": "FEAT_PERMISSION_PERSISTENCE",
+                "severity": "HIGH",
+                "category": "FEATURE_GAP",
+                "description": "Missing feature: Lưu phân quyền vào DB"
+            },
+            {
+                "id": "H1",
+                "severity": "HIGH",
+                "category": "FE",
+                "description": "Permission save is MOCK only"
+            },
+            {
+                "id": "M1",
+                "severity": "MEDIUM",
+                "category": "DA",
+                "description": "Role stored as string, not FK"
+            },
+            {
+                "id": "M2",
+                "severity": "MEDIUM",
+                "category": "BE",
+                "description": "No role validation"
+            },
+            {
+                "id": "M3",
+                "severity": "MEDIUM",
+                "category": "FE",
+                "description": "Missing user.model.ts"
+            },
+            {
+                "id": "FEAT_LOGIN_HISTORY",
+                "severity": "MEDIUM",
+                "category": "FEATURE_GAP",
+                "description": "Missing feature: Lịch sử đăng nhập"
+            },
+            {
+                "id": "L1",
+                "severity": "LOW",
+                "category": "BE",
+                "description": "Missing GET single user endpoint"
+            },
+            {
+                "id": "L2",
+                "severity": "LOW",
+                "category": "FE",
+                "description": "Role create client-side only"
+            }
+        ]
+    },
+    "missing_features": [
+        {
+            "id": "change_password",
+            "name": "Đổi mật khẩu",
+            "priority": "CRITICAL"
+        },
+        {
+            "id": "my_profile",
+            "name": "Trang của tôi (My Profile)",
+            "priority": "HIGH"
+        },
+        {
+            "id": "activity_log",
+            "name": "Nhật ký hoạt động",
+            "priority": "HIGH"
+        },
+        {
+            "id": "permission_persistence",
+            "name": "Lưu phân quyền vào DB",
+            "priority": "HIGH"
+        },
+        {
+            "id": "login_history",
+            "name": "Lịch sử đăng nhập",
+            "priority": "MEDIUM"
+        },
+        {
+            "id": "export_data",
+            "name": "Xuất dữ liệu (Excel/PDF)",
+            "priority": "LOW"
+        }
+    ],
+    "found_features": [
+        {
+            "id": "user_crud",
+            "name": "CRUD người dùng",
+            "priority": "CRITICAL"
+        },
+        {
+            "id": "role_management",
+            "name": "Quản lý vai trò",
+            "priority": "MEDIUM"
+        },
+        {
+            "id": "pagination",
+            "name": "Phân trang",
+            "priority": "MEDIUM"
+        },
+        {
+            "id": "search",
+            "name": "Tìm kiếm",
+            "priority": "MEDIUM"
+        }
+    ],
+    "prd_generated": {
+        "created": true,
+        "path": ".agent/prds/IMPROVEMENT-PRD-user-20260126-v2.md",
+        "effort_hours": 32
+    }
+}

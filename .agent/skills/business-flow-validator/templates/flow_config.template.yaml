@@ -1,0 +1,112 @@
+# Business Flow Configuration Template
+# Copy this file to .agent/config/business-flows.yaml and customize for your project
+
+version: "1.0"
+domain: "{YOUR_DOMAIN}"  # e.g., "Catering ERP", "E-Commerce", "Construction"
+
+# ==============================================================================
+# 1. MODULE REGISTRY
+# Define all modules in your project
+# ==============================================================================
+modules:
+  - name: "{module_name}"
+    path_backend: "backend/modules/{module_name}"
+    path_frontend: "frontend/src/app/{module_name}"
+    entities: ["{Entity1}", "{Entity2}"]
+    
+  # Example:
+  # - name: order
+  #   path_backend: backend/modules/order
+  #   path_frontend: frontend/src/app/order
+  #   entities: [Order, OrderItem, OrderPayment]
+
+# ==============================================================================
+# 2. BUSINESS FLOWS
+# Define state machines and integration points
+# ==============================================================================
+flows:
+  "{flow_id}":
+    name: "{Flow Display Name}"
+    description: "{What this flow does}"
+    entities_involved: ["{Entity1}", "{Entity2}"]
+    
+    # State Machine Definition
+    states:
+      - entity: "{Entity}"
+        state: "{STATE_NAME}"
+        next: ["{NEXT_STATE_1}", "{NEXT_STATE_2}"]  # Possible transitions
+        
+      - entity: "{Entity}"
+        state: "{FINAL_STATE}"
+        next: []  # Terminal state
+        action: "{trigger_action}"  # Optional: action when entering this state
+    
+    # Integration Points (Cross-module interactions)
+    integrations:
+      - source: "{SourceEntity}"
+        target: "{TargetEntity}"
+        trigger: "{condition when integration fires}"
+        action: "{function_name()}"
+        verify_in: "{path/to/service.py}"
+        
+    # Example:
+    # integrations:
+    #   - source: Quote
+    #     target: Order
+    #     trigger: "Quote.status == APPROVED"
+    #     action: "convert_to_order()"
+    #     verify_in: "backend/modules/quote/services/quote_service.py"
+
+# ==============================================================================
+# 3. CROSS-MODULE DEPENDENCIES
+# Define which modules depend on which
+# ==============================================================================
+dependencies:
+  "{module_name}":
+    depends_on: ["{other_module1}", "{other_module2}"]  # Modules this one imports from
+    provides_to: ["{consumer_module1}"]  # Modules that import from this one
+    
+  # Example:
+  # order:
+  #   depends_on: [quote, crm, hr]
+  #   provides_to: [finance]
+
+# ==============================================================================
+# 4. DATA SYNC RULES
+# Define FE/BE sync points that must match
+# ==============================================================================
+sync_rules:
+  - name: "{Check Name}"
+    source_of_truth: "{backend_file}::{variable_or_class}"
+    must_match: "{frontend_file}::{variable_or_interface}"
+    severity: CRITICAL  # CRITICAL | HIGH | MEDIUM | LOW
+    
+  # Example:
+  # - name: "Permission Module Sync"
+  #   source_of_truth: backend/core/auth/permissions.py::MODULE_ACCESS
+  #   must_match: frontend/src/app/admin/user-management/services/user.service.ts::getPermissionModules()
+  #   severity: CRITICAL
+
+# ==============================================================================
+# 5. BUSINESS RULES
+# Define business logic that must be enforced in code
+# ==============================================================================
+business_rules:
+  - rule_id: "BR001"
+    description: "{Human-readable rule description}"
+    entity: "{Entity}"
+    condition: "{validation_condition}"  # e.g., "status IN ['draft', 'pending']"
+    action: "{action_being_guarded}"  # e.g., "submit"
+    
+  # Example:
+  # - rule_id: BR001
+  #   description: "Quote chỉ convert được khi status = APPROVED"
+  #   entity: Quote
+  #   condition: "status == 'approved'"
+  #   action: "convert_to_order"
+  #
+  # - rule_id: BR002
+  #   description: "Deposit minimum 30% khi confirm Order"
+  #   entity: Order
+  #   condition: "deposit_amount >= total_amount * 0.3"
+  #   action: "confirm"

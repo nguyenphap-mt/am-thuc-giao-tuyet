@@ -1,0 +1,1 @@
+"""Quote module tests package"""

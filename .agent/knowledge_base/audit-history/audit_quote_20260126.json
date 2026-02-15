@@ -1,0 +1,155 @@
+{
+    "audit_id": "audit_quote_20260126_095741",
+    "module": "quote",
+    "timestamp": "2026-01-26T09:57:41+07:00",
+    "workflow_version": "3.2.1",
+    "scores": {
+        "overall": 80,
+        "grade": "B",
+        "dimensions": {
+            "UX": {
+                "score": 16,
+                "max": 20
+            },
+            "UI": {
+                "score": 15,
+                "max": 20
+            },
+            "FE": {
+                "score": 13,
+                "max": 20
+            },
+            "BE": {
+                "score": 18,
+                "max": 20
+            },
+            "DA": {
+                "score": 14,
+                "max": 20
+            }
+        },
+        "business_flow": {
+            "module_structure": {
+                "score": 18,
+                "max": 20
+            },
+            "state_machines": {
+                "score": 20,
+                "max": 25
+            },
+            "integrations": {
+                "score": 28,
+                "max": 30
+            },
+            "dependencies": {
+                "score": 15,
+                "max": 15
+            },
+            "business_rules": {
+                "score": 7,
+                "max": 10
+            },
+            "total": 88
+        }
+    },
+    "issues": {
+        "total": 12,
+        "by_severity": {
+            "CRITICAL": 1,
+            "HIGH": 4,
+            "MEDIUM": 5,
+            "LOW": 2
+        },
+        "list": [
+            {
+                "id": "C1",
+                "severity": "CRITICAL",
+                "category": "State Machine",
+                "description": "Status CANCELLED defined but not implemented"
+            },
+            {
+                "id": "H1",
+                "severity": "HIGH",
+                "category": "UI",
+                "description": "QuoteCreateComponent too large (2586 lines)"
+            },
+            {
+                "id": "H2",
+                "severity": "HIGH",
+                "category": "FE",
+                "description": "Missing quote.model.ts file"
+            },
+            {
+                "id": "H3",
+                "severity": "HIGH",
+                "category": "State Sync",
+                "description": "FE interface missing status 'converted'"
+            },
+            {
+                "id": "H4",
+                "severity": "HIGH",
+                "category": "State Sync",
+                "description": "Status mismatch FE (lowercase) vs BE (UPPERCASE)"
+            },
+            {
+                "id": "M1",
+                "severity": "MEDIUM",
+                "category": "FE",
+                "description": "Status hardcoded inline, not separated enum"
+            },
+            {
+                "id": "M2",
+                "severity": "MEDIUM",
+                "category": "DA",
+                "description": "Status is string, not DB enum"
+            },
+            {
+                "id": "M3",
+                "severity": "MEDIUM",
+                "category": "BE",
+                "description": "Missing service layer, logic in router"
+            },
+            {
+                "id": "M4",
+                "severity": "MEDIUM",
+                "category": "Business Rule",
+                "description": "BR001 not correct: allows PENDING conversion"
+            },
+            {
+                "id": "M5",
+                "severity": "MEDIUM",
+                "category": "Business Rule",
+                "description": "BR002 no backend validation"
+            },
+            {
+                "id": "L1",
+                "severity": "LOW",
+                "category": "BE",
+                "description": "valid_until has no default value"
+            },
+            {
+                "id": "L2",
+                "severity": "LOW",
+                "category": "UI",
+                "description": "QuoteListComponent large (1510 lines)"
+            }
+        ]
+    },
+    "prd_generated": {
+        "created": true,
+        "path": ".agent/prds/IMPROVEMENT-PRD-quote-20260126.md",
+        "effort_hours": 22
+    },
+    "files_scanned": {
+        "backend": [
+            "backend/modules/quote/domain/models.py",
+            "backend/modules/quote/domain/entities.py",
+            "backend/modules/quote/infrastructure/http_router.py"
+        ],
+        "frontend": [
+            "frontend/src/app/quote/quote.service.ts",
+            "frontend/src/app/quote/components/quote-list/quote-list.component.ts",
+            "frontend/src/app/quote/components/quote-create/quote-create.component.ts"
+        ]
+    }
+}

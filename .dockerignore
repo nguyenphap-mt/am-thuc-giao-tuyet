@@ -1,0 +1,46 @@
+# Frontend (deployed separately on Vercel)
+frontend/
+frontend-next/
+
+# Mobile (deployed separately on EAS)
+mobile/
+
+# Development files
+node_modules/
+.git/
+.agent/
+.artifacts/
+.doc/
+.reports/
+.vscode/
+.debug/
+.knowledges/
+.shared/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Environment files (injected via Cloud Run env vars)
+.env
+backend/.env
+
+# Docs and prompts
+prompts/
+templates/
+docs/
+workflows/
+scripts/
+
+# Temp files
+temp_*
+*.zip
+*.log
+*.txt
+*.csv
+*.md
+
+# Keep requirements.txt (needed for build)
+!backend/requirements.txt

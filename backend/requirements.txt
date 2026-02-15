@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+gunicorn
+pydantic
+sqlalchemy
+asyncpg
+psycopg2-binary
+python-multipart
+bcrypt==4.0.1
+passlib[bcrypt]
+pyjwt
+slowapi
+websockets
+python-dotenv
+pytz

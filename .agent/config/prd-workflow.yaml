@@ -1,0 +1,445 @@
+# PRD Workflow Configuration
+# Version: 2.1.0
+# Last Updated: 2026-01-24
+
+# ============================================================
+# CORE SETTINGS
+# ============================================================
+reflexion_prd:
+  version: "2.1.0"
+  
+  # Iteration Control
+  max_iterations: 3
+  quality_threshold: 85
+  auto_approve_threshold: 90
+  deep_analysis_trigger: 7
+  
+  # Stagnation Detection (Priority 1 - #3)
+  stagnation:
+    # Dynamic threshold: max(base, percentage of current score)
+    detection_mode: "dynamic"  # static | dynamic
+    static_threshold: 2
+    dynamic_percentage: 0.05   # 5% of current score
+    min_threshold: 2
+    max_threshold: 10
+  
+  # Feature Flags
+  features:
+    human_checkpoint: true
+    version_tracking: true
+    metrics_logging: true
+    knowledge_update: true
+    # Priority 1 Features
+    codebase_validation: true      # #1: Validate against codebase
+    package_registry_lookup: true  # #2: Check npm/PyPI
+    semantic_health_check: true    # #4: Pre-auto-approval check
+    # Priority 2 Features
+    knowledge_base_query: true     # #5: Query past PRDs
+    domain_expert_review: true     # #6: Business logic validation
+    observability: true            # #7: Structured logging
+    test_generation: true          # #8: Auto-generate tests
+    # Priority 3 Features
+    cicd_integration: true         # #9: API endpoint
+    effort_estimation: true        # #10: AI-powered estimates
+    multi_language: true           # #11: i18n support
+    stride_modeling: false         # #12: Coming soon
+
+# ============================================================
+# SKILL ORCHESTRATION
+# ============================================================
+skills:
+  # Core Skills (always active)
+  core:
+    - name: prd-drafter
+      version: "2.0.0"
+      invoke_at: "phase_2"
+      
+    - name: prd-critic
+      version: "2.0.0"
+      invoke_at: "phase_3"
+      
+    - name: prd-evaluator
+      version: "1.0.0"
+      invoke_at: "phase_3"
+  
+  # Validation Skills (Priority 1)
+  validation:
+    - name: codebase-validator
+      version: "1.0.0"
+      invoke_at: "phase_3.5"
+      condition: "quality_score >= 80"
+      timeout_seconds: 30
+  
+  # Expert Skills (Priority 2)
+  expert:
+    - name: domain-expert
+      version: "1.0.0"
+      invoke_at: "phase_3.5"
+      condition: "processing_mode != 'Standard'"
+      parallel_with: "codebase-validator"
+  
+  # Post-Approval Skills (Priority 2-3)
+  post_approval:
+    - name: test-generator
+      version: "1.0.0"
+      invoke_at: "phase_5"
+      condition: "status == 'Approved'"
+      
+    - name: effort-estimator
+      version: "1.0.0"
+      invoke_at: "phase_5"
+      condition: "user_requested or processing_mode == 'Deep Analysis'"
+
+# ============================================================
+# OBSERVABILITY (Priority 2 - #7)
+# ============================================================
+observability:
+  enabled: true
+  
+  # Structured Logging
+  logging:
+    format: "json"
+    level: "INFO"
+    include_fields:
+      - timestamp
+      - workflow_id
+      - phase
+      - skill_name
+      - duration_ms
+      - quality_score
+      - iteration
+    
+    output:
+      - type: "file"
+        path: ".agent/logs/prd-workflow.jsonl"
+        rotation: "daily"
+      - type: "console"
+        pretty_print: true
+  
+  # Metrics Collection
+  metrics:
+    enabled: true
+    export_path: ".agent/metrics/prd-metrics.json"
+    
+    collect:
+      - name: "first_pass_success_rate"
+        type: "gauge"
+        
+      - name: "avg_iterations_to_pass"
+        type: "histogram"
+        buckets: [1, 2, 3]
+        
+      - name: "human_intervention_rate"
+        type: "gauge"
+        
+      - name: "avg_time_to_prd"
+        type: "histogram"
+        buckets: [300, 600, 900, 1200, 1800]  # seconds
+        
+      - name: "token_consumption"
+        type: "counter"
+  
+  # Tracing
+  tracing:
+    enabled: true
+    trace_id_header: "X-PRD-Trace-ID"
+    export_format: "otlp"  # OpenTelemetry
+
+# ============================================================
+# CI/CD INTEGRATION (Priority 3 - #9)
+# ============================================================
+cicd:
+  enabled: true
+  
+  # API Endpoint Configuration
+  api:
+    path: "/api/v1/workflows/prd"
+    auth_required: true
+    rate_limit: "10/hour"
+    
+    endpoints:
+      - method: "POST"
+        path: "/create"
+        description: "Trigger PRD generation"
+        request_schema: "schemas/prd-create-request.yaml"
+        
+      - method: "GET"
+        path: "/{prd_id}/status"
+        description: "Check PRD status"
+        
+      - method: "POST"
+        path: "/{prd_id}/approve"
+        description: "Approve PRD"
+        auth_roles: ["admin", "product_manager"]
+  
+  # Webhook Notifications
+  webhooks:
+    - event: "prd.created"
+      url: "${WEBHOOK_URL}/prd-created"
+      
+    - event: "prd.approved"
+      url: "${WEBHOOK_URL}/prd-approved"
+      
+    - event: "prd.rejected"
+      url: "${WEBHOOK_URL}/prd-rejected"
+  
+  # External Integrations
+  integrations:
+    jira:
+      enabled: false
+      project_key: ""
+      issue_type: "Story"
+      
+    linear:
+      enabled: false
+      team_id: ""
+
+# ============================================================
+# MULTI-LANGUAGE SUPPORT (Priority 3 - #11)
+# ============================================================
+i18n:
+  enabled: true
+  default_locale: "vi-VN"
+  supported_locales:
+    - "vi-VN"  # Vietnamese (primary)
+    - "en-US"  # English (secondary)
+  
+  output_mode: "bilingual"  # single | bilingual | all
+  
+  # Section-specific language rules
+  sections:
+    metadata: "en-US"           # Always English for tooling
+    problem_statement: "locale" # Use current locale
+    user_stories: "bilingual"   # Both languages
+    technical_specs: "en-US"    # English for code references
+    nfrs: "en-US"              # English for standards
+
+# ============================================================
+# STRIDE THREAT MODELING (Priority 3 - #12)
+# ============================================================
+threat_modeling:
+  enabled: false  # Coming soon
+  
+  framework: "STRIDE"
+  
+  stride_categories:
+    - Spoofing
+    - Tampering
+    - Repudiation
+    - Information_Disclosure
+    - Denial_of_Service
+    - Elevation_of_Privilege
+  
+  auto_analyze_triggers:
+    - "processing_mode == 'Deep Analysis'"
+    - "has_security_feature"
+    - "has_user_auth"
+    - "handles_pii"
+  
+  output_format: "threat_matrix"  # threat_matrix | data_flow_diagram
+
+# ============================================================
+# SEMANTIC HEALTH CHECK (Priority 1 - #4)
+# ============================================================
+semantic_health_check:
+  enabled: true
+  
+  # Run before auto-approval
+  checks:
+    - name: "no_hallucinated_libraries"
+      severity: "CRITICAL"
+      action: "block_auto_approval"
+      
+    - name: "consistent_terminology"
+      severity: "HIGH"
+      action: "warn"
+      
+    - name: "complete_user_flows"
+      severity: "HIGH"
+      action: "block_auto_approval"
+      
+    - name: "security_controls_defined"
+      severity: "CRITICAL"
+      action: "block_auto_approval"
+      
+    - name: "realistic_effort_estimates"
+      severity: "MEDIUM"
+      action: "warn"
+  
+  # Override conditions for auto-approval
+  block_auto_approval_if:
+    - "any_check_severity_critical_failed"
+    - "2_or_more_high_severity_failed"
+    - "domain_expert_score < 75"
+    - "codebase_validator_score < 70"
+
+# ============================================================
+# KNOWLEDGE BASE INTEGRATION (Priority 2 - #5)
+# ============================================================
+knowledge_base:
+  enabled: true
+  
+  # Query at Phase 1
+  phase_1_query:
+    enabled: true
+    sources:
+      - ".agent/knowledge_base/prd-lessons.md"
+      - ".agent/knowledge_base/effort-history.md"
+      - ".agent/prds/*.md"  # Past approved PRDs
+    
+    search_mode: "semantic"  # keyword | semantic
+    max_results: 5
+    relevance_threshold: 0.7
+  
+  # Update at Phase 5
+  phase_5_update:
+    enabled: true
+    require_approval: true
+    
+    extract:
+      - "issues_encountered"
+      - "refinement_patterns"
+      - "user_feedback"
+      - "effort_variance"
+
+# ============================================================
+# PACKAGE REGISTRY LOOKUP (Priority 1 - #2)
+# ============================================================
+package_registry:
+  enabled: true
+  
+  registries:
+    npm:
+      url: "https://registry.npmjs.org"
+      timeout_ms: 5000
+      cache_ttl_hours: 24
+      
+    pypi:
+      url: "https://pypi.org/pypi"
+      timeout_ms: 5000
+      cache_ttl_hours: 24
+  
+  # Fallback if registry unreachable
+  fallback:
+    mode: "cache_then_warn"  # fail | warn | cache_then_warn
+    cache_path: ".agent/cache/package-registry.json"
+  
+  # Known safe packages (skip lookup)
+  whitelist:
+    npm:
+      - "angular"
+      - "rxjs"
+      - "ag-grid-angular"
+      - "chart.js"
+    pypi:
+      - "fastapi"
+      - "sqlalchemy"
+      - "pydantic"
+      - "uvicorn"
+
+# ============================================================
+# MODULE AUDIT (NEW)
+# ============================================================
+module_audit:
+  enabled: true
+  trigger: "/prd-audit"
+  
+  # Available modules for audit
+  available_modules:
+    - name: "quote"
+      paths:
+        backend: "backend/modules/sales"
+        frontend: "frontend/src/app/quote"
+      description: "Quote Management"
+      
+    - name: "order"
+      paths:
+        backend: "backend/modules/sales"
+        frontend: "frontend/src/app/order"
+      description: "Order Management"
+      
+    - name: "inventory"
+      paths:
+        backend: "backend/modules/inventory"
+        frontend: "frontend/src/app/inventory"
+      description: "Inventory Management"
+      
+    - name: "crm"
+      paths:
+        backend: "backend/modules/crm"
+        frontend: "frontend/src/app/crm"
+      description: "Customer Relationship Management"
+      
+    - name: "finance"
+      paths:
+        backend: "backend/modules/finance"
+        frontend: "frontend/src/app/finance"
+      description: "Finance & Accounting"
+      
+    - name: "hr"
+      paths:
+        backend: "backend/modules/hr"
+        frontend: "frontend/src/app/hr"
+      description: "Human Resources"
+      
+    - name: "user"
+      paths:
+        backend: "backend/modules/user"
+        frontend: "frontend/src/app/admin/user-management"
+      description: "User Management"
+      aliases: ["admin/user-management"]
+      
+    - name: "procurement"
+      paths:
+        backend: "backend/modules/procurement"
+        frontend: "frontend/src/app/procurement"
+      description: "Procurement & Suppliers"
+      
+    - name: "settings"
+      paths:
+        backend: "backend/modules/settings"
+        frontend: "frontend/src/app/settings"
+      description: "System Settings"
+  
+  # Audit configuration
+  audit_settings:
+    # Score thresholds for actions
+    thresholds:
+      excellent: 90      # Grade A, no PRD needed
+      good: 80           # Grade B, optional PRD
+      needs_work: 70     # Grade C, PRD recommended
+      poor: 60           # Grade D, PRD required
+      critical: 0        # Grade F, major refactor
+    
+    # Default target improvement
+    target_improvement: 15  # Points to improve
+    
+    # Auto-generate PRD if score below
+    auto_generate_prd_threshold: 80
+  
+  # Dimension weights (must sum to 100)
+  dimension_weights:
+    UX: 20
+    UI: 20
+    FE: 20
+    BE: 20
+    DA: 20
+  
+  # Skills used in audit
+  skills:
+    - name: module-auditor
+      version: "1.0.0"
+      invoke_at: "phase_2"
+      
+  # Audit history tracking
+  history:
+    enabled: true
+    storage_path: ".agent/knowledge_base/audit-history.md"
+    retention_days: 365
+    
+  # Reporting
+  report:
+    format: "markdown"
+    save_path: ".agent/audits/{module}/{audit_id}.md"
+    include_code_snippets: true
+    max_issues_detail: 20

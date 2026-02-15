@@ -1,0 +1,516 @@
+# ============================================================================
+# MOBILE PLATFORM ROADMAP — Ẩm Thực Giao Tuyết
+# ============================================================================
+# File này là Single Source of Truth cho tiến độ triển khai Mobile Platform.
+# AI Workforce sẽ tham chiếu file này trước khi bắt đầu bất kỳ task nào.
+#
+# Status values: NOT_STARTED | IN_PROGRESS | BLOCKED | DONE | SKIPPED
+# Priority: P0 (Critical) | P1 (High) | P2 (Medium) | P3 (Nice-to-have)
+#
+# Updated: 2026-02-14 (PRD V2.0 — Hybrid Research-Reflexion)
+# ============================================================================
+
+project:
+  name: "Mobile Platform - Ẩm Thực Giao Tuyết"
+  prd_v1: ".agent/prds/PRD-mobile-platform.md"
+  prd_v2: ".agent/prds/PRD-mobile-platform-v2.md"
+  research: ".agent/prds/research-mobile-platform.md"
+  tech_stack:
+    framework: "React Native 0.81 + Expo SDK 54"
+    navigation: "Expo Router 6 (file-based)"
+    state: "Zustand 5 + TanStack Query 5"
+    local_db: "Expo SQLite 16"
+    push: "Expo Notifications + FCM/APNs"
+    icons: "@tabler/icons-react-native 3.36"
+    auth: "expo-secure-store 15"
+    gradient: "expo-linear-gradient 15"
+  repo_strategy: "monorepo"
+  mobile_dir: "mobile/"
+  actual_start_date: "2026-02-14"
+
+  # Coverage metrics (as of 2026-02-14)
+  coverage:
+    web_modules: 17
+    mobile_features_done: 5       # schedule, notifications, purchase, prep, profile
+    mobile_features_total: 25     # target
+    coverage_pct_current: 18
+    coverage_pct_target: 85
+
+# ============================================================================
+# PHASE 0: PROJECT SETUP — DONE ✅
+# ============================================================================
+phase_0:
+  name: "Project Setup & Foundation"
+  priority: P0
+  status: DONE
+  completed_date: "2026-02-14"
+
+  sprints:
+    - id: S0.1
+      name: "Expo Project Initialization"
+      status: DONE
+      tasks:
+        - id: S0.1.1
+          name: "Init Expo project trong monorepo"
+          status: DONE
+        - id: S0.1.2
+          name: "Cấu hình Expo Router (file-based navigation)"
+          status: DONE
+        - id: S0.1.3
+          name: "Setup Zustand + TanStack Query"
+          status: DONE
+        - id: S0.1.4
+          name: "Setup Expo SQLite cho offline storage"
+          status: DONE
+
+    - id: S0.2
+      name: "API Client & Shared Types"
+      status: DONE
+      tasks:
+        - id: S0.2.1
+          name: "mobile/lib/api.ts (fetch client with auth)"
+          status: DONE
+          file: "mobile/lib/api.ts"
+        - id: S0.2.2
+          name: "mobile/lib/auth-store.ts (Zustand + secure-store)"
+          status: DONE
+          file: "mobile/lib/auth-store.ts"
+        - id: S0.2.3
+          name: "mobile/lib/query-client.ts"
+          status: DONE
+          file: "mobile/lib/query-client.ts"
+
+    - id: S0.3
+      name: "Design System Mobile"
+      status: DONE
+      tasks:
+        - id: S0.3.1
+          name: "mobile/constants/colors.ts (design tokens)"
+          status: DONE
+          file: "mobile/constants/colors.ts"
+        - id: S0.3.2
+          name: "@tabler/icons-react-native setup"
+          status: DONE
+
+# ============================================================================
+# PHASE 1: STAFF MVP — DONE ✅
+# ============================================================================
+phase_1:
+  name: "Staff Mobile App (MVP)"
+  priority: P0
+  status: DONE
+  completed_date: "2026-02-14"
+
+  sprints:
+    - id: S1.1
+      name: "Authentication & Profile"
+      status: DONE
+      files:
+        - "mobile/app/(auth)/login.tsx"
+        - "mobile/app/(tabs)/profile.tsx"
+        - "mobile/app/(tabs)/_layout.tsx"
+
+    - id: S1.2
+      name: "My Schedule (Lịch Làm Việc)"
+      status: DONE
+      files:
+        - "mobile/app/(tabs)/schedule.tsx"
+        - "mobile/app/event/[id].tsx"
+
+    - id: S1.3
+      name: "Notifications"
+      status: DONE
+      files:
+        - "mobile/app/(tabs)/notifications.tsx"
+
+    - id: S1.4
+      name: "GPS Check-in/Check-out"
+      status: DONE
+      note: "Backend endpoints ready: POST /mobile/checkin, POST /mobile/sync"
+      backend_apis:
+        - "POST /mobile/devices"
+        - "DELETE /mobile/devices/{token}"
+        - "POST /mobile/checkin"
+        - "POST /mobile/sync"
+        - "GET /mobile/my-schedule"
+
+    - id: S1.5
+      name: "Kitchen Prep Sheet"
+      status: DONE
+      files:
+        - "mobile/app/(tabs)/prep.tsx"
+
+# ============================================================================
+# PHASE 2: QUICK PURCHASE — DONE ✅ (from PRD V2.0)
+# ============================================================================
+phase_2:
+  name: "Quick Purchase (PR CRUD + Approval)"
+  priority: P0
+  status: DONE
+  completed_date: "2026-02-14"
+
+  sprints:
+    - id: S2.1
+      name: "Purchase Requisition Hook"
+      status: DONE
+      files:
+        - "mobile/lib/hooks/usePurchase.ts"
+      apis_used:
+        - "GET /procurement/requisitions"
+        - "GET /procurement/stats"
+        - "POST /procurement/requisitions"
+        - "PUT /procurement/requisitions/{id}/approve"
+        - "PUT /procurement/requisitions/{id}/reject"
+        - "DELETE /procurement/requisitions/{id}"
+
+    - id: S2.2
+      name: "Purchase List Tab"
+      status: DONE
+      files:
+        - "mobile/app/(tabs)/purchase.tsx"
+      features:
+        - "Stats cards (Chờ duyệt, Đã duyệt, Tổng PR)"
+        - "PR list with status badges and priority"
+        - "Pull-to-refresh"
+        - "FAB button → navigate to create"
+
+    - id: S2.3
+      name: "Quick Create PR Form"
+      status: DONE
+      files:
+        - "mobile/app/purchase/create.tsx"
+      features:
+        - "Title, priority chips, notes"
+        - "Dynamic line items (add/remove)"
+        - "Auto-calculated totals"
+        - "Gradient submit button"
+
+    - id: S2.4
+      name: "PR Detail + Actions"
+      status: DONE
+      files:
+        - "mobile/app/purchase/[id].tsx"
+      features:
+        - "Full PR info display"
+        - "Line items table"
+        - "Role-based: Approve/Reject (manager), Delete (all)"
+
+  verification:
+    typescript_check: PASS
+    browser_test: PASS
+    screenshots:
+      - "5 tabs visible (Lịch, Thông báo, Mua hàng, Bếp, Tài khoản)"
+      - "Stats cards: 6 Chờ duyệt, 0 Đã duyệt, 19 Tổng PR"
+      - "FAB → Create form renders correctly"
+
+# ============================================================================
+# PHASE 3: CORE OPERATIONS — NOT_STARTED (P0)
+# ============================================================================
+phase_3:
+  name: "Core Operations (Orders, Inventory, Dashboard)"
+  priority: P0
+  status: NOT_STARTED
+  estimated_days: 7
+  depends_on: [phase_2]
+
+  sprints:
+    - id: S3.1
+      name: "Order Detail & Actions"
+      status: NOT_STARTED
+      effort_days: 3
+      screens:
+        - "mobile/app/orders/index.tsx"     # Order list (assigned to me)
+        - "mobile/app/orders/[id].tsx"       # Order detail + status update
+      hook: "mobile/lib/hooks/useOrders.ts"
+      apis:
+        - "GET /orders"
+        - "GET /orders/{id}"
+        - "PUT /orders/{id}/status"
+      user_stories:
+        - "US-3.1.1: Nhân viên xem danh sách đơn hàng assigned"
+        - "US-3.1.2: Nhân viên xem chi tiết đơn hàng"
+        - "US-3.1.3: Nhân viên cập nhật trạng thái đơn"
+        - "US-3.1.4: Nhân viên check-in GPS tại sự kiện"
+
+    - id: S3.2
+      name: "Quick Inventory Check"
+      status: NOT_STARTED
+      effort_days: 2
+      screens:
+        - "mobile/app/inventory/index.tsx"        # Search + stock view
+        - "mobile/app/inventory/transaction.tsx"   # Quick import/export
+      hook: "mobile/lib/hooks/useInventory.ts"
+      apis:
+        - "GET /inventory/items"
+        - "GET /inventory/items/{id}"
+        - "POST /inventory/transactions"
+        - "GET /inventory/dashboard"
+      user_stories:
+        - "US-3.2.1: Nhân viên tìm kiếm nguyên liệu, xem tồn kho"
+        - "US-3.2.2: Nhân viên ghi nhận nhập kho nhanh"
+        - "US-3.2.3: Quản lý xem low stock alerts"
+
+    - id: S3.3
+      name: "Mobile Dashboard"
+      status: NOT_STARTED
+      effort_days: 2
+      screens:
+        - "mobile/app/dashboard/index.tsx"    # KPI summary + today's events
+      hook: "mobile/lib/hooks/useDashboard.ts"
+      apis:
+        - "GET /dashboard/stats"
+        - "GET /orders?date=today"
+        - "GET /analytics/revenue"
+      user_stories:
+        - "US-3.3.1: Quản lý xem KPI trên mobile (doanh thu, đơn, công nợ)"
+        - "US-3.3.2: Quản lý xem sự kiện hôm nay + tuần này"
+
+# ============================================================================
+# PHASE 4: MANAGEMENT FEATURES — NOT_STARTED (P1)
+# ============================================================================
+phase_4:
+  name: "Management Features (HR, Finance, CRM)"
+  priority: P1
+  status: NOT_STARTED
+  estimated_days: 7
+  depends_on: [phase_3]
+
+  sprints:
+    - id: S4.1
+      name: "HR Mobile"
+      status: NOT_STARTED
+      effort_days: 3
+      screens:
+        - "mobile/app/hr/timesheet.tsx"     # Chấm công mobile
+        - "mobile/app/hr/leave.tsx"          # Xin nghỉ phép
+      hook: "mobile/lib/hooks/useHR.ts"
+      apis:
+        - "GET /hr/employees"
+        - "POST /hr/timesheets"
+        - "GET /hr/leave-requests"
+        - "PUT /hr/leave-requests/{id}/approve"
+      user_stories:
+        - "US-4.1.1: Nhân viên chấm công qua mobile (check-in/out + GPS)"
+        - "US-4.1.2: Nhân viên gửi đơn xin nghỉ phép"
+        - "US-4.1.3: Quản lý duyệt/từ chối nghỉ phép"
+
+    - id: S4.2
+      name: "Finance Summary"
+      status: NOT_STARTED
+      effort_days: 2
+      screens:
+        - "mobile/app/finance/index.tsx"    # Summary + quick expense
+      hook: "mobile/lib/hooks/useFinance.ts"
+      apis:
+        - "GET /finance/dashboard"
+        - "GET /finance/expenses"
+        - "POST /finance/transactions"
+      user_stories:
+        - "US-4.2.1: Kế toán xem tổng quan tài chính"
+        - "US-4.2.2: Nhân viên ghi nhận chi phí nhanh tại hiện trường"
+
+    - id: S4.3
+      name: "CRM Quick Access"
+      status: NOT_STARTED
+      effort_days: 2
+      screens:
+        - "mobile/app/crm/index.tsx"        # Customer list
+        - "mobile/app/crm/[id].tsx"          # Customer detail
+      hook: "mobile/lib/hooks/useCRM.ts"
+      apis:
+        - "GET /crm/customers"
+        - "GET /crm/customers/{id}"
+        - "POST /crm/interactions"
+      user_stories:
+        - "US-4.3.1: Sales xem thông tin khách hàng"
+        - "US-4.3.2: Sales ghi nhận cuộc hẹn/gọi điện"
+        - "US-4.3.3: Sales gọi/email trực tiếp"
+
+# ============================================================================
+# PHASE 5: PROFESSIONAL FEATURES — NOT_STARTED (P2)
+# ============================================================================
+phase_5:
+  name: "Professional Features (Calendar, Quotes, Reports)"
+  priority: P2
+  status: NOT_STARTED
+  estimated_days: 6
+  depends_on: [phase_4]
+
+  sprints:
+    - id: S5.1
+      name: "Calendar Full View"
+      status: NOT_STARTED
+      effort_days: 2
+      screens:
+        - "mobile/app/calendar/index.tsx"
+      hook: "mobile/lib/hooks/useCalendar.ts"
+      apis:
+        - "GET /calendar/events"
+        - "GET /orders/{id}"
+
+    - id: S5.2
+      name: "Quote Viewer"
+      status: NOT_STARTED
+      effort_days: 2
+      screens:
+        - "mobile/app/quotes/index.tsx"
+        - "mobile/app/quotes/[id].tsx"
+      hook: "mobile/lib/hooks/useQuotes.ts"
+      apis:
+        - "GET /quotes"
+        - "GET /quotes/{id}"
+
+    - id: S5.3
+      name: "Reports Mobile"
+      status: NOT_STARTED
+      effort_days: 2
+      screens:
+        - "mobile/app/reports/index.tsx"
+      hook: "mobile/lib/hooks/useReports.ts"
+      apis:
+        - "GET /analytics/revenue"
+        - "GET /analytics/orders"
+        - "GET /analytics/inventory"
+
+# ============================================================================
+# PHASE 6: AI & ADVANCED — NOT_STARTED (P3 Future)
+# ============================================================================
+phase_6:
+  name: "AI & Advanced Features"
+  priority: P3
+  status: NOT_STARTED
+  depends_on: [phase_5]
+  note: "Future phase — cần confirm từ business owner"
+
+  sprints:
+    - id: S6.1
+      name: "Receipt OCR"
+      status: NOT_STARTED
+      tech: "expo-camera + Google Vision API"
+      description: "Camera capture → text extraction → auto-fill expense/PR"
+
+    - id: S6.2
+      name: "Smart Suggestions"
+      status: NOT_STARTED
+      description: "Dự đoán nguyên liệu cần mua từ menu + recipe data"
+
+    - id: S6.3
+      name: "Voice Input"
+      status: NOT_STARTED
+      tech: "expo-speech"
+      description: "Ghi nhận expense/note bằng giọng nói"
+
+# ============================================================================
+# BACKEND — NO CHANGES NEEDED
+# ============================================================================
+backend_changes:
+  note: "All 17 backend modules have APIs ready. 0 backend changes needed for Phases 3-6."
+  existing_apis_reused:
+    - "POST /api/v1/auth/login"
+    - "GET /api/v1/auth/me"
+    - "GET /api/v1/notifications"
+    - "GET /mobile/my-schedule"
+    - "POST /mobile/checkin"
+    - "POST /mobile/sync"
+    - "POST /mobile/devices"
+    - "GET /procurement/requisitions"
+    - "POST /procurement/requisitions"
+    - "GET /procurement/stats"
+    - "GET /orders"
+    - "GET /orders/{id}"
+    - "PUT /orders/{id}/status"
+    - "GET /inventory/items"
+    - "POST /inventory/transactions"
+    - "GET /dashboard/stats"
+    - "GET /hr/employees"
+    - "POST /hr/timesheets"
+    - "GET /hr/leave-requests"
+    - "GET /finance/dashboard"
+    - "POST /finance/transactions"
+    - "GET /crm/customers"
+    - "POST /crm/interactions"
+    - "GET /calendar/events"
+    - "GET /quotes"
+    - "GET /analytics/revenue"
+
+# ============================================================================
+# RISK REGISTER
+# ============================================================================
+risks:
+  - id: R-1
+    name: "iOS App Store rejection"
+    severity: HIGH
+    probability: LOW
+    mitigation: "Follow Apple HIG, proper privacy policies"
+
+  - id: R-2
+    name: "Offline sync data loss"
+    severity: HIGH
+    probability: MEDIUM
+    mitigation: "Outbox pattern + conflict log + retry mechanism"
+
+  - id: R-3
+    name: "Push notification unreliable"
+    severity: MEDIUM
+    probability: MEDIUM
+    mitigation: "Fallback in-app polling every 30s"
+
+  - id: R-4
+    name: "GPS inaccuracy indoor"
+    severity: MEDIUM
+    probability: HIGH
+    mitigation: "Manual check-in override option"
+
+# ============================================================================
+# QUALITY GATES (Mỗi phase phải pass trước khi chuyển phase tiếp)
+# ============================================================================
+quality_gates:
+  phase_0_gate:
+    status: PASSED
+    items:
+      - "Expo app build thành công ✅"
+      - "API client kết nối FastAPI backend ✅"
+      - "Design tokens ready ✅"
+
+  phase_1_gate:
+    status: PASSED
+    items:
+      - "Login auth hoạt động ✅"
+      - "Schedule load từ real API data ✅"
+      - "Notifications hiển thị ✅"
+      - "Kitchen prep sheet hoạt động ✅"
+      - "Profile screen hoạt động ✅"
+
+  phase_2_gate:
+    status: PASSED
+    items:
+      - "Purchase tab with 5th tab navigation ✅"
+      - "Stats cards (6 pending, 0 approved, 19 total) ✅"
+      - "Create PR form with dynamic line items ✅"
+      - "PR detail with role-based approve/reject ✅"
+      - "TypeScript check: 0 errors ✅"
+      - "Browser test: PASS ✅"
+
+  phase_3_gate:
+    status: NOT_STARTED
+    items:
+      - "Order list shows assigned orders"
+      - "Order detail with status update"
+      - "Inventory search + stock view"
+      - "Quick import/export transaction"
+      - "Dashboard KPIs on mobile"
+
+  phase_4_gate:
+    status: NOT_STARTED
+    items:
+      - "HR timesheet + GPS check-in"
+      - "Leave request submit + approve"
+      - "Finance summary view"
+      - "CRM customer lookup"
+
+  phase_5_gate:
+    status: NOT_STARTED
+    items:
+      - "Calendar full view"
+      - "Quote detail viewer"
+      - "Revenue/order reports"

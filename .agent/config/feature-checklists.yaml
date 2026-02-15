@@ -1,0 +1,584 @@
+# Feature Checklists Configuration
+# Project: Ẩm Thực Giáo Tuyết - Catering ERP
+# Purpose: Define standard features that each module SHOULD have
+# Used by: Phase 2.6 Feature Completeness Check in prd-audit workflow
+# Version: 1.0.0
+# Last Updated: 2026-01-26
+
+version: "1.0"
+domain: "Catering ERP"
+
+# ==============================================================================
+# HOW TO USE
+# ==============================================================================
+# 1. Each module has a list of expected features
+# 2. Each feature has:
+#    - id: unique identifier
+#    - name: Vietnamese display name
+#    - priority: CRITICAL | HIGH | MEDIUM | LOW
+#    - verify_by: how to check if feature exists (file patterns or grep patterns)
+# 3. Workflow will check each feature and report missing ones
+
+# ==============================================================================
+# MODULE: USER (Quản lý người dùng)
+# ==============================================================================
+user:
+  module_name: "User Management"
+  description: "Quản lý người dùng, phân quyền, và bảo mật"
+  
+  features:
+    # --- CRITICAL: Security Features ---
+    - id: user_crud
+      name: "CRUD người dùng"
+      priority: CRITICAL
+      verify_by:
+        files:
+          - "backend/modules/user/**/http_router.py"
+          - "frontend/src/app/admin/user-management/user-list/*.component.ts"
+        grep:
+          - pattern: "create_user|createUser"
+            in: "backend"
+          - pattern: "delete_user|deleteUser"
+            in: "backend"
+    
+    - id: change_password
+      name: "Đổi mật khẩu"
+      priority: CRITICAL
+      verify_by:
+        files:
+          - "backend/**/change_password*.py"
+          - "frontend/**/change-password*.component.ts"
+        grep:
+          - pattern: "change.*password|update_password"
+            in: "backend"
+          - pattern: "changePassword|updatePassword"
+            in: "frontend"
+    
+    - id: my_profile
+      name: "Trang của tôi (My Profile)"
+      priority: HIGH
+      verify_by:
+        files:
+          - "frontend/**/my-profile*.component.ts"
+          - "frontend/**/profile*.component.ts"
+        grep:
+          - pattern: "my.*profile|current.*user.*profile"
+            in: "frontend"
+
+    # --- HIGH: Audit & Tracking ---
+    - id: activity_log
+      name: "Nhật ký hoạt động"
+      priority: HIGH
+      verify_by:
+        files:
+          - "backend/**/activity*log*.py"
+          - "frontend/**/activity*log*.component.ts"
+        grep:
+          - pattern: "activity.*log|audit.*log"
+            in: "backend"
+    
+    - id: login_history
+      name: "Lịch sử đăng nhập"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "login.*history|session.*log"
+            in: "backend"
+
+    # --- MEDIUM: Role Management ---
+    - id: role_management
+      name: "Quản lý vai trò"
+      priority: MEDIUM
+      verify_by:
+        files:
+          - "frontend/**/permission-matrix*.component.ts"
+        grep:
+          - pattern: "roles|permission"
+            in: "backend"
+    
+    - id: permission_persistence
+      name: "Lưu phân quyền vào DB"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "save.*permission|update.*role.*permission"
+            in: "backend"
+
+# ==============================================================================
+# MODULE: QUOTE (Báo giá)
+# ==============================================================================
+quote:
+  module_name: "Quote Management"
+  description: "Quản lý báo giá khách hàng"
+  
+  features:
+    - id: quote_crud
+      name: "CRUD báo giá"
+      priority: CRITICAL
+      verify_by:
+        files:
+          - "backend/modules/quote/**/http_router.py"
+          - "frontend/src/app/quote/components/quote-list/*.component.ts"
+    
+    - id: quote_items
+      name: "Quản lý items trong báo giá"
+      priority: CRITICAL
+      verify_by:
+        grep:
+          - pattern: "quote.*item|QuoteItem"
+            in: "backend"
+    
+    - id: quote_to_order
+      name: "Chuyển báo giá thành đơn hàng"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "convert.*to.*order|chuyển.*đơn"
+            in: "backend"
+    
+    - id: quote_print
+      name: "In báo giá / Export PDF"
+      priority: MEDIUM
+      verify_by:
+        files:
+          - "frontend/**/quote-print*.component.ts"
+        grep:
+          - pattern: "export.*pdf|print.*quote"
+            in: "frontend"
+    
+    - id: quote_validity
+      name: "Hạn hiệu lực báo giá"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "valid_until|expir"
+            in: "backend"
+    
+    - id: quote_cancel
+      name: "Hủy báo giá"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "cancel.*quote|status.*CANCELLED"
+            in: "backend"
+
+# ==============================================================================
+# MODULE: ORDER (Đơn hàng)
+# ==============================================================================
+order:
+  module_name: "Order Management"  
+  description: "Quản lý đơn hàng tiệc"
+  
+  features:
+    - id: order_crud
+      name: "CRUD đơn hàng"
+      priority: CRITICAL
+      verify_by:
+        files:
+          - "backend/modules/order/**/http_router.py"
+    
+    - id: order_items
+      name: "Quản lý items trong đơn hàng"
+      priority: CRITICAL
+      verify_by:
+        grep:
+          - pattern: "order.*item|OrderItem"
+            in: "backend"
+    
+    - id: order_payment
+      name: "Thanh toán đơn hàng"
+      priority: CRITICAL
+      verify_by:
+        grep:
+          - pattern: "payment|thanh.*toán"
+            in: "backend"
+    
+    - id: order_staff_assignment
+      name: "Phân công nhân viên"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "staff.*assign|phân.*công"
+            in: "backend"
+    
+    - id: order_status_tracking
+      name: "Theo dõi trạng thái đơn"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "OrderStatus|status"
+            in: "backend/modules/order"
+    
+    - id: order_calendar
+      name: "Lịch tiệc / Calendar view"
+      priority: MEDIUM
+      verify_by:
+        files:
+          - "frontend/**/calendar*.component.ts"
+          - "frontend/**/order-calendar*.component.ts"
+
+# ==============================================================================
+# MODULE: INVENTORY (Kho)
+# ==============================================================================
+inventory:
+  module_name: "Inventory Management"
+  description: "Quản lý kho nguyên vật liệu"
+  
+  features:
+    - id: inventory_crud
+      name: "CRUD hàng hóa"
+      priority: CRITICAL
+      verify_by:
+        files:
+          - "backend/modules/inventory/**/http_router.py"
+    
+    - id: stock_tracking
+      name: "Theo dõi tồn kho"
+      priority: CRITICAL
+      verify_by:
+        grep:
+          - pattern: "stock|quantity"
+            in: "backend/modules/inventory"
+    
+    - id: stock_import
+      name: "Nhập kho"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "import|nhập.*kho|IMPORT"
+            in: "backend/modules/inventory"
+    
+    - id: stock_export
+      name: "Xuất kho"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "export|xuất.*kho|EXPORT"
+            in: "backend/modules/inventory"
+    
+    - id: lot_tracking
+      name: "Theo dõi lô hàng"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "lot|batch"
+            in: "backend/modules/inventory"
+    
+    - id: expiry_alert
+      name: "Cảnh báo hết hạn"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "expir|hết.*hạn"
+            in: "backend"
+    
+    - id: low_stock_alert
+      name: "Cảnh báo tồn kho thấp"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "low.*stock|min.*quantity|reorder"
+            in: "backend"
+
+# ==============================================================================
+# MODULE: CRM (Khách hàng)
+# ==============================================================================
+crm:
+  module_name: "Customer Relationship Management"
+  description: "Quản lý khách hàng"
+  
+  features:
+    - id: customer_crud
+      name: "CRUD khách hàng"
+      priority: CRITICAL
+      verify_by:
+        files:
+          - "backend/modules/crm/**/http_router.py"
+    
+    - id: customer_history
+      name: "Lịch sử giao dịch khách hàng"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "customer.*history|order.*history"
+            in: "backend"
+    
+    - id: customer_stats
+      name: "Thống kê khách hàng"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "customer.*stat|recalculate.*stat"
+            in: "backend"
+
+# ==============================================================================
+# MODULE: HR (Nhân sự)
+# ==============================================================================
+hr:
+  module_name: "HR Management"
+  description: "Quản lý nhân sự, chấm công, lương"
+  
+  features:
+    # --- CRITICAL: Core Employee Management ---
+    - id: employee_crud
+      name: "CRUD nhân viên"
+      priority: CRITICAL
+      verify_by:
+        files:
+          - "backend/modules/hr/**/http_router.py"
+        grep:
+          - pattern: "create_employee|update_employee|delete_employee"
+            in: "backend/modules/hr"
+    
+    - id: timesheet_management
+      name: "Quản lý chấm công"
+      priority: CRITICAL
+      verify_by:
+        grep:
+          - pattern: "timesheet|Timesheet"
+            in: "backend/modules/hr"
+    
+    # --- HIGH: Payroll & Leave ---
+    - id: payroll_calculation
+      name: "Tính lương tự động"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "payroll|PayrollPeriod|calculate.*salary"
+            in: "backend/modules/hr"
+    
+    - id: leave_management
+      name: "Quản lý nghỉ phép"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "leave|LeaveRequest|nghỉ.*phép"
+            in: "backend/modules/hr"
+    
+    - id: staff_assignment
+      name: "Phân công nhân viên"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "assignment|StaffAssignment"
+            in: "backend/modules/hr"
+    
+    - id: conflict_detection
+      name: "Phát hiện xung đột lịch"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "conflict|check.*conflict|overlap"
+            in: "backend/modules/hr"
+    
+    # --- MEDIUM: Integration & Reporting ---
+    - id: order_integration
+      name: "Tích hợp với Order (auto-timesheet)"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "order_id|AUTO_ORDER"
+            in: "backend/modules/hr"
+    
+    - id: finance_integration
+      name: "Tích hợp Finance (payroll journal)"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "journal|LABOR|finance"
+            in: "backend/modules/hr"
+    
+    - id: employee_stats
+      name: "Thống kê nhân viên"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "employee.*stat|get_employee_stats"
+            in: "backend/modules/hr"
+
+# ==============================================================================
+# MODULE: FINANCE (Tài chính)
+# ==============================================================================
+finance:
+  module_name: "Finance Management"
+  description: "Quản lý tài chính kế toán"
+  
+  features:
+    - id: journal_entry
+      name: "Bút toán kế toán"
+      priority: CRITICAL
+      verify_by:
+        grep:
+          - pattern: "journal|bút.*toán"
+            in: "backend/modules/finance"
+    
+    - id: double_entry
+      name: "Ghi sổ kép (Debit/Credit)"
+      priority: CRITICAL
+      verify_by:
+        grep:
+          - pattern: "debit|credit"
+            in: "backend/modules/finance"
+    
+    - id: reports
+      name: "Báo cáo tài chính"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "report|báo.*cáo"
+            in: "backend/modules/finance"
+
+# ==============================================================================
+# GLOBAL FEATURES (All Modules Should Have)
+# ==============================================================================
+_global:
+  description: "Tính năng mọi module nên có"
+  
+  features:
+    - id: pagination
+      name: "Phân trang"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "skip|limit|page"
+            in: "backend"
+    
+    - id: search
+      name: "Tìm kiếm"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "search|filter"
+            in: "frontend"
+    
+    - id: export_data
+      name: "Xuất dữ liệu (Excel/PDF)"
+      priority: LOW
+      verify_by:
+        grep:
+          - pattern: "export|excel|pdf"
+            in: "frontend"
+
+# ==============================================================================
+# MODULE: PROCUREMENT (Mua hàng & Nhà cung cấp)
+# ==============================================================================
+procurement:
+  module_name: "Procurement"
+  description: "Quản lý nhà cung cấp, đơn mua hàng (PO), yêu cầu mua hàng (PR)"
+  
+  features:
+    # --- CRITICAL: Core CRUD ---
+    - id: supplier_crud
+      name: "CRUD Nhà cung cấp"
+      priority: CRITICAL
+      verify_by:
+        files:
+          - "backend/modules/procurement/infrastructure/http_router.py"
+          - "frontend/src/app/(dashboard)/procurement/components/supplier-tab.tsx"
+
+    - id: po_crud
+      name: "CRUD Đơn mua hàng (PO)"
+      priority: CRITICAL
+      verify_by:
+        grep:
+          - pattern: "orders|purchase.order"
+            in: "backend/modules/procurement"
+
+    - id: pr_crud
+      name: "CRUD Yêu cầu mua hàng (PR)"
+      priority: CRITICAL
+      verify_by:
+        grep:
+          - pattern: "requisition"
+            in: "backend/modules/procurement"
+
+    # --- HIGH: Business Logic ---
+    - id: po_lifecycle
+      name: "Vòng đời PO (DRAFT→SENT→RECEIVED→PAID)"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "ALLOWED_TRANSITIONS|update_order_status"
+            in: "backend/modules/procurement"
+
+    - id: pr_approval
+      name: "Duyệt/Từ chối PR"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "approve_requisition|reject_requisition"
+            in: "backend/modules/procurement"
+
+    - id: pr_to_po_conversion
+      name: "Chuyển PR thành PO"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "convert.*to.*po|convert_pr"
+            in: "backend/modules/procurement"
+
+    - id: goods_receipt
+      name: "Nhận hàng (Goods Receipt)"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "receive_order|receive.*goods"
+            in: "backend/modules/procurement"
+
+    - id: inventory_integration
+      name: "Tích hợp kho (Auto-Import khi nhận hàng)"
+      priority: HIGH
+      verify_by:
+        grep:
+          - pattern: "InventoryService|create_transaction"
+            in: "backend/modules/procurement"
+
+    # --- MEDIUM: UI Features ---
+    - id: supplier_stats
+      name: "Thống kê NCC"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "supplier.*stats|supplier-stats"
+            in: "frontend"
+
+    - id: supplier_detail_drawer
+      name: "Chi tiết NCC (Drawer)"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "supplier-detail|detailId"
+            in: "frontend/src/app/(dashboard)/procurement"
+
+    - id: server_search
+      name: "Tìm kiếm phía server"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "search.*ilike|debouncedSearch"
+            in: "backend/modules/procurement"
+
+    - id: pagination
+      name: "Phân trang"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "skip|limit|PAGE_SIZE"
+            in: "frontend/src/app/(dashboard)/procurement"
+
+    - id: form_validation
+      name: "Validate form NCC (email, phone, website)"
+      priority: MEDIUM
+      verify_by:
+        grep:
+          - pattern: "validate_email|emailRegex"
+            in: "frontend/src/app/(dashboard)/procurement"
+
+    # --- LOW ---
+    - id: export_data
+      name: "Xuất dữ liệu (Excel/PDF)"
+      priority: LOW
+      verify_by:
+        grep:
+          - pattern: "export|excel|pdf"
+            in: "frontend/src/app/(dashboard)/procurement"

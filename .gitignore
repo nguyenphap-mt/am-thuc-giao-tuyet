@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Environment
+.env
+backend/.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Build outputs
+frontend/.next/
+frontend-next/.next/
+mobile/dist/
+mobile/.expo/
+
+# Temp files
+temp_*/
+*.log
+*.zip
+backend_log.txt
+backend_startup.log
+build_output.txt
+uvicorn.log
+tserrors.txt
+last_error.txt
+verify_output.txt
+verify_result.txt
+
+# Debug
+.debug/
+
+# Agent internals (keep prompts and workflows)
+.artifacts/
+.knowledges/
+.reports/
+.shared/
+
+# Large files
+*.csv
+catering-user-management.zip
+giao-tuyet-catering-menu.zip

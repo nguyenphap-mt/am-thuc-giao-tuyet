@@ -1,0 +1,746 @@
+# Business Flow Configuration - COMPLETE VERSION
+# Project: Ẩm Thực Giáo Tuyết - Catering ERP
+# Version: 2.0.0
+# Last Updated: 2026-01-26
+# Purpose: Define all business flows for workflow prd-audit Phase 2.5 validation
+
+version: "2.0"
+domain: "Catering ERP - Ẩm Thực Giáo Tuyết"
+
+# ==============================================================================
+# 1. MODULE REGISTRY (Complete)
+# ==============================================================================
+modules:
+  - name: quote
+    path_backend: backend/modules/quote
+    path_frontend: frontend/src/app/quote
+    entities: [Quote, QuoteItem, QuoteService, QuoteFurniture]
+    
+  - name: order
+    path_backend: backend/modules/order
+    path_frontend: frontend/src/app/order
+    entities: [Order, OrderItem, OrderPayment, OrderStaffAssignment]
+    
+  - name: inventory
+    path_backend: backend/modules/inventory
+    path_frontend: frontend/src/app/inventory
+    entities: [InventoryItem, InventoryStock, InventoryTransaction, InventoryLot, Warehouse]
+    
+  - name: procurement
+    path_backend: backend/modules/procurement
+    path_frontend: frontend/src/app/procurement
+    entities: [PurchaseOrder, PurchaseOrderItem, Supplier, PurchaseRequisition, PurchaseRequisitionLine]
+    
+  - name: crm
+    path_backend: backend/modules/crm
+    path_frontend: frontend/src/app/crm
+    entities: [Customer, CustomerContact]
+    
+  - name: finance
+    path_backend: backend/modules/finance
+    path_frontend: frontend/src/app/finance
+    entities: [Account, Journal, JournalLine, FinanceTransaction]
+    
+  - name: invoice
+    path_backend: backend/modules/invoice
+    path_frontend: frontend/src/app/invoice
+    entities: [Invoice, InvoiceItem]
+    
+  - name: hr
+    path_backend: backend/modules/hr
+    path_frontend: frontend/src/app/hr
+    entities: [Employee, StaffAssignment, Timesheet, PayrollPeriod, PayrollItem, SalaryAdvance, LeaveType, LeaveBalance, LeaveRequest]
+    
+  - name: menu
+    path_backend: backend/modules/menu
+    path_frontend: frontend/src/app/menu
+    entities: [MenuItem, MenuCategory, MenuSet]
+    
+  - name: user
+    path_backend: backend/modules/user
+    path_frontend: frontend/src/app/admin/user-management
+    entities: [User, Role, Permission]
+    
+  - name: calendar
+    path_backend: backend/modules/calendar
+    path_frontend: frontend/src/app/calendar
+    entities: [CalendarEvent]
+    
+  - name: notification
+    path_backend: backend/modules/notification
+    path_frontend: frontend/src/app
+    entities: [Notification]
+
+  - name: mobile
+    path_backend: backend/modules/mobile
+    path_mobile: mobile/
+    entities: [DeviceRegistration, EventCheckin, MobileSyncLog]
+    note: "Mobile platform — see .agent/config/mobile-roadmap.yaml for detailed status"
+    prd: ".agent/prds/PRD-mobile-platform-v2.md"
+    coverage:
+      done: [auth, schedule, notifications, purchase, prep, profile]
+      planned: [orders, inventory, dashboard, hr, finance, crm, calendar, quotes, reports]
+
+# ==============================================================================
+# 2. BUSINESS FLOWS
+# ==============================================================================
+flows:
+  # -------------------------------------------------------------------------
+  # FLOW 1: SALES FLOW (Báo giá → Đơn hàng → Thanh toán)
+  # -------------------------------------------------------------------------
+  sales_flow:
+    name: "Quote to Order to Payment"
+    description: "Luồng bán hàng từ báo giá đến thu tiền hoàn tất"
+    entities_involved: [Quote, Order, OrderPayment, Invoice, Customer, FinanceTransaction]
+    
+    states:
+      # Quote States
+      - entity: Quote
+        state: DRAFT
+        next: [PENDING, CANCELLED]
+        actions: [edit, submit_for_approval]
+      - entity: Quote
+        state: PENDING
+        next: [APPROVED, REJECTED, CANCELLED]
+        actions: [approve, reject, cancel]
+      - entity: Quote
+        state: APPROVED
+        next: [CONVERTED, CANCELLED]
+        actions: [convert_to_order, cancel]
+      - entity: Quote
+        state: REJECTED
+        next: [DRAFT]
+        actions: [revise]
+      - entity: Quote
+        state: CONVERTED
+        next: []  # Terminal state
+        actions: []
+      - entity: Quote
+        state: CANCELLED
+        next: []  # Terminal state
+        actions: []
+        
+      # Order States
+      - entity: Order
+        state: PENDING
+        next: [CONFIRMED, CANCELLED]
+        actions: [confirm, cancel]
+      - entity: Order
+        state: CONFIRMED
+        next: [IN_PROGRESS, CANCELLED]
+        actions: [start_event, cancel]
+      - entity: Order
+        state: IN_PROGRESS
+        next: [COMPLETED]
+        actions: [complete]
+      - entity: Order
+        state: COMPLETED
+        next: [PAID]
+        actions: [record_final_payment]
+      - entity: Order
+        state: PAID
+        next: []  # Terminal state
+        actions: []
+      - entity: Order
+        state: CANCELLED
+        next: []  # Terminal state
+        actions: []
+    
+    integrations:
+      - source: Quote
+        target: Order
+        trigger: "Quote.status == APPROVED && user.action == convert"
+        action: "convert_quote_to_order(quote_id)"
+        verify_in: "backend/modules/quote/infrastructure/http_router.py"
+        function_pattern: "convert.*order"
+        
+      - source: Order
+        target: Invoice
+        trigger: "Order.status == COMPLETED"
+        action: "create_invoice_from_order(order_id)"
+        verify_in: "backend/modules/invoice/infrastructure/http_router.py"
+        function_pattern: "create.*invoice.*order"
+        
+      - source: OrderPayment
+        target: FinanceTransaction
+        trigger: "OrderPayment.created"
+        action: "create_finance_transaction(payment)"
+        verify_in: "backend/modules/order/infrastructure/http_router.py"
+        function_pattern: "record.*payment|add.*payment"
+        
+      - source: Quote
+        target: Customer
+        trigger: "Quote.customer_id not set && Quote.customer_name exists"
+        action: "create_or_link_customer(quote)"
+        verify_in: "backend/modules/quote/infrastructure/http_router.py"
+        function_pattern: "create.*customer|upsert.*customer"
+    
+    business_rules:
+      - rule_id: BR001
+        description: "Chỉ Quote APPROVED mới được chuyển thành Order"
+        entity: Quote
+        condition: "status == 'APPROVED'"
+        before_action: convert_to_order
+        severity: CRITICAL
+        
+      - rule_id: BR002
+        description: "Quote phải có ít nhất 1 item"
+        entity: Quote
+        condition: "len(items) >= 1"
+        before_action: submit_for_approval
+        severity: HIGH
+        
+      - rule_id: BR003
+        description: "Order phải có deposit >= 30% để confirm"
+        entity: Order
+        condition: "paid_amount >= total_amount * 0.3"
+        before_action: confirm
+        severity: MEDIUM
+        
+      - rule_id: BR004
+        description: "Order chỉ COMPLETED khi tất cả staff đã assigned"
+        entity: Order
+        condition: "len(staff_assignments) >= 1"
+        before_action: complete
+        severity: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # FLOW 2: PROCUREMENT FLOW (Mua hàng → Nhập kho → Thanh toán NCC)
+  # -------------------------------------------------------------------------
+  procurement_flow:
+    name: "Purchase to Inventory to Supplier Payment"
+    description: "Luồng mua hàng từ tạo PO đến thanh toán nhà cung cấp"
+    entities_involved: [PurchaseOrder, InventoryItem, InventoryTransaction, InventoryLot, Supplier, FinanceTransaction]
+    
+    states:
+      - entity: PurchaseOrder
+        state: DRAFT
+        next: [SENT, CANCELLED]
+        actions: [edit, send_to_supplier, cancel]
+      - entity: PurchaseOrder
+        state: SENT
+        next: [RECEIVED, CANCELLED]
+        actions: [receive, cancel]
+      - entity: PurchaseOrder
+        state: RECEIVED
+        next: [PAID]
+        actions: [record_payment]
+      - entity: PurchaseOrder
+        state: PAID
+        next: []
+        actions: []
+      - entity: PurchaseOrder
+        state: CANCELLED
+        next: []
+        actions: []
+    
+    integrations:
+      - source: PurchaseOrder
+        target: InventoryTransaction
+        trigger: "PurchaseOrder.status == RECEIVED"
+        action: "create_import_transactions(po)"
+        verify_in: "backend/modules/procurement/infrastructure/http_router.py"
+        function_pattern: "receive.*po|import.*inventory"
+        
+      - source: PurchaseOrder
+        target: InventoryLot
+        trigger: "PurchaseOrder.status == RECEIVED && lot_tracking_enabled"
+        action: "create_lot_from_po(po)"
+        verify_in: "backend/modules/inventory/infrastructure/http_router.py"
+        function_pattern: "create.*lot"
+        
+      - source: PurchaseOrder
+        target: Supplier
+        trigger: "PurchaseOrder.payment recorded"
+        action: "update_supplier_balance(po)"
+        verify_in: "backend/modules/procurement/infrastructure/http_router.py"
+        function_pattern: "update.*supplier|payment.*supplier"
+        
+      - source: PurchaseOrder
+        target: FinanceTransaction
+        trigger: "PurchaseOrder.paid"
+        action: "create_expense_transaction(po)"
+        verify_in: "backend/modules/finance/infrastructure/http_router.py"
+        function_pattern: "create.*expense|record.*payment"
+    
+    business_rules:
+      - rule_id: BR010
+        description: "PO phải có ít nhất 1 item"
+        entity: PurchaseOrder
+        condition: "len(items) >= 1"
+        before_action: send_to_supplier
+        severity: HIGH
+        
+      - rule_id: BR011
+        description: "PO receive phải check số lượng với dự kiến"
+        entity: PurchaseOrder
+        condition: "received_qty matches expected_qty"
+        before_action: receive
+        severity: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # FLOW 3: INVENTORY FLOW (Quản lý kho)
+  # -------------------------------------------------------------------------
+  inventory_flow:
+    name: "Inventory Management"
+    description: "Luồng quản lý tồn kho: nhập, xuất, điều chỉnh, hết hạn"
+    entities_involved: [InventoryItem, InventoryStock, InventoryTransaction, InventoryLot, Warehouse]
+    
+    states:
+      - entity: InventoryTransaction
+        type: IMPORT
+        description: "Nhập kho từ PO hoặc manual"
+        effects: "stock.quantity += txn.quantity"
+        
+      - entity: InventoryTransaction
+        type: EXPORT
+        description: "Xuất kho cho Order hoặc manual"
+        effects: "stock.quantity -= txn.quantity"
+        
+      - entity: InventoryTransaction
+        type: ADJUST
+        description: "Điều chỉnh kiểm kê"
+        effects: "stock.quantity = new_value"
+        
+      - entity: InventoryTransaction
+        type: REVERSAL
+        description: "Đảo ngược giao dịch sai"
+        effects: "reverse previous txn"
+        
+      - entity: InventoryLot
+        state: ACTIVE
+        next: [DEPLETED, EXPIRED, DAMAGED]
+      - entity: InventoryLot
+        state: DEPLETED
+        next: []
+      - entity: InventoryLot
+        state: EXPIRED
+        next: []
+      - entity: InventoryLot
+        state: DAMAGED
+        next: []
+    
+    integrations:
+      - source: Order
+        target: InventoryTransaction
+        trigger: "Order.status == CONFIRMED"
+        action: "reserve_or_export_inventory(order)"
+        verify_in: "backend/modules/order"
+        function_pattern: "export.*inventory|reserve.*stock"
+        
+      - source: InventoryStock
+        target: Notification
+        trigger: "stock.quantity < item.min_stock"
+        action: "send_low_stock_alert(item)"
+        verify_in: "backend/modules/notification"
+        function_pattern: "low.*stock|alert"
+        
+      - source: InventoryLot
+        target: Notification
+        trigger: "lot.expiry_date < today + 7 days"
+        action: "send_expiry_alert(lot)"
+        verify_in: "backend/modules/notification"
+        function_pattern: "expir.*alert"
+    
+    business_rules:
+      - rule_id: BR020
+        description: "Không được xuất kho quá số lượng tồn"
+        entity: InventoryTransaction
+        condition: "export_qty <= current_stock"
+        before_action: export
+        severity: CRITICAL
+        
+      - rule_id: BR021
+        description: "Mọi transaction phải có reference_doc"
+        entity: InventoryTransaction
+        condition: "reference_doc is not null"
+        before_action: create
+        severity: MEDIUM
+
+  # -------------------------------------------------------------------------
+  # FLOW 4: FINANCE FLOW (Kế toán ghi sổ kép)
+  # -------------------------------------------------------------------------
+  finance_flow:
+    name: "Double-Entry Bookkeeping"
+    description: "Luồng ghi sổ kế toán theo nguyên tắc ghi sổ kép"
+    entities_involved: [Account, Journal, JournalLine, FinanceTransaction]
+    
+    states:
+      - entity: Journal
+        state: DRAFT
+        next: [POSTED]
+      - entity: Journal
+        state: POSTED
+        next: [REVERSED]
+      - entity: Journal
+        state: REVERSED
+        next: []
+        
+      - entity: FinanceTransaction
+        type: RECEIPT
+        description: "Thu tiền (từ Order, khác)"
+        journal_pattern: "Nợ TK Tiền mặt/Ngân hàng - Có TK Doanh thu"
+        
+      - entity: FinanceTransaction
+        type: PAYMENT
+        description: "Chi tiền (cho Supplier, lương, chi phí)"
+        journal_pattern: "Nợ TK Chi phí - Có TK Tiền mặt/Ngân hàng"
+    
+    integrations:
+      - source: OrderPayment
+        target: Journal
+        trigger: "OrderPayment.created"
+        action: "auto_create_revenue_journal(payment)"
+        verify_in: "backend/modules/finance"
+        function_pattern: "create.*journal|record.*journal"
+        
+      - source: PurchaseOrder
+        target: Journal
+        trigger: "PurchaseOrder.paid"
+        action: "auto_create_expense_journal(po)"
+        verify_in: "backend/modules/finance"
+        function_pattern: "create.*journal|expense.*journal"
+        
+      - source: PayrollPeriod
+        target: Journal
+        trigger: "PayrollPeriod.status == PAID"
+        action: "auto_create_salary_journal(payroll)"
+        verify_in: "backend/modules/finance"
+        function_pattern: "salary.*journal|payroll.*journal"
+    
+    business_rules:
+      - rule_id: BR030
+        description: "Journal phải cân đối: Tổng Nợ = Tổng Có"
+        entity: Journal
+        condition: "sum(debit) == sum(credit)"
+        before_action: post
+        severity: CRITICAL
+        
+      - rule_id: BR031
+        description: "Journal đã POSTED không được sửa, chỉ được đảo"
+        entity: Journal
+        condition: "status != POSTED"
+        before_action: edit
+        severity: CRITICAL
+
+  # -------------------------------------------------------------------------
+  # FLOW 5: HR FLOW (Nhân sự & Lương)
+  # -------------------------------------------------------------------------
+  hr_flow:
+    name: "HR & Payroll Management"
+    description: "Luồng quản lý nhân sự, chấm công, tính lương"
+    entities_involved: [Employee, StaffAssignment, Timesheet, PayrollPeriod, PayrollItem, LeaveRequest, FinanceTransaction]
+    
+    states:
+      - entity: Employee
+        state: ACTIVE
+        next: [INACTIVE, TERMINATED]
+      - entity: Employee
+        state: INACTIVE
+        next: [ACTIVE, TERMINATED]
+      - entity: Employee
+        state: TERMINATED
+        next: []
+        
+      - entity: PayrollPeriod
+        state: DRAFT
+        next: [CALCULATED]
+      - entity: PayrollPeriod
+        state: CALCULATED
+        next: [APPROVED, DRAFT]
+      - entity: PayrollPeriod
+        state: APPROVED
+        next: [PAID]
+      - entity: PayrollPeriod
+        state: PAID
+        next: []
+        
+      - entity: LeaveRequest
+        state: PENDING
+        next: [APPROVED, REJECTED]
+      - entity: LeaveRequest
+        state: APPROVED
+        next: [CANCELLED]
+      - entity: LeaveRequest
+        state: REJECTED
+        next: []
+      - entity: LeaveRequest
+        state: CANCELLED
+        next: []
+    
+    integrations:
+      - source: Order
+        target: StaffAssignment
+        trigger: "Order.confirmed"
+        action: "create_staff_assignments(order)"
+        verify_in: "backend/modules/hr"
+        function_pattern: "assign.*staff|create.*assignment"
+        
+      - source: StaffAssignment
+        target: Timesheet
+        trigger: "Event completed"
+        action: "create_timesheets_from_assignment(assignment)"
+        verify_in: "backend/modules/hr"
+        function_pattern: "create.*timesheet"
+        
+      - source: Timesheet
+        target: PayrollItem
+        trigger: "PayrollPeriod.calculating"
+        action: "aggregate_timesheets_to_payroll(period)"
+        verify_in: "backend/modules/hr"
+        function_pattern: "calculate.*payroll|aggregate.*timesheet"
+        
+      - source: PayrollPeriod
+        target: FinanceTransaction
+        trigger: "PayrollPeriod.status == PAID"
+        action: "create_salary_transactions(period)"
+        verify_in: "backend/modules/finance"
+        function_pattern: "salary.*transaction|payroll.*payment"
+        
+      - source: LeaveRequest
+        target: LeaveBalance
+        trigger: "LeaveRequest.status == APPROVED"
+        action: "deduct_leave_balance(request)"
+        verify_in: "backend/modules/hr"
+        function_pattern: "deduct.*leave|update.*balance"
+    
+    business_rules:
+      - rule_id: BR040
+        description: "Nhân viên chỉ được nghỉ nếu còn ngày phép"
+        entity: LeaveRequest
+        condition: "balance.remaining >= request.days"
+        before_action: approve
+        severity: MEDIUM
+        
+      - rule_id: BR041
+        description: "Payroll phải tính đầy đủ tất cả nhân viên ACTIVE"
+        entity: PayrollPeriod
+        condition: "all active employees included"
+        before_action: approve
+        severity: HIGH
+
+  # -------------------------------------------------------------------------
+  # FLOW 6: USER/AUTH FLOW (Quản lý người dùng)
+  # -------------------------------------------------------------------------
+  user_flow:
+    name: "User Authentication & Authorization"
+    description: "Luồng xác thực và phân quyền người dùng"
+    entities_involved: [User, Role, Permission]
+    
+    states:
+      - entity: User
+        state: ACTIVE
+        next: [INACTIVE, DELETED]
+        description: "Người dùng đang hoạt động"
+      - entity: User
+        state: INACTIVE
+        next: [ACTIVE, DELETED]
+        description: "Người dùng bị khóa tạm thời"
+      - entity: User
+        state: DELETED
+        next: []
+        description: "Người dùng đã xóa (soft delete)"
+    
+    integrations:
+      - source: User
+        target: ActivityLog
+        trigger: "User.login"
+        action: "log_login_activity(user)"
+        verify_in: "backend/core/auth"
+        function_pattern: "log.*login|activity.*log"
+        
+      - source: User
+        target: Session
+        trigger: "User.login successful"
+        action: "create_session(user)"
+        verify_in: "backend/core/auth"
+        function_pattern: "create.*session|generate.*token"
+        
+      - source: Role
+        target: Permission
+        trigger: "Role.permissions updated"
+        action: "sync_permissions_to_cache(role)"
+        verify_in: "backend/core/auth"
+        function_pattern: "sync.*permission|update.*permission"
+    
+    business_rules:
+      - rule_id: BR050
+        description: "User phải có role hợp lệ"
+        entity: User
+        condition: "role in defined_roles"
+        before_action: create
+        severity: HIGH
+        
+      - rule_id: BR051
+        description: "Mỗi action phải check permission"
+        entity: User
+        condition: "has_permission(user, action)"
+        before_action: any_protected_action
+        severity: CRITICAL
+        
+      - rule_id: BR052
+        description: "Super Admin không thể tự xóa mình"
+        entity: User
+        condition: "current_user.id != target_user.id OR current_user.role != super_admin"
+        before_action: delete
+        severity: CRITICAL
+
+  # -------------------------------------------------------------------------
+  # FLOW 7: INVOICE FLOW (Hóa đơn VAT)
+  # -------------------------------------------------------------------------
+  invoice_flow:
+    name: "Invoice Management"
+    description: "Luồng xuất hóa đơn VAT"
+    entities_involved: [Invoice, InvoiceItem, Order]
+    
+    states:
+      - entity: Invoice
+        state: DRAFT
+        next: [ISSUED, CANCELLED]
+      - entity: Invoice
+        state: ISSUED
+        next: [CANCELLED]
+      - entity: Invoice
+        state: CANCELLED
+        next: []
+    
+    integrations:
+      - source: Order
+        target: Invoice
+        trigger: "Order.completed && needs_vat_invoice"
+        action: "create_invoice_from_order(order)"
+        verify_in: "backend/modules/invoice"
+        function_pattern: "create.*invoice|generate.*invoice"
+    
+    business_rules:
+      - rule_id: BR060
+        description: "Hóa đơn đã xuất không được sửa"
+        entity: Invoice
+        condition: "status != ISSUED"
+        before_action: edit
+        severity: CRITICAL
+
+  # -------------------------------------------------------------------------
+  # FLOW 8: CALENDAR/EVENT FLOW (Lịch tiệc)
+  # -------------------------------------------------------------------------
+  calendar_flow:
+    name: "Event Calendar Management"
+    description: "Quản lý lịch tiệc và sự kiện"
+    entities_involved: [Order, CalendarEvent, StaffAssignment]
+    
+    integrations:
+      - source: Order
+        target: CalendarEvent
+        trigger: "Order.confirmed"
+        action: "create_calendar_event(order)"
+        verify_in: "backend/modules/calendar"
+        function_pattern: "create.*event|add.*calendar"
+        
+      - source: CalendarEvent
+        target: Notification
+        trigger: "event.date - 1 day"
+        action: "send_event_reminder(event)"
+        verify_in: "backend/modules/notification"
+        function_pattern: "remind|notification"
+
+# ==============================================================================
+# 3. DEPENDENCIES (Module → Module)
+# ==============================================================================
+dependencies:
+  quote:
+    depends_on: [crm, menu]
+    provides_to: [order]
+    
+  order:
+    depends_on: [quote, crm, menu, hr]
+    provides_to: [invoice, finance, calendar]
+    
+  inventory:
+    depends_on: [procurement]
+    provides_to: [menu, order]
+    
+  procurement:
+    depends_on: [inventory]
+    provides_to: [finance]
+    
+  finance:
+    depends_on: [order, procurement, hr]
+    provides_to: []
+    
+  invoice:
+    depends_on: [order]
+    provides_to: [finance]
+    
+  hr:
+    depends_on: [user]
+    provides_to: [order, finance]
+    
+  user:
+    depends_on: []
+    provides_to: [hr, quote, order, inventory, procurement, finance]
+    
+  calendar:
+    depends_on: [order]
+    provides_to: [notification]
+    
+  menu:
+    depends_on: [inventory]
+    provides_to: [quote, order]
+
+# ==============================================================================
+# 4. SYNC RULES (FE/BE must match)
+# ==============================================================================
+sync_rules:
+  - name: "Order Status Sync"
+    source_of_truth: backend/modules/order/domain/models.py::OrderModel.status
+    must_match: frontend/src/app/order/models/order.model.ts::OrderStatus
+    severity: HIGH
+    
+  - name: "Quote Status Sync"
+    source_of_truth: backend/modules/quote/domain/models.py::QuoteModel.status
+    must_match: frontend/src/app/quote/models/quote.model.ts::QuoteStatus
+    severity: HIGH
+    
+  - name: "Invoice Status Sync"
+    source_of_truth: backend/modules/invoice/domain/models.py::InvoiceModel.status
+    must_match: frontend/src/app/invoice/models/invoice.model.ts::InvoiceStatus
+    severity: HIGH
+    
+  - name: "PO Status Sync"
+    source_of_truth: backend/modules/procurement/domain/models.py::PurchaseOrderModel.status
+    must_match: frontend/src/app/procurement/models/po.model.ts::POStatus
+    severity: HIGH
+    
+  - name: "User Role Sync"
+    source_of_truth: backend/core/auth/models.py::User.role
+    must_match: frontend/src/app/core/services/user.service.ts::UserRole
+    severity: CRITICAL
+    
+  - name: "PayrollPeriod Status Sync"
+    source_of_truth: backend/modules/hr/domain/models.py::PayrollPeriodModel.status
+    must_match: frontend/src/app/hr/models/payroll.model.ts::PayrollStatus
+    severity: HIGH
+    
+  - name: "Leave Request Status Sync"
+    source_of_truth: backend/modules/hr/domain/models.py::LeaveRequestModel.status
+    must_match: frontend/src/app/hr/models/leave.model.ts::LeaveRequestStatus
+    severity: MEDIUM
+
+# ==============================================================================
+# 5. CROSS-MODULE BUSINESS RULES (Global)
+# ==============================================================================
+global_business_rules:
+  - rule_id: GBR001
+    description: "Mọi bảng có tenant_id phải filter theo tenant hiện tại"
+    applies_to: ALL_MODULES
+    severity: CRITICAL
+    
+  - rule_id: GBR002
+    description: "Mọi action quan trọng phải ghi ActivityLog"
+    applies_to: [order, quote, finance, hr, user]
+    severity: HIGH
+    
+  - rule_id: GBR003
+    description: "Mọi transaction tài chính phải tạo Journal entry"
+    applies_to: [order, procurement, hr]
+    severity: HIGH
