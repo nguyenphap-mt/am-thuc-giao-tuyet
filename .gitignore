@@ -49,3 +49,6 @@ verify_result.txt
 *.csv
 catering-user-management.zip
 giao-tuyet-catering-menu.zip
+
+# Deployment credentials (sensitive)
+.agent/DEPLOYMENT.md

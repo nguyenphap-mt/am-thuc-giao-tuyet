@@ -18,6 +18,50 @@ last_updated: 2026-01-30
 
 ---
 
+## Step 0: Bug Knowledge Lookup (Tra cứu kiến thức) — NEW
+
+> [!IMPORTANT]
+> **MANDATORY FIRST STEP**: Tìm bug tương tự trong `.debug/` TRƯỚC KHI phân tích.
+> Nếu tìm thấy bug giống hệt → có thể skip Step 2 và apply fix trực tiếp.
+
+### 0.1 Search Bug Index
+
+```powershell
+# // turbo - Tìm bug theo module hoặc keyword trong INDEX
+Select-String -Path ".debug/INDEX.md" -Pattern "{module_name}" -CaseSensitive:$false
+Select-String -Path ".debug/INDEX.md" -Pattern "{error_keyword}" -CaseSensitive:$false
+```
+
+### 0.2 Search Fix Reports (Deep Search)
+
+Nếu INDEX không đủ thông tin, search trực tiếp trong các fix reports:
+
+```powershell
+# // turbo - Search across all fix reports
+Get-ChildItem -Path ".debug/BUG-*/fix-report.md" -Recurse | Select-String -Pattern "{error_message}" -CaseSensitive:$false
+Get-ChildItem -Path ".debug/BUG-*/*.md" -Recurse | Select-String -Pattern "{keyword}" -CaseSensitive:$false
+```
+
+### 0.3 Knowledge Assessment
+
+| Question | Answer |
+| :--- | :--- |
+| Found similar bug? | ⬜ Yes / ⬜ No |
+| Similar Bug ID | {BUG-ID or N/A} |
+| Root cause category match? | ⬜ Yes / ⬜ No |
+| Can reuse fix pattern? | ⬜ Yes (skip to Step 3) / ⬜ No (continue Step 1) |
+
+**If reusable pattern found**:
+- [ ] Read the similar bug's `fix-report.md`
+- [ ] Note the root cause category and prevention pattern
+- [ ] Apply same fix pattern → Skip to Step 3
+- [ ] Reference original Bug ID in fix comments
+
+**If no similar bug found**:
+- [ ] Continue with Step 1 (full analysis)
+
+---
+
 ## Step 1: Bug Analysis (Phân tích lỗi)
 
 ### 1.1 Thu thập thông tin (MANDATORY TEMPLATE)
@@ -358,6 +402,68 @@ Follow `.agent/GIT_WORKFLOW.md` for PR template.
 | Security review (if flagged) | Manual review | ⬜ |
 | PR created | Git workflow | ⬜ |
 | Evidence archived | `.debug/` folder | ⬜ |
+| Fix report generated | Step 5.5 | ⬜ |
+| Bug Index updated | Step 5.6 | ⬜ |
+
+### 5.5 Auto-Generate Fix Report (MANDATORY) — NEW
+
+> [!CAUTION]
+> **PHẢI tạo fix-report.md** sau khi fix xong. Đây là kiến thức cho bug tương tự trong tương lai.
+
+1. **Use template**: `.agent/templates/fix-report-template.md`
+
+2. **Create fix report**:
+   ```powershell
+   # // turbo - Copy template
+   Copy-Item ".agent/templates/fix-report-template.md" ".debug/BUG-{bug-id}/fix-report.md"
+   ```
+
+3. **Fill in ALL fields** from the template, including:
+   - [ ] YAML frontmatter (bug_id, module, severity, root_cause_category, keywords, files_changed)
+   - [ ] Bug Information table
+   - [ ] Root Cause Analysis (5 Whys from Step 2.2)
+   - [ ] Solution Applied (files changed, code diffs from Step 3.2)
+   - [ ] Verification results (test results from Step 4)
+   - [ ] Prevention measures
+   - [ ] Related Bugs (from Step 0 lookup)
+
+4. **Assign root_cause_category** from the standard taxonomy:
+   | Category | When to Use |
+   | :--- | :--- |
+   | `api-mismatch` | Frontend gọi sai endpoint hoặc response format |
+   | `timezone` | Timezone mismatch (naive vs aware) |
+   | `auth-storage` | Token/session storage issues |
+   | `schema-mismatch` | DB schema khác ORM model |
+   | `missing-header` | Thiếu HTTP header (X-Tenant-ID, etc.) |
+   | `duplicate-code` | Code duplication gây bug |
+   | `missing-tests` | Thiếu test coverage |
+   | `route-redirect` | FastAPI redirect/routing issues |
+   | `other` | Không thuộc category nào |
+
+5. **Select 3-5 keywords** that another AI could use to find this bug:
+   - Include error codes (404, 500, 401)
+   - Include technical terms (datetime, localStorage, RLS)
+   - Include module/feature names
+
+### 5.6 Update Bug Index (MANDATORY) — NEW
+
+> [!IMPORTANT]
+> **PHẢI cập nhật `.debug/INDEX.md`** để bug tiếp theo có thể tìm thấy bug này.
+
+1. **Append new row** to Bug Index Table in `.debug/INDEX.md`:
+   ```markdown
+   | {BUG-ID} | {Module} | {Severity} | `{root_cause_category}` | {keyword1}, {keyword2}, {keyword3} | `{file1}`, `{file2}` | ✅ | {YYYY-MM-DD} |
+   ```
+
+2. **Verify index entry**:
+   ```powershell
+   # // turbo - Verify bug appears in INDEX
+   Select-String -Path ".debug/INDEX.md" -Pattern "{BUG-ID}"
+   ```
+
+3. **If new root_cause_category** detected:
+   - Add to Root Cause Categories table in INDEX.md
+   - Include example Bug ID
 
 ---
 

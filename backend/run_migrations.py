@@ -11,7 +11,7 @@ import asyncpg
 # Supabase Direct Connection (for migrations — pooler format breaks asyncpg username parsing)
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:ATGT_ERP_2025_Secure_DB@db.udgtiyflupuxpmrtvnet.supabase.co:5432/postgres"
+    "postgresql://postgres:SuperSecure2026!@db.udgtiyflupuxpmrtvnet.supabase.co:5432/postgres"
 )
 
 MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "migrations")

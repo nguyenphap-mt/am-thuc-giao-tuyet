@@ -17,7 +17,7 @@ from backend.modules.user.domain.session_model import UserSessionModel
 router = APIRouter(prefix="/users", tags=["User Management"])
 
 
-@router.get("/", response_model=List[UserSchema], dependencies=[Depends(require_permission("user", "view"))])
+@router.get("", response_model=List[UserSchema], dependencies=[Depends(require_permission("user", "view"))])
 async def read_users(
     skip: int = 0, 
     limit: int = 100,
@@ -227,7 +227,7 @@ async def get_user(
     return user
 
 
-@router.post("/", response_model=UserSchema, dependencies=[Depends(require_permission("user", "create"))])
+@router.post("", response_model=UserSchema, dependencies=[Depends(require_permission("user", "create"))])
 async def create_user(
     user: UserCreate, 
     request: Request,

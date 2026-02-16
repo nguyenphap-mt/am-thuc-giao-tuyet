@@ -26,4 +26,8 @@ ENV PYTHONPATH=/app
 EXPOSE 8080
 
 # Start uvicorn server
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# --proxy-headers: Trust X-Forwarded-Proto header from reverse proxy (Vercel/Cloud Run)
+# --forwarded-allow-ips='*': Allow proxy headers from any IP (Cloud Run load balancer)
+# BUGFIX: BUG-20260216-004 - Without these, FastAPI's trailing slash redirects use
+#         http:// scheme internally, causing Mixed Content blocking on HTTPS frontends.
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips='*'"]

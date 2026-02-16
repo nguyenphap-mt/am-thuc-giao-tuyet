@@ -53,7 +53,7 @@ router = APIRouter(prefix="/roles", tags=["Role Management"])
 
 
 @router.get(
-    "/",
+    "",
     response_model=List[RoleResponse],
     dependencies=[Depends(require_permission("user", "view"))]
 )
@@ -68,7 +68,7 @@ async def list_roles(
 
 
 @router.post(
-    "/",
+    "",
     response_model=RoleResponse,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_permission("user", "manage_roles"))]

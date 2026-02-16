@@ -690,7 +690,7 @@ async def create_revision_quote(
         deposit_amount=deposit_amount
     )
 
-@router.get("/", response_model=PaginatedOrderResponse)
+@router.get("", response_model=PaginatedOrderResponse)
 async def list_orders(
     status: Optional[str] = Query(None, description="Filter by status"),
     search: Optional[str] = Query(None, description="Search by code or customer name"),
@@ -866,7 +866,7 @@ async def get_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant
     return order
 
 
-@router.post("/", response_model=Order)
+@router.post("", response_model=Order)
 async def create_order(data: OrderBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Create a new order"""
     

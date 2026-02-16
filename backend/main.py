@@ -14,7 +14,13 @@ from backend.core.auth.permissions import require_permission
 app = FastAPI(
     title="AI Workforce API",
     description="Orchestration API for Modular Monolith ERP",
-    version="3.0.0"
+    version="3.0.0",
+    # BUGFIX: BUG-20260216-004 — Users Tab Redirect to Login
+    # FastAPI's default redirect_slashes=True causes 307 redirects when URL
+    # trailing slash doesn't match route definition. The browser follows the 307
+    # but strips the Authorization header, causing a 401 on the redirected request.
+    # This triggers the frontend API interceptor to clear auth and redirect to /login.
+    redirect_slashes=False,
 )
 
 # ISS-002: Enable Rate Limiting
@@ -37,7 +43,7 @@ else:
     ALLOWED_ORIGINS = [
         "http://localhost:3000",
         "http://localhost:4500",
-        "https://am-thuc-giao-tuyet.vercel.app",
+        "https://amthucgiaotuyet.vercel.app",
     ]
     _allow_credentials = True
 
