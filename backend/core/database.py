@@ -27,7 +27,9 @@ async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=False,  # Set True for SQL debugging
     pool_size=5,
-    max_overflow=10
+    max_overflow=10,
+    # Disable prepared statement caching for PgBouncer/Supabase pooler compatibility
+    connect_args={"statement_cache_size": 0, "prepared_statement_cache_size": 0}
 )
 
 # Async Session Factory
