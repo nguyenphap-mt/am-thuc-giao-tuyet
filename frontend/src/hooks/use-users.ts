@@ -46,7 +46,7 @@ export function useUsers(filters: UserFilters = {}) {
             if (filters.role && filters.role !== 'all') params.set('role', filters.role);
             if (filters.status && filters.status !== 'all') params.set('status', filters.status);
             const queryStr = params.toString() ? `?${params.toString()}` : '';
-            return api.get<UserItem[]>(`/users${queryStr}`);
+            return api.get<UserItem[]>(`/users/${queryStr}`);
         },
     });
 }
@@ -61,7 +61,7 @@ export function useUserStats() {
 export function useRoles() {
     return useQuery({
         queryKey: userKeys.roles(),
-        queryFn: () => api.get<RoleOption[]>('/roles'),
+        queryFn: () => api.get<RoleOption[]>('/roles/'),
     });
 }
 
@@ -79,7 +79,7 @@ export function useCreateUser() {
 
     return useMutation({
         mutationFn: (data: CreateUserData) =>
-            api.post<UserItem>('/users', data),
+            api.post<UserItem>('/users/', data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: userKeys.all });
             toast.success('Tạo người dùng thành công');
