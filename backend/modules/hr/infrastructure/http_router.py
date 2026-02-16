@@ -2310,7 +2310,7 @@ async def list_leave_types(tenant_id: UUID = Depends(get_current_tenant), db: As
 # EMPLOYEE SELF-SERVICE ENDPOINTS
 # ============================================
 
-@router.get("/leave/my-balances", response_model=List["LeaveBalanceResponse"])
+@router.get("/leave/my-balances", response_model=List[LeaveBalanceResponse])
 async def get_my_leave_balances(
     year: int = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
@@ -2388,7 +2388,7 @@ async def get_my_leave_balances(
     return result
 
 
-@router.get("/leave/my-requests", response_model=List["LeaveRequestResponse"])
+@router.get("/leave/my-requests", response_model=List[LeaveRequestResponse])
 async def get_my_leave_requests(
     status: Optional[str] = Query(None),
     limit: int = Query(50, le=200),
