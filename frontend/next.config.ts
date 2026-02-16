@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
-const API_BACKEND = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
-  .replace(/\/api\/v1\/?$/, '');
+// Server-side env var for rewrites destination (Cloud Run backend)
+const API_BACKEND = process.env.API_BACKEND_URL || 'http://localhost:8000';
 
 const nextConfig: NextConfig = {
   async rewrites() {
