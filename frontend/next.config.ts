@@ -1,12 +1,17 @@
 import type { NextConfig } from "next";
 
-// API proxy is now handled by /src/app/api/v1/[...path]/route.ts
-// which preserves trailing slashes (required by backend with redirect_slashes=False)
-// See BUG-20260216-005
+const API_BACKEND = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
+  .replace(/\/api\/v1\/?$/, '');
 
 const nextConfig: NextConfig = {
-  // No rewrites needed — catch-all API route handler handles proxying
+  async rewrites() {
+    return [
+      {
+        source: '/api/v1/:path*',
+        destination: `${API_BACKEND}/api/v1/:path*`,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
-
