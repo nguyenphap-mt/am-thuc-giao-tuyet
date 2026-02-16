@@ -14,12 +14,12 @@
         "preview": {
             "distribution": "internal",
             "env": {
-                "EXPO_PUBLIC_API_URL": "REPLACE_WITH_CLOUD_RUN_URL"
+                "EXPO_PUBLIC_API_URL": "https://am-thuc-api-321822391174.asia-southeast1.run.app/api/v1"
             }
         },
         "production": {
             "env": {
-                "EXPO_PUBLIC_API_URL": "REPLACE_WITH_CLOUD_RUN_URL"
+                "EXPO_PUBLIC_API_URL": "https://am-thuc-api-321822391174.asia-southeast1.run.app/api/v1"
             }
         }
     }
