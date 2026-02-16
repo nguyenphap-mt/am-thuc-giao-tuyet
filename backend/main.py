@@ -24,12 +24,27 @@ app.add_exception_handler(RateLimitExceeded, get_rate_limit_exceeded_handler())
 # CORS Configuration — reads from CORS_ORIGINS env var in production
 import os
 _cors_origins_env = os.getenv("CORS_ORIGINS", "")
-ALLOWED_ORIGINS = [o.strip() for o in _cors_origins_env.split(",") if o.strip()] if _cors_origins_env else ["*"]
+if _cors_origins_env == "*":
+    # Wildcard mode: allow all origins WITHOUT credentials (CORS spec requirement)
+    ALLOWED_ORIGINS = ["*"]
+    _allow_credentials = False
+elif _cors_origins_env:
+    # Explicit origins: allow credentials for trusted domains
+    ALLOWED_ORIGINS = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    _allow_credentials = True
+else:
+    # Local development: allow common dev origins with credentials
+    ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://localhost:4500",
+        "https://am-thuc-giao-tuyet.vercel.app",
+    ]
+    _allow_credentials = True
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True if _cors_origins_env else False,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
