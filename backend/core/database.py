@@ -14,8 +14,13 @@ DATABASE_URL = os.getenv(
     "postgresql://postgres:postgres@localhost:5432/catering_db"
 )
 
-# Convert to async URL for asyncpg
-ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+# Convert to async URL for asyncpg (handle both formats)
+if "postgresql+asyncpg://" in DATABASE_URL:
+    ASYNC_DATABASE_URL = DATABASE_URL
+elif "postgresql://" in DATABASE_URL:
+    ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+else:
+    ASYNC_DATABASE_URL = DATABASE_URL
 
 # Async Engine for FastAPI routes
 async_engine = create_async_engine(
@@ -35,7 +40,8 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 # Sync Engine for migrations/scripts
-sync_engine = create_engine(DATABASE_URL, echo=False)
+SYNC_DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+sync_engine = create_engine(SYNC_DATABASE_URL, echo=False)
 SyncSessionLocal = sessionmaker(bind=sync_engine)
 
 # Base class for ORM models
