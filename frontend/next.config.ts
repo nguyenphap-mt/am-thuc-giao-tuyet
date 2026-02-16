@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 // API_BACKEND_URL: Server-side rewrite destination (Cloud Run URL)
-// NEXT_PUBLIC_API_URL: Client-side base URL (should be /api/v1 in production to use proxy)
-const API_BACKEND = process.env.API_BACKEND_URL || 'http://localhost:8000';
+// Falls back to production Cloud Run URL; localhost for local dev via .env.local
+const API_BACKEND = process.env.API_BACKEND_URL || 'https://am-thuc-api-321822391174.asia-southeast1.run.app';
 
 const nextConfig: NextConfig = {
   async rewrites() {
