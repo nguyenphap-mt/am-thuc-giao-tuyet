@@ -1,17 +1,10 @@
 import type { NextConfig } from "next";
 
-// Server-side env var for rewrites destination (Cloud Run backend)
-const API_BACKEND = process.env.API_BACKEND_URL || 'http://localhost:8000';
+// API proxy is handled by /src/app/api/v1/[...path]/route.ts
+// which preserves trailing slashes via 404-retry mechanism.
+// Do NOT add rewrites here — they strip trailing slashes and conflict
+// with the route handler. (BUG-20260216-006)
 
-const nextConfig: NextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: '/api/v1/:path*',
-        destination: `${API_BACKEND}/api/v1/:path*`,
-      },
-    ];
-  },
-};
+const nextConfig: NextConfig = {};
 
 export default nextConfig;
