@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
-const API_BACKEND = process.env.NEXT_PUBLIC_API_URL
-  ? process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/v1\/?$/, '')
-  : 'http://localhost:8000';
+// API_BACKEND_URL: Server-side rewrite destination (Cloud Run URL)
+// NEXT_PUBLIC_API_URL: Client-side base URL (should be /api/v1 in production to use proxy)
+const API_BACKEND = process.env.API_BACKEND_URL || 'http://localhost:8000';
 
 const nextConfig: NextConfig = {
   async rewrites() {
