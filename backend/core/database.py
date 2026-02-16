@@ -29,7 +29,12 @@ async_engine = create_async_engine(
     pool_size=5,
     max_overflow=10,
     # Disable prepared statement caching for PgBouncer/Supabase pooler compatibility
-    connect_args={"statement_cache_size": 0, "prepared_statement_cache_size": 0}
+    # Set search_path to 'public' to avoid Supabase auth.users table conflict
+    connect_args={
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+        "server_settings": {"search_path": "public"}
+    }
 )
 
 # Async Session Factory
