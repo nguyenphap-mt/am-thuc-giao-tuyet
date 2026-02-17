@@ -65,6 +65,12 @@ interface LeaveRequestResponse {
     created_at: string;
 }
 
+interface LeaveStatsResponse {
+    pending_requests: number;
+    on_leave_today: number;
+    upcoming_leaves: number;
+}
+
 export default function LeaveTab() {
     const queryClient = useQueryClient();
     const { user } = useAuthStore();
@@ -125,6 +131,14 @@ export default function LeaveTab() {
             return await api.get<LeaveBalanceResponse[]>(`/hr/leave/balances?year=${year}`);
         },
         enabled: isHrAdmin,
+    });
+
+    // Query: Leave stats (Dashboard metrics)
+    const { data: stats } = useQuery({
+        queryKey: ['hr', 'leave', 'stats'],
+        queryFn: async () => {
+            return await api.get<LeaveStatsResponse>('/hr/leave/stats');
+        },
     });
 
     // Mutation: Approve leave request
@@ -294,23 +308,67 @@ export default function LeaveTab() {
 
     return (
         <div className="space-y-4">
-            {/* Leave Types Summary */}
+            {/* Dashboard Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                {(leaveTypes || []).slice(0, 4).map((type) => (
-                    <Card key={type.id} className="hover:shadow-sm transition-shadow">
-                        <CardContent className="p-3">
-                            <div className="flex items-center gap-2">
-                                <div className="p-1.5 rounded-lg bg-blue-50">
-                                    {getLeaveIcon(type.code)}
-                                </div>
-                                <div>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">{type.name}</p>
-                                    <p className="text-lg font-bold">{type.days_per_year}d</p>
-                                </div>
+                {/* Pending Requests */}
+                <Card className="hover:shadow-sm transition-shadow">
+                    <CardContent className="p-3">
+                        <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-lg bg-orange-50">
+                                <IconClock className="h-5 w-5 text-orange-600" />
                             </div>
-                        </CardContent>
-                    </Card>
-                ))}
+                            <div>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">Chờ duyệt</p>
+                                <p className="text-lg font-bold">{stats?.pending_requests || 0}</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* On Leave Today */}
+                <Card className="hover:shadow-sm transition-shadow">
+                    <CardContent className="p-3">
+                        <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-lg bg-blue-50">
+                                <IconBeach className="h-5 w-5 text-blue-600" />
+                            </div>
+                            <div>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">Nghỉ hôm nay</p>
+                                <p className="text-lg font-bold">{stats?.on_leave_today || 0}</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Upcoming Leaves */}
+                <Card className="hover:shadow-sm transition-shadow">
+                    <CardContent className="p-3">
+                        <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-lg bg-pink-50">
+                                <IconCalendar className="h-5 w-5 text-pink-600" />
+                            </div>
+                            <div>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">Sắp tới (7 ngày)</p>
+                                <p className="text-lg font-bold">{stats?.upcoming_leaves || 0}</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Leave Types Count (Static Info) */}
+                <Card className="hover:shadow-sm transition-shadow">
+                    <CardContent className="p-3">
+                        <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-lg bg-purple-50">
+                                <IconCheck className="h-5 w-5 text-purple-600" />
+                            </div>
+                            <div>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">Loại nghỉ phép</p>
+                                <p className="text-lg font-bold">{leaveTypes?.length || 0}</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* Role-based view selector */}
