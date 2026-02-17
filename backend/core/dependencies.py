@@ -37,8 +37,18 @@ async def get_current_user(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
+        tenant_id: str = payload.get("tenant_id")
+        
         if user_id is None:
             raise credentials_exception
+            
+        # Set RLS context if tenant_id is available in token
+        if tenant_id:
+            from backend.core.dependencies import set_tenant_context
+            # Note: We need to use valid UUID or handle string safely
+            # set_tenant_context expects UUID or string that can be cast
+            await db.execute(text(f"SET app.current_tenant = '{tenant_id}'"))
+            
     except JWTError:
         raise credentials_exception
     

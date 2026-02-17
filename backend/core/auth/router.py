@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Body
 from typing import Annotated
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, text
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 import hashlib
@@ -22,6 +22,10 @@ async def login(
     request: Request,
     db: Session = Depends(get_db)
 ):
+    # 0. Bypass RLS for Login Lookup (Since we don't know tenant yet)
+    # This relies on the policy: current_setting('app.bypass_rls', true) = 'on'
+    await db.execute(text("SET app.bypass_rls = 'on'"))
+
     # 1. Fetch User
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalar_one_or_none()

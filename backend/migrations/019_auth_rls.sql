@@ -11,7 +11,11 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 -- For now, we stick to standard RLS: current_setting('app.current_tenant') must match tenant_id)
 
 CREATE POLICY tenant_isolation ON users
-    USING (tenant_id = current_setting('app.current_tenant')::uuid);
+    USING (
+        tenant_id = current_setting('app.current_tenant')::uuid
+        OR 
+        current_setting('app.bypass_rls', true) = 'on'
+    );
 
 -- 3. Force RLS for all users (except table owner/superuser, but good practice to be explicit if using a shared app user)
 ALTER TABLE users FORCE ROW LEVEL SECURITY;
