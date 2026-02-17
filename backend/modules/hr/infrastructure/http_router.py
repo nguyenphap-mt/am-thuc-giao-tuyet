@@ -21,7 +21,7 @@ from backend.core.database import get_db, set_tenant_context
 from backend.core.dependencies import get_current_tenant, CurrentTenant
 from backend.core.auth.router import get_current_user
 from backend.core.auth.schemas import User as CurrentUser
-from backend.modules.hr.domain.models import EmployeeModel, StaffAssignmentModel, TimesheetModel, PayrollSettingsModel, PayrollItemModel, PayrollPeriodModel
+from backend.modules.hr.domain.models import EmployeeModel, StaffAssignmentModel, TimesheetModel, PayrollSettingsModel, PayrollItemModel, PayrollPeriodModel, LeaveTypeModel, LeaveBalanceModel, LeaveRequestModel, LeaveApprovalHistoryModel
 from backend.modules.order.domain.models import OrderModel
 
 router = APIRouter(tags=["HR Management"])
@@ -3797,3 +3797,663 @@ async def mark_all_notifications_read(
     await db.commit()
     
     return {"message": f"Marked {len(notifications)} notifications as read"}
+
+
+# ============ LEAVE MANAGEMENT ENDPOINTS ============
+# BUGFIX: BUG-20260217-002
+# Root Cause: Frontend LeaveTab.tsx calls leave API endpoints that were never implemented
+# Solution: Add all 10 leave endpoints matching frontend expectations
+
+
+# --- Leave Schemas ---
+
+class LeaveTypeResponse(BaseModel):
+    id: UUID
+    code: str
+    name: str
+    days_per_year: float
+    is_paid: bool
+    requires_approval: bool
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class LeaveBalanceResponse(BaseModel):
+    id: UUID
+    employee_id: UUID
+    employee_name: str
+    leave_type_code: str
+    leave_type_name: str
+    year: int
+    total_days: float
+    used_days: float
+    pending_days: float
+    remaining_days: float
+
+    class Config:
+        from_attributes = True
+
+
+class LeaveRequestResponse(BaseModel):
+    id: UUID
+    employee_id: UUID
+    employee_name: str
+    leave_type_code: str
+    leave_type_name: str
+    start_date: date
+    end_date: date
+    total_days: float
+    reason: Optional[str] = None
+    status: str
+    approved_by: Optional[UUID] = None
+    approved_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LeaveStatsResponse(BaseModel):
+    pending_requests: int
+    on_leave_today: int
+    upcoming_leaves: int
+
+
+class LeaveRequestCreate(BaseModel):
+    employee_id: UUID
+    leave_type_code: str
+    start_date: str  # YYYY-MM-DD
+    end_date: str    # YYYY-MM-DD
+    reason: Optional[str] = None
+
+
+class ApprovalHistoryResponse(BaseModel):
+    id: UUID
+    action: str
+    action_by_name: Optional[str] = None
+    action_at: datetime
+    comment: Optional[str] = None
+    previous_status: Optional[str] = None
+    new_status: str
+
+    class Config:
+        from_attributes = True
+
+
+# --- Leave Type Endpoints ---
+
+@router.get("/leave/types", response_model=List[LeaveTypeResponse])
+async def list_leave_types(
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all active leave types for the tenant"""
+    await set_tenant_context(db, str(tenant_id))
+
+    query = select(LeaveTypeModel).where(
+        LeaveTypeModel.tenant_id == tenant_id,
+        LeaveTypeModel.is_active == True
+    ).order_by(LeaveTypeModel.code)
+
+    result = await db.execute(query)
+    leave_types = result.scalars().all()
+
+    return [
+        LeaveTypeResponse(
+            id=lt.id,
+            code=lt.code,
+            name=lt.name,
+            days_per_year=float(lt.days_per_year or 0),
+            is_paid=lt.is_paid,
+            requires_approval=lt.requires_approval,
+            is_active=lt.is_active
+        )
+        for lt in leave_types
+    ]
+
+
+# --- Leave Request Endpoints ---
+
+@router.get("/leave/requests", response_model=List[LeaveRequestResponse])
+async def list_leave_requests(
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+    status: Optional[str] = Query(None, description="Filter by status: PENDING, APPROVED, REJECTED"),
+    limit: int = Query(100, le=500),
+    offset: int = Query(0, ge=0)
+):
+    """Get all leave requests (HR/Admin view)"""
+    await set_tenant_context(db, str(tenant_id))
+
+    query = select(
+        LeaveRequestModel,
+        EmployeeModel.full_name,
+        LeaveTypeModel.code,
+        LeaveTypeModel.name
+    ).join(
+        EmployeeModel, LeaveRequestModel.employee_id == EmployeeModel.id
+    ).join(
+        LeaveTypeModel, LeaveRequestModel.leave_type_id == LeaveTypeModel.id
+    ).where(
+        LeaveRequestModel.tenant_id == tenant_id
+    )
+
+    if status:
+        query = query.where(LeaveRequestModel.status == status)
+
+    query = query.order_by(LeaveRequestModel.created_at.desc()).limit(limit).offset(offset)
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    return [
+        LeaveRequestResponse(
+            id=row[0].id,
+            employee_id=row[0].employee_id,
+            employee_name=row[1],
+            leave_type_code=row[2],
+            leave_type_name=row[3],
+            start_date=row[0].start_date,
+            end_date=row[0].end_date,
+            total_days=float(row[0].total_days),
+            reason=row[0].reason,
+            status=row[0].status,
+            approved_by=row[0].approved_by,
+            approved_at=row[0].approved_at,
+            created_at=row[0].created_at
+        )
+        for row in rows
+    ]
+
+
+@router.get("/leave/my-requests", response_model=List[LeaveRequestResponse])
+async def list_my_leave_requests(
+    current_user: CurrentUser = Depends(get_current_user),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get current user's leave requests (employee self-service)"""
+    await set_tenant_context(db, str(tenant_id))
+
+    # Find the employee record matching the current user
+    emp_query = select(EmployeeModel).where(
+        EmployeeModel.tenant_id == tenant_id,
+        EmployeeModel.email == current_user.email
+    )
+    emp_result = await db.execute(emp_query)
+    employee = emp_result.scalar_one_or_none()
+
+    if not employee:
+        return []
+
+    query = select(
+        LeaveRequestModel,
+        EmployeeModel.full_name,
+        LeaveTypeModel.code,
+        LeaveTypeModel.name
+    ).join(
+        EmployeeModel, LeaveRequestModel.employee_id == EmployeeModel.id
+    ).join(
+        LeaveTypeModel, LeaveRequestModel.leave_type_id == LeaveTypeModel.id
+    ).where(
+        LeaveRequestModel.tenant_id == tenant_id,
+        LeaveRequestModel.employee_id == employee.id
+    ).order_by(LeaveRequestModel.created_at.desc())
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    return [
+        LeaveRequestResponse(
+            id=row[0].id,
+            employee_id=row[0].employee_id,
+            employee_name=row[1],
+            leave_type_code=row[2],
+            leave_type_name=row[3],
+            start_date=row[0].start_date,
+            end_date=row[0].end_date,
+            total_days=float(row[0].total_days),
+            reason=row[0].reason,
+            status=row[0].status,
+            approved_by=row[0].approved_by,
+            approved_at=row[0].approved_at,
+            created_at=row[0].created_at
+        )
+        for row in rows
+    ]
+
+
+@router.post("/leave/requests", response_model=LeaveRequestResponse)
+async def create_leave_request(
+    data: LeaveRequestCreate,
+    current_user: CurrentUser = Depends(get_current_user),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new leave request"""
+    await set_tenant_context(db, str(tenant_id))
+
+    # Validate employee exists
+    emp_query = select(EmployeeModel).where(
+        EmployeeModel.id == data.employee_id,
+        EmployeeModel.tenant_id == tenant_id
+    )
+    emp_result = await db.execute(emp_query)
+    employee = emp_result.scalar_one_or_none()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Nhân viên không tồn tại")
+
+    # Find leave type by code
+    lt_query = select(LeaveTypeModel).where(
+        LeaveTypeModel.tenant_id == tenant_id,
+        LeaveTypeModel.code == data.leave_type_code,
+        LeaveTypeModel.is_active == True
+    )
+    lt_result = await db.execute(lt_query)
+    leave_type = lt_result.scalar_one_or_none()
+    if not leave_type:
+        raise HTTPException(status_code=404, detail="Loại nghỉ phép không tồn tại")
+
+    # Parse dates
+    try:
+        start_dt = datetime.strptime(data.start_date, "%Y-%m-%d").date()
+        end_dt = datetime.strptime(data.end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ngày không hợp lệ. Dùng định dạng YYYY-MM-DD")
+
+    if start_dt > end_dt:
+        raise HTTPException(status_code=400, detail="Ngày kết thúc phải sau ngày bắt đầu")
+
+    # Calculate total days (simple: end - start + 1, excluding weekends)
+    total_days = 0
+    current = start_dt
+    while current <= end_dt:
+        if current.weekday() < 5:  # Mon-Fri
+            total_days += 1
+        current += timedelta(days=1)
+
+    if total_days <= 0:
+        raise HTTPException(status_code=400, detail="Số ngày nghỉ phải lớn hơn 0")
+
+    # Create leave request
+    leave_request = LeaveRequestModel(
+        tenant_id=tenant_id,
+        employee_id=data.employee_id,
+        leave_type_id=leave_type.id,
+        start_date=start_dt,
+        end_date=end_dt,
+        total_days=total_days,
+        reason=data.reason,
+        status='PENDING'
+    )
+
+    db.add(leave_request)
+
+    # Update pending_days in leave balance
+    year = start_dt.year
+    bal_query = select(LeaveBalanceModel).where(
+        LeaveBalanceModel.tenant_id == tenant_id,
+        LeaveBalanceModel.employee_id == data.employee_id,
+        LeaveBalanceModel.leave_type_id == leave_type.id,
+        LeaveBalanceModel.year == year
+    )
+    bal_result = await db.execute(bal_query)
+    balance = bal_result.scalar_one_or_none()
+
+    if not balance:
+        # Auto-create balance for this year
+        balance = LeaveBalanceModel(
+            tenant_id=tenant_id,
+            employee_id=data.employee_id,
+            leave_type_id=leave_type.id,
+            year=year,
+            entitled_days=leave_type.days_per_year or 0,
+            used_days=0,
+            pending_days=total_days,
+            carry_over_days=0
+        )
+        db.add(balance)
+    else:
+        balance.pending_days = float(balance.pending_days or 0) + total_days
+
+    # Create approval history entry
+    history_entry = LeaveApprovalHistoryModel(
+        tenant_id=tenant_id,
+        leave_request_id=leave_request.id,
+        action='SUBMITTED',
+        action_by=current_user.id,
+        action_by_name=current_user.full_name,
+        comment=data.reason,
+        previous_status=None,
+        new_status='PENDING',
+        approval_level=1
+    )
+    db.add(history_entry)
+
+    await db.commit()
+    await db.refresh(leave_request)
+
+    return LeaveRequestResponse(
+        id=leave_request.id,
+        employee_id=leave_request.employee_id,
+        employee_name=employee.full_name,
+        leave_type_code=leave_type.code,
+        leave_type_name=leave_type.name,
+        start_date=leave_request.start_date,
+        end_date=leave_request.end_date,
+        total_days=float(leave_request.total_days),
+        reason=leave_request.reason,
+        status=leave_request.status,
+        approved_by=leave_request.approved_by,
+        approved_at=leave_request.approved_at,
+        created_at=leave_request.created_at
+    )
+
+
+@router.put("/leave/requests/{request_id}/approve")
+async def approve_leave_request(
+    request_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Approve a leave request (HR/Admin)"""
+    await set_tenant_context(db, str(tenant_id))
+
+    query = select(LeaveRequestModel).where(
+        LeaveRequestModel.id == request_id,
+        LeaveRequestModel.tenant_id == tenant_id
+    )
+    result = await db.execute(query)
+    leave_request = result.scalar_one_or_none()
+
+    if not leave_request:
+        raise HTTPException(status_code=404, detail="Đơn nghỉ phép không tồn tại")
+
+    if leave_request.status != 'PENDING':
+        raise HTTPException(status_code=400, detail="Chỉ có thể duyệt đơn đang chờ")
+
+    previous_status = leave_request.status
+    leave_request.status = 'APPROVED'
+    leave_request.approved_by = current_user.id
+    leave_request.approved_at = datetime.now(VN_TIMEZONE)
+
+    # Update leave balance: move from pending to used
+    bal_query = select(LeaveBalanceModel).where(
+        LeaveBalanceModel.tenant_id == tenant_id,
+        LeaveBalanceModel.employee_id == leave_request.employee_id,
+        LeaveBalanceModel.leave_type_id == leave_request.leave_type_id,
+        LeaveBalanceModel.year == leave_request.start_date.year
+    )
+    bal_result = await db.execute(bal_query)
+    balance = bal_result.scalar_one_or_none()
+
+    if balance:
+        total_days_float = float(leave_request.total_days)
+        balance.pending_days = max(0, float(balance.pending_days or 0) - total_days_float)
+        balance.used_days = float(balance.used_days or 0) + total_days_float
+
+    # Create approval history entry
+    history_entry = LeaveApprovalHistoryModel(
+        tenant_id=tenant_id,
+        leave_request_id=request_id,
+        action='APPROVED',
+        action_by=current_user.id,
+        action_by_name=current_user.full_name,
+        comment=None,
+        previous_status=previous_status,
+        new_status='APPROVED',
+        approval_level=2
+    )
+    db.add(history_entry)
+
+    await db.commit()
+
+    return {"message": "Đã duyệt đơn nghỉ phép", "id": str(request_id)}
+
+
+@router.put("/leave/requests/{request_id}/reject")
+async def reject_leave_request(
+    request_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+    reason: Optional[str] = Query(None, description="Rejection reason")
+):
+    """Reject a leave request (HR/Admin)"""
+    await set_tenant_context(db, str(tenant_id))
+
+    query = select(LeaveRequestModel).where(
+        LeaveRequestModel.id == request_id,
+        LeaveRequestModel.tenant_id == tenant_id
+    )
+    result = await db.execute(query)
+    leave_request = result.scalar_one_or_none()
+
+    if not leave_request:
+        raise HTTPException(status_code=404, detail="Đơn nghỉ phép không tồn tại")
+
+    if leave_request.status != 'PENDING':
+        raise HTTPException(status_code=400, detail="Chỉ có thể từ chối đơn đang chờ")
+
+    previous_status = leave_request.status
+    leave_request.status = 'REJECTED'
+    leave_request.rejection_reason = reason
+
+    # Reduce pending_days from leave balance
+    bal_query = select(LeaveBalanceModel).where(
+        LeaveBalanceModel.tenant_id == tenant_id,
+        LeaveBalanceModel.employee_id == leave_request.employee_id,
+        LeaveBalanceModel.leave_type_id == leave_request.leave_type_id,
+        LeaveBalanceModel.year == leave_request.start_date.year
+    )
+    bal_result = await db.execute(bal_query)
+    balance = bal_result.scalar_one_or_none()
+
+    if balance:
+        total_days_float = float(leave_request.total_days)
+        balance.pending_days = max(0, float(balance.pending_days or 0) - total_days_float)
+
+    # Create approval history entry
+    history_entry = LeaveApprovalHistoryModel(
+        tenant_id=tenant_id,
+        leave_request_id=request_id,
+        action='REJECTED',
+        action_by=current_user.id,
+        action_by_name=current_user.full_name,
+        comment=reason,
+        previous_status=previous_status,
+        new_status='REJECTED',
+        approval_level=2
+    )
+    db.add(history_entry)
+
+    await db.commit()
+
+    return {"message": "Đã từ chối đơn nghỉ phép", "id": str(request_id)}
+
+
+@router.get("/leave/requests/{request_id}/history", response_model=List[ApprovalHistoryResponse])
+async def get_leave_request_history(
+    request_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get approval history for a leave request"""
+    await set_tenant_context(db, str(tenant_id))
+
+    query = select(LeaveApprovalHistoryModel).where(
+        LeaveApprovalHistoryModel.tenant_id == tenant_id,
+        LeaveApprovalHistoryModel.leave_request_id == request_id
+    ).order_by(LeaveApprovalHistoryModel.created_at.asc())
+
+    result = await db.execute(query)
+    history = result.scalars().all()
+
+    return [
+        ApprovalHistoryResponse(
+            id=h.id,
+            action=h.action,
+            action_by_name=h.action_by_name,
+            action_at=h.action_at or h.created_at,
+            comment=h.comment,
+            previous_status=h.previous_status,
+            new_status=h.new_status
+        )
+        for h in history
+    ]
+
+
+# --- Leave Balance Endpoints ---
+
+@router.get("/leave/my-balances", response_model=List[LeaveBalanceResponse])
+async def get_my_leave_balances(
+    current_user: CurrentUser = Depends(get_current_user),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get current user's leave balances (employee self-service)"""
+    await set_tenant_context(db, str(tenant_id))
+
+    # Find the employee record matching the current user
+    emp_query = select(EmployeeModel).where(
+        EmployeeModel.tenant_id == tenant_id,
+        EmployeeModel.email == current_user.email
+    )
+    emp_result = await db.execute(emp_query)
+    employee = emp_result.scalar_one_or_none()
+
+    if not employee:
+        return []
+
+    year = datetime.now().year
+    query = select(
+        LeaveBalanceModel,
+        EmployeeModel.full_name,
+        LeaveTypeModel.code,
+        LeaveTypeModel.name
+    ).join(
+        EmployeeModel, LeaveBalanceModel.employee_id == EmployeeModel.id
+    ).join(
+        LeaveTypeModel, LeaveBalanceModel.leave_type_id == LeaveTypeModel.id
+    ).where(
+        LeaveBalanceModel.tenant_id == tenant_id,
+        LeaveBalanceModel.employee_id == employee.id,
+        LeaveBalanceModel.year == year
+    )
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    return [
+        LeaveBalanceResponse(
+            id=row[0].id,
+            employee_id=row[0].employee_id,
+            employee_name=row[1],
+            leave_type_code=row[2],
+            leave_type_name=row[3],
+            year=int(row[0].year),
+            total_days=float(row[0].entitled_days or 0),
+            used_days=float(row[0].used_days or 0),
+            pending_days=float(row[0].pending_days or 0),
+            remaining_days=float((row[0].entitled_days or 0) + (row[0].carry_over_days or 0) - (row[0].used_days or 0) - (row[0].pending_days or 0))
+        )
+        for row in rows
+    ]
+
+
+@router.get("/leave/balances", response_model=List[LeaveBalanceResponse])
+async def list_all_leave_balances(
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+    year: Optional[int] = Query(None, description="Filter by year")
+):
+    """Get all employee leave balances (HR/Admin view)"""
+    await set_tenant_context(db, str(tenant_id))
+
+    if not year:
+        year = datetime.now().year
+
+    query = select(
+        LeaveBalanceModel,
+        EmployeeModel.full_name,
+        LeaveTypeModel.code,
+        LeaveTypeModel.name
+    ).join(
+        EmployeeModel, LeaveBalanceModel.employee_id == EmployeeModel.id
+    ).join(
+        LeaveTypeModel, LeaveBalanceModel.leave_type_id == LeaveTypeModel.id
+    ).where(
+        LeaveBalanceModel.tenant_id == tenant_id,
+        LeaveBalanceModel.year == year
+    ).order_by(EmployeeModel.full_name)
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    return [
+        LeaveBalanceResponse(
+            id=row[0].id,
+            employee_id=row[0].employee_id,
+            employee_name=row[1],
+            leave_type_code=row[2],
+            leave_type_name=row[3],
+            year=int(row[0].year),
+            total_days=float(row[0].entitled_days or 0),
+            used_days=float(row[0].used_days or 0),
+            pending_days=float(row[0].pending_days or 0),
+            remaining_days=float((row[0].entitled_days or 0) + (row[0].carry_over_days or 0) - (row[0].used_days or 0) - (row[0].pending_days or 0))
+        )
+        for row in rows
+    ]
+
+
+# --- Leave Stats Endpoint ---
+
+@router.get("/leave/stats", response_model=LeaveStatsResponse)
+async def get_leave_stats(
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get leave management dashboard stats"""
+    await set_tenant_context(db, str(tenant_id))
+
+    today = date.today()
+    next_week = today + timedelta(days=7)
+
+    # Count pending requests
+    pending_query = select(func.count(LeaveRequestModel.id)).where(
+        LeaveRequestModel.tenant_id == tenant_id,
+        LeaveRequestModel.status == 'PENDING'
+    )
+    pending_result = await db.execute(pending_query)
+    pending_count = pending_result.scalar() or 0
+
+    # Count employees on leave today
+    on_leave_query = select(func.count(LeaveRequestModel.id)).where(
+        LeaveRequestModel.tenant_id == tenant_id,
+        LeaveRequestModel.status == 'APPROVED',
+        LeaveRequestModel.start_date <= today,
+        LeaveRequestModel.end_date >= today
+    )
+    on_leave_result = await db.execute(on_leave_query)
+    on_leave_count = on_leave_result.scalar() or 0
+
+    # Count upcoming leaves (within next 7 days)
+    upcoming_query = select(func.count(LeaveRequestModel.id)).where(
+        LeaveRequestModel.tenant_id == tenant_id,
+        LeaveRequestModel.status == 'APPROVED',
+        LeaveRequestModel.start_date > today,
+        LeaveRequestModel.start_date <= next_week
+    )
+    upcoming_result = await db.execute(upcoming_query)
+    upcoming_count = upcoming_result.scalar() or 0
+
+    return LeaveStatsResponse(
+        pending_requests=pending_count,
+        on_leave_today=on_leave_count,
+        upcoming_leaves=upcoming_count
+    )
+
