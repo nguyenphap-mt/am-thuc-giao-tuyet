@@ -2339,10 +2339,9 @@ async def get_my_leave_balances(
     employee = user_result.scalar_one_or_none()
     
     if not employee:
-        raise HTTPException(
-            status_code=404, 
-            detail="Không tìm thấy hồ sơ nhân viên liên kết với tài khoản này"
-        )
+        # BUGFIX: BUG-20260217-004 - Return empty array instead of 404
+        # User may not have an employee record linked yet (admin accounts, etc.)
+        return []
     
     # Reuse existing balance logic
     types_result = await db.execute(
@@ -2414,10 +2413,9 @@ async def get_my_leave_requests(
     employee = user_result.scalar_one_or_none()
     
     if not employee:
-        raise HTTPException(
-            status_code=404,
-            detail="Không tìm thấy hồ sơ nhân viên liên kết với tài khoản này"
-        )
+        # BUGFIX: BUG-20260217-004 - Return empty array instead of 404
+        # User may not have an employee record linked yet (admin accounts, etc.)
+        return []
     
     # Query requests for this employee only
     query = select(
