@@ -72,10 +72,13 @@ async function proxyRequest(
         }
     });
 
-    // Read body once for potential retry
-    let body: string | undefined;
+    // BUGFIX: BUG-20260218-004 — Binary data corruption
+    // request.text() destroys binary data (images, files) by encoding
+    // non-UTF-8 bytes as U+FFFD replacement characters.
+    // Use arrayBuffer() for binary-safe forwarding.
+    let body: ArrayBuffer | undefined;
     if (request.method !== 'GET' && request.method !== 'HEAD') {
-        body = await request.text();
+        body = await request.arrayBuffer();
     }
 
     try {
@@ -107,11 +110,11 @@ async function doFetch(
     url: string,
     method: string,
     headers: Headers,
-    body?: string
+    body?: ArrayBuffer
 ): Promise<Response> {
     const fetchOptions: RequestInit = { method, headers };
-    if (body && method !== 'GET' && method !== 'HEAD') {
-        fetchOptions.body = body;
+    if (body && body.byteLength > 0 && method !== 'GET' && method !== 'HEAD') {
+        fetchOptions.body = Buffer.from(body);
     }
     return fetch(url, fetchOptions);
 }
