@@ -15,7 +15,9 @@ import {
 } from '@/components/ui/select';
 import {
     IconUser, IconBriefcase, IconLock, IconCopy, IconCheck, IconLoader2,
+    IconBuildingBank, IconAlertTriangle, IconNotes,
 } from '@tabler/icons-react';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 
 interface EmployeeFormData {
@@ -29,6 +31,12 @@ interface EmployeeFormData {
     id_number: string;
     date_of_birth: string;
     address: string;
+    // Bank info
+    bank_name: string;
+    bank_account: string;
+    // Extra
+    emergency_contact: string;
+    notes: string;
     // Login account
     create_account: boolean;
     login_email: string;
@@ -47,6 +55,10 @@ const INITIAL_FORM: EmployeeFormData = {
     id_number: '',
     date_of_birth: '',
     address: '',
+    bank_name: '',
+    bank_account: '',
+    emergency_contact: '',
+    notes: '',
     create_account: true,
     login_email: '',
     login_password: '',
@@ -127,6 +139,10 @@ export function EmployeeFormModal({ open, onClose }: EmployeeFormModalProps) {
             id_number: form.id_number || null,
             date_of_birth: form.date_of_birth || null,
             address: form.address || null,
+            bank_name: form.bank_name || null,
+            bank_account: form.bank_account || null,
+            emergency_contact: form.emergency_contact || null,
+            notes: form.notes || null,
         };
 
         if (form.create_account) {
@@ -277,7 +293,67 @@ export function EmployeeFormModal({ open, onClose }: EmployeeFormModalProps) {
                         </div>
                     </div>
 
-                    {/* Section 3: Login Account */}
+                    {/* Section 3: Bank Info */}
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                            <IconBuildingBank className="h-4 w-4 text-amber-500" />
+                            Thông tin ngân hàng
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <Label htmlFor="bank_name">Ngân hàng</Label>
+                                <Input
+                                    id="bank_name"
+                                    value={form.bank_name}
+                                    onChange={(e) => updateField('bank_name', e.target.value)}
+                                    placeholder="Vietcombank"
+                                    className="mt-1"
+                                />
+                            </div>
+                            <div>
+                                <Label htmlFor="bank_account">Số tài khoản</Label>
+                                <Input
+                                    id="bank_account"
+                                    value={form.bank_account}
+                                    onChange={(e) => updateField('bank_account', e.target.value)}
+                                    placeholder="0123456789"
+                                    className="mt-1"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Section 4: Emergency Contact & Notes */}
+                    <div className="space-y-4">
+                        <div>
+                            <Label htmlFor="emergency_contact" className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                                <IconAlertTriangle className="h-4 w-4 text-red-400" />
+                                Liên hệ khẩn cấp
+                            </Label>
+                            <Input
+                                id="emergency_contact"
+                                value={form.emergency_contact}
+                                onChange={(e) => updateField('emergency_contact', e.target.value)}
+                                placeholder="Tên - SĐT người thân"
+                                className="mt-1"
+                            />
+                        </div>
+                        <div>
+                            <Label htmlFor="notes" className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                                <IconNotes className="h-4 w-4 text-gray-400" />
+                                Ghi chú
+                            </Label>
+                            <Textarea
+                                id="notes"
+                                value={form.notes}
+                                onChange={(e) => updateField('notes', e.target.value)}
+                                placeholder="Ghi chú thêm..."
+                                className="mt-1 min-h-[80px]"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Section 5: Login Account */}
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
