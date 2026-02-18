@@ -46,6 +46,8 @@
 | BUG-20260217-003 | HR/Leave | High | `missing-seed-data` | leave, dropdown, empty, seed, tenant-id, leave_types | `033_seed_leave_types_all_tenants.sql` | ✅ | 2026-02-17 |
 | BUG-20260217-004 | HR/Leave | High | `duplicate-code`, `missing-employee-link` | leave, 404, 500, my-balances, my-requests, duplicate-endpoints, schema-validation, fastapi-last-wins | `hr/http_router.py` | ✅ | 2026-02-17 |
 | BUG-20260218-001 | Tenant/Settings | High | `api-mismatch` | logo, upload, 404, Cloud Run, Vercel, FileResponse, static-files | `http_router.py`, `page.tsx` | ✅ | 2026-02-18 |
+| BUG-20260218-002 | Menu Management | Critical | `schema-mismatch` | 500, menu_item_name, recipes, column-does-not-exist, supabase | `fix_menu_schema_mismatches_20260216.sql` | ✅ | 2026-02-18 |
+| BUG-20260218-003 | HR Management | Critical | `schema-mismatch` | 500, user_id, employees, column-does-not-exist, supabase, user-employee-unification | `052_employee_user_link.sql` | ✅ | 2026-02-18 |
 
 ---
 
@@ -63,4 +65,4 @@
 
 ---
 
-*Last updated: 2026-02-18 08:10 (BUG-20260218-001 added)*
+*Last updated: 2026-02-18 22:35 (BUG-20260218-002, BUG-20260218-003 added)*

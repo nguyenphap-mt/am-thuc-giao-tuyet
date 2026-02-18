@@ -366,6 +366,12 @@ export interface Employee {
     rate_social_override?: number;   // Override % BHXH
     rate_health_override?: number;   // Override % BHYT
     rate_unemployment_override?: number;  // Override % BHTN
+    // User-Employee link
+    user_id?: string;
+    has_login_account?: boolean;
+    login_email?: string;
+    login_role?: string;
+    account_active?: boolean;
 }
 
 // Employee Create/Update payload

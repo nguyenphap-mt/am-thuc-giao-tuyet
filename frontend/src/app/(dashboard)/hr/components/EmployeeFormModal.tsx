@@ -24,7 +24,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { IconUser, IconPhone, IconMail, IconCash, IconId, IconBuildingBank, IconLoader2, IconLock, IconCopy, IconCheck } from '@tabler/icons-react';
+import { IconUser, IconPhone, IconMail, IconCash, IconId, IconBuildingBank, IconLoader2, IconLock, IconCopy, IconCheck, IconRefresh, IconShieldLock } from '@tabler/icons-react';
 import { Employee, EmployeePayload } from '@/types';
 
 interface EmployeeFormModalProps {
@@ -90,8 +90,10 @@ export default function EmployeeFormModal({
     const queryClient = useQueryClient();
     const [formData, setFormData] = useState<EmployeePayload>(initialFormData);
     const [copied, setCopied] = useState(false);
+    const [resetResult, setResetResult] = useState<string | null>(null);
 
     useEffect(() => {
+        setResetResult(null);
         if (mode === 'edit' && employee) {
             setFormData({
                 full_name: employee.full_name || '',
@@ -109,7 +111,8 @@ export default function EmployeeFormModal({
                 bank_name: employee.bank_name || '',
                 emergency_contact: employee.emergency_contact || '',
                 notes: employee.notes || '',
-                create_account: false, // Don't show account section for edit mode by default
+                create_account: false,
+                login_role: employee.login_role || 'staff',
             });
         } else {
             setFormData(initialFormData);
@@ -154,6 +157,20 @@ export default function EmployeeFormModal({
         },
         onError: (error: any) => {
             toast.error(error?.message || 'Không thể cập nhật nhân viên');
+        },
+    });
+
+    const resetPasswordMutation = useMutation({
+        mutationFn: async () => {
+            return api.post(`/hr/employees/${employee?.id}/reset-password`, {});
+        },
+        onSuccess: (data: any) => {
+            const newPw = data?.new_password || `GiaoTuyet@${new Date().getFullYear()}`;
+            setResetResult(newPw);
+            toast.success('Đã đặt lại mật khẩu thành công!');
+        },
+        onError: (error: any) => {
+            toast.error(error?.message || 'Không thể đặt lại mật khẩu');
         },
     });
 
@@ -411,61 +428,34 @@ export default function EmployeeFormModal({
 
                     {/* Login Account Section */}
                     <div className="border-t pt-4">
-                        <div className="flex items-center justify-between mb-3">
-                            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                                <IconLock className="h-4 w-4 text-green-500" />
-                                Tài khoản đăng nhập
-                            </h4>
-                            <div className="flex items-center gap-2">
-                                <Label htmlFor="create_account" className="text-xs text-gray-500">Tạo tài khoản</Label>
-                                <Switch
-                                    id="create_account"
-                                    checked={formData.create_account ?? true}
-                                    onCheckedChange={(v) => handleChange('create_account', v)}
-                                />
-                            </div>
-                        </div>
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2 mb-3">
+                            <IconLock className="h-4 w-4 text-green-500" />
+                            Tài khoản đăng nhập
+                        </h4>
 
-                        {formData.create_account && (
-                            <div className="space-y-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                                <div className="space-y-2">
-                                    <Label htmlFor="login_email" className="flex items-center gap-1">
-                                        <IconMail className="h-4 w-4" />
-                                        Email đăng nhập <span className="text-red-500">*</span>
-                                    </Label>
-                                    <Input
-                                        id="login_email"
-                                        type="email"
-                                        value={formData.login_email || ''}
-                                        onChange={(e) => handleChange('login_email', e.target.value)}
-                                        placeholder="nhanvien@giaotuyet.com"
-                                    />
+                        {/* CASE 1: Edit mode + HAS account → Show management UI */}
+                        {mode === 'edit' && employee?.has_login_account ? (
+                            <div className="space-y-3 p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                                    <span className="text-xs font-medium text-emerald-700">Đã liên kết tài khoản</span>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="login_password">Mật khẩu <span className="text-red-500">*</span></Label>
-                                        <div className="flex gap-2">
-                                            <Input
-                                                id="login_password"
-                                                value={formData.login_password || ''}
-                                                onChange={(e) => handleChange('login_password', e.target.value)}
-                                                placeholder="Mật khẩu"
-                                            />
-                                            <Button type="button" variant="outline" size="icon" onClick={copyPassword} title="Sao chép mật khẩu">
-                                                {copied ? <IconCheck className="h-4 w-4 text-green-500" /> : <IconCopy className="h-4 w-4" />}
-                                            </Button>
-                                        </div>
-                                        <p className="text-xs text-gray-500">
-                                            Mặc định: GiaoTuyet@{new Date().getFullYear()}.
-                                            <button type="button" onClick={generatePassword} className="ml-1 text-purple-600 hover:underline">Tạo lại</button>
-                                        </p>
+                                {/* Email - readonly */}
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-gray-500">Email đăng nhập</Label>
+                                    <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-md border text-sm text-gray-700">
+                                        <IconMail className="h-4 w-4 text-gray-400" />
+                                        {employee.login_email || employee.email || '—'}
                                     </div>
+                                </div>
 
-                                    <div className="space-y-2">
-                                        <Label htmlFor="login_role">Vai trò hệ thống <span className="text-red-500">*</span></Label>
+                                {/* Role + Active row */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Vai trò hệ thống</Label>
                                         <Select
-                                            value={formData.login_role || 'staff'}
+                                            value={formData.login_role || employee.login_role || 'staff'}
                                             onValueChange={(value) => handleChange('login_role', value)}
                                         >
                                             <SelectTrigger>
@@ -480,8 +470,129 @@ export default function EmployeeFormModal({
                                             </SelectContent>
                                         </Select>
                                     </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-gray-500">Trạng thái tài khoản</Label>
+                                        <div className="flex items-center gap-2 h-10 px-3 bg-white rounded-md border">
+                                            <div className={`h-2 w-2 rounded-full ${employee.account_active !== false ? 'bg-green-500' : 'bg-red-400'}`}></div>
+                                            <span className="text-sm">{employee.account_active !== false ? 'Hoạt động' : 'Đã khóa'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Reset Password */}
+                                <div className="pt-2 border-t border-emerald-200">
+                                    {resetResult ? (
+                                        <div className="flex items-center gap-2 p-2 bg-amber-50 rounded-md border border-amber-200">
+                                            <IconShieldLock className="h-4 w-4 text-amber-600" />
+                                            <span className="text-sm text-amber-800 font-mono">{resetResult}</span>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-7 w-7 ml-auto"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(resetResult);
+                                                    setCopied(true);
+                                                    setTimeout(() => setCopied(false), 2000);
+                                                }}
+                                            >
+                                                {copied ? <IconCheck className="h-4 w-4 text-green-500" /> : <IconCopy className="h-4 w-4" />}
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="text-amber-700 border-amber-300 hover:bg-amber-50"
+                                            onClick={() => resetPasswordMutation.mutate()}
+                                            disabled={resetPasswordMutation.isPending}
+                                        >
+                                            {resetPasswordMutation.isPending ? (
+                                                <IconLoader2 className="h-4 w-4 animate-spin mr-1" />
+                                            ) : (
+                                                <IconRefresh className="h-4 w-4 mr-1" />
+                                            )}
+                                            Đặt lại mật khẩu
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
+                        ) : (
+                            /* CASE 2: Create mode OR Edit without account → Create toggle */
+                            <>
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-xs text-gray-500">
+                                        {mode === 'edit' ? 'Nhân viên chưa có tài khoản' : 'Tạo tài khoản cùng lúc'}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <Label htmlFor="create_account" className="text-xs text-gray-500">Tạo tài khoản</Label>
+                                        <Switch
+                                            id="create_account"
+                                            checked={formData.create_account ?? (mode === 'create')}
+                                            onCheckedChange={(v) => handleChange('create_account', v)}
+                                        />
+                                    </div>
+                                </div>
+
+                                {formData.create_account && (
+                                    <div className="space-y-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="login_email" className="flex items-center gap-1">
+                                                <IconMail className="h-4 w-4" />
+                                                Email đăng nhập <span className="text-red-500">*</span>
+                                            </Label>
+                                            <Input
+                                                id="login_email"
+                                                type="email"
+                                                value={formData.login_email || ''}
+                                                onChange={(e) => handleChange('login_email', e.target.value)}
+                                                placeholder="nhanvien@giaotuyet.com"
+                                            />
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div className="space-y-2">
+                                                <Label htmlFor="login_password">Mật khẩu <span className="text-red-500">*</span></Label>
+                                                <div className="flex gap-2">
+                                                    <Input
+                                                        id="login_password"
+                                                        value={formData.login_password || ''}
+                                                        onChange={(e) => handleChange('login_password', e.target.value)}
+                                                        placeholder="Mật khẩu"
+                                                    />
+                                                    <Button type="button" variant="outline" size="icon" onClick={copyPassword} title="Sao chép mật khẩu">
+                                                        {copied ? <IconCheck className="h-4 w-4 text-green-500" /> : <IconCopy className="h-4 w-4" />}
+                                                    </Button>
+                                                </div>
+                                                <p className="text-xs text-gray-500">
+                                                    Mặc định: GiaoTuyet@{new Date().getFullYear()}.
+                                                    <button type="button" onClick={generatePassword} className="ml-1 text-purple-600 hover:underline">Tạo lại</button>
+                                                </p>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <Label htmlFor="login_role">Vai trò hệ thống <span className="text-red-500">*</span></Label>
+                                                <Select
+                                                    value={formData.login_role || 'staff'}
+                                                    onValueChange={(value) => handleChange('login_role', value)}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Chọn vai trò" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {SYSTEM_ROLES.map((role) => (
+                                                            <SelectItem key={role.value} value={role.value}>
+                                                                {role.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
 

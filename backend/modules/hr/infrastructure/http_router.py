@@ -88,6 +88,11 @@ class EmployeeUpdate(BaseModel):
     rate_social_override: Optional[Decimal] = None
     rate_health_override: Optional[Decimal] = None
     rate_unemployment_override: Optional[Decimal] = None
+    # Login account management (optional)
+    create_account: Optional[bool] = None  # True = create new account for employee without one
+    login_email: Optional[str] = None
+    login_password: Optional[str] = None
+    login_role: Optional[str] = None  # Change user role (staff, manager, admin)
 
 
 class EmployeeResponse(BaseModel):
@@ -121,6 +126,9 @@ class EmployeeResponse(BaseModel):
     # User-Employee link
     user_id: Optional[UUID] = None
     has_login_account: bool = False
+    login_email: Optional[str] = None
+    login_role: Optional[str] = None
+    account_active: Optional[bool] = None
     created_at: datetime
     updated_at: datetime
 
@@ -165,7 +173,10 @@ async def list_employees(
     result = await db.execute(query)
     employees = result.scalars().all()
     
-    return [_employee_to_response(emp) for emp in employees]
+    responses = []
+    for emp in employees:
+        responses.append(await _employee_to_response(emp, db))
+    return responses
 
 
 @router.get("/employees/stats")
@@ -233,7 +244,7 @@ async def get_employee(employee_id: UUID, tenant_id: UUID = Depends(get_current_
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
     
-    return _employee_to_response(employee)
+    return await _employee_to_response(employee, db)
 
 
 @router.get("/employees/{employee_id}/performance")
@@ -399,7 +410,7 @@ async def create_employee(data: EmployeeCreate, tenant_id: UUID = Depends(get_cu
     await db.commit()  # Atomic: both User + Employee commit together
     await db.refresh(new_employee)
     
-    return _employee_to_response(new_employee)
+    return await _employee_to_response(new_employee, db)
 
 
 @router.put("/employees/{employee_id}", response_model=EmployeeResponse)
@@ -408,7 +419,7 @@ async def update_employee(
     data: EmployeeUpdate,
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)
 ):
-    """Update employee"""
+    """Update employee with optional account management"""
     await set_tenant_context(db, str(tenant_id))
     
     query = select(EmployeeModel).where(
@@ -421,21 +432,54 @@ async def update_employee(
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
     
-    # Update fields
+    # Extract account management fields before updating employee
     update_data = data.model_dump(exclude_unset=True)
+    account_fields = {}
+    for key in ['create_account', 'login_email', 'login_password', 'login_role']:
+        if key in update_data:
+            account_fields[key] = update_data.pop(key)
+    
+    # Handle creating new account for employee without one
+    if account_fields.get('create_account') and not employee.user_id:
+        login_email = account_fields.get('login_email')
+        login_password = account_fields.get('login_password')
+        if not login_email or not login_password:
+            raise HTTPException(status_code=400, detail="Email và mật khẩu bắt buộc khi tạo tài khoản")
+        
+        # Check if email already exists
+        existing = await db.execute(select(UserModel).where(UserModel.email == login_email))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail=f"Email {login_email} đã được sử dụng")
+        
+        new_user = UserModel(
+            tenant_id=tenant_id,
+            email=login_email,
+            hashed_password=get_password_hash(login_password),
+            full_name=employee.full_name,
+            role=account_fields.get('login_role', 'staff'),
+            is_active=True,
+            phone_number=employee.phone
+        )
+        db.add(new_user)
+        await db.flush()
+        employee.user_id = new_user.id
+    
+    # Handle updating existing account role
+    elif employee.user_id and 'login_role' in account_fields:
+        user_result = await db.execute(select(UserModel).where(UserModel.id == employee.user_id))
+        user = user_result.scalar_one_or_none()
+        if user:
+            user.role = account_fields['login_role']
     
     # Handle date parsing - BUG-20260204-002
-    # Skip parsing for empty strings, None, or placeholder text like 'mm/dd/yyyy'
     if 'date_of_birth' in update_data:
         dob_value = update_data['date_of_birth']
-        # Check if it's a valid date string (not empty, not placeholder)
         if dob_value and isinstance(dob_value, str) and len(dob_value) == 10 and dob_value[0].isdigit():
             try:
                 update_data['date_of_birth'] = datetime.strptime(dob_value, "%Y-%m-%d").date()
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
         else:
-            # Empty, None, or placeholder text - set to None
             update_data['date_of_birth'] = None
     
     for field, value in update_data.items():
@@ -444,7 +488,70 @@ async def update_employee(
     await db.commit()
     await db.refresh(employee)
     
-    return _employee_to_response(employee)
+    return await _employee_to_response(employee, db)
+
+
+@router.post("/employees/{employee_id}/reset-password")
+async def reset_employee_password(
+    employee_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Reset employee's login password (auto-generate)"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    employee = (await db.execute(
+        select(EmployeeModel).where(EmployeeModel.id == employee_id, EmployeeModel.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if not employee.user_id:
+        raise HTTPException(status_code=400, detail="Nhân viên này chưa có tài khoản đăng nhập")
+    
+    user = (await db.execute(select(UserModel).where(UserModel.id == employee.user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Tài khoản đăng nhập không tồn tại")
+    
+    # Auto-generate new password
+    new_password = f"GiaoTuyet@{datetime.now().year}"
+    user.hashed_password = get_password_hash(new_password)
+    await db.commit()
+    
+    return {"message": "Đã đặt lại mật khẩu thành công", "new_password": new_password}
+
+
+@router.patch("/employees/{employee_id}/account")
+async def update_employee_account(
+    employee_id: UUID,
+    data: dict,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update employee's login account (role, active status)"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    employee = (await db.execute(
+        select(EmployeeModel).where(EmployeeModel.id == employee_id, EmployeeModel.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if not employee.user_id:
+        raise HTTPException(status_code=400, detail="Nhân viên này chưa có tài khoản đăng nhập")
+    
+    user = (await db.execute(select(UserModel).where(UserModel.id == employee.user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Tài khoản đăng nhập không tồn tại")
+    
+    # Update allowed fields
+    if 'role' in data:
+        user.role = data['role']
+    if 'is_active' in data:
+        user.is_active = data['is_active']
+    
+    await db.commit()
+    return {"message": "Cập nhật tài khoản thành công"}
 
 
 @router.delete("/employees/{employee_id}")
@@ -897,8 +1004,21 @@ async def get_available_employees(
 
 # --- Helper Functions ---
 
-def _employee_to_response(emp: EmployeeModel) -> EmployeeResponse:
-    """Convert ORM model to response schema"""
+async def _employee_to_response(emp: EmployeeModel, db: AsyncSession = None) -> EmployeeResponse:
+    """Convert ORM model to response schema with optional user info lookup"""
+    login_email = None
+    login_role = None
+    account_active = None
+    
+    # Fetch linked user info if available
+    if emp.user_id and db:
+        user_result = await db.execute(select(UserModel).where(UserModel.id == emp.user_id))
+        user = user_result.scalar_one_or_none()
+        if user:
+            login_email = user.email
+            login_role = user.role
+            account_active = user.is_active
+    
     return EmployeeResponse(
         id=emp.id,
         tenant_id=emp.tenant_id,
@@ -919,6 +1039,9 @@ def _employee_to_response(emp: EmployeeModel) -> EmployeeResponse:
         notes=emp.notes,
         user_id=emp.user_id,
         has_login_account=emp.user_id is not None,
+        login_email=login_email,
+        login_role=login_role,
+        account_active=account_active,
         created_at=emp.created_at,
         updated_at=emp.updated_at
     )
