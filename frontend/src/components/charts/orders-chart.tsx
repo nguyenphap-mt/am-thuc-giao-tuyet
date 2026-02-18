@@ -22,15 +22,18 @@ interface OrdersChartProps {
 }
 
 // Mock data for demo
-const defaultData: OrdersData[] = [
-    { status: 'Mới', count: 12, color: '#3b82f6' },
-    { status: 'Xác nhận', count: 28, color: '#8b5cf6' },
-    { status: 'Đang giao', count: 45, color: '#f59e0b' },
-    { status: 'Hoàn thành', count: 156, color: '#22c55e' },
-    { status: 'Hủy', count: 8, color: '#ef4444' },
-];
+// Mock data removed
+const defaultData: OrdersData[] = [];
 
-export function OrdersChart({ data = defaultData }: OrdersChartProps) {
+export function OrdersChart({ data = [] }: OrdersChartProps) {
+    if (data.length === 0) {
+        return (
+            <div className="h-[300px] flex items-center justify-center text-gray-400">
+                <p>Chưa có dữ liệu đơn hàng</p>
+            </div>
+        );
+    }
+
     return (
         <ResponsiveContainer width="100%" height={300}>
             <BarChart

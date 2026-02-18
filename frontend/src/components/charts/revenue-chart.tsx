@@ -21,17 +21,18 @@ interface RevenueChartProps {
 }
 
 // Mock data for demo
-const defaultData: RevenueData[] = [
-    { date: '23/01', revenue: 125000000 },
-    { date: '24/01', revenue: 180000000 },
-    { date: '25/01', revenue: 150000000 },
-    { date: '26/01', revenue: 220000000 },
-    { date: '27/01', revenue: 195000000 },
-    { date: '28/01', revenue: 280000000 },
-    { date: '29/01', revenue: 125000000 },
-];
+// Mock data removed
+const defaultData: RevenueData[] = [];
 
-export function RevenueChart({ data = defaultData }: RevenueChartProps) {
+export function RevenueChart({ data = [] }: RevenueChartProps) {
+    if (data.length === 0) {
+        return (
+            <div className="h-[300px] flex items-center justify-center text-gray-400">
+                <p>Chưa có dữ liệu doanh thu</p>
+            </div>
+        );
+    }
+
     return (
         <ResponsiveContainer width="100%" height={300}>
             <AreaChart
