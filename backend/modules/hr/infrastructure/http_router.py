@@ -21,6 +21,8 @@ from backend.core.database import get_db, set_tenant_context
 from backend.core.dependencies import get_current_tenant, CurrentTenant
 from backend.core.auth.router import get_current_user
 from backend.core.auth.schemas import User as CurrentUser
+from backend.core.auth.models import User as UserModel
+from backend.core.auth.security import get_password_hash
 from backend.modules.hr.domain.models import EmployeeModel, StaffAssignmentModel, TimesheetModel, PayrollSettingsModel, PayrollItemModel, PayrollPeriodModel, LeaveTypeModel, LeaveBalanceModel, LeaveRequestModel, LeaveApprovalHistoryModel
 from backend.modules.order.domain.models import OrderModel
 
@@ -55,6 +57,10 @@ class EmployeeCreate(BaseModel):
     rate_social_override: Optional[Decimal] = None   # Override BHXH rate
     rate_health_override: Optional[Decimal] = None   # Override BHYT rate
     rate_unemployment_override: Optional[Decimal] = None  # Override BHTN rate
+    # Login account (optional - auto-create User)
+    login_email: Optional[str] = None
+    login_password: Optional[str] = None
+    login_role: Optional[str] = 'staff'  # Default role for new employees
 
 
 class EmployeeUpdate(BaseModel):
@@ -112,6 +118,9 @@ class EmployeeResponse(BaseModel):
     rate_social_override: Optional[Decimal] = None
     rate_health_override: Optional[Decimal] = None
     rate_unemployment_override: Optional[Decimal] = None
+    # User-Employee link
+    user_id: Optional[UUID] = None
+    has_login_account: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -329,7 +338,7 @@ async def get_employee_performance(
 
 @router.post("/employees", response_model=EmployeeResponse)
 async def create_employee(data: EmployeeCreate, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
-    """Create new employee"""
+    """Create new employee with optional auto-create User account"""
     await set_tenant_context(db, str(tenant_id))
     
     # Parse date if provided
@@ -340,12 +349,40 @@ async def create_employee(data: EmployeeCreate, tenant_id: UUID = Depends(get_cu
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
     
+    # Auto-create User account if login credentials provided
+    user_id = None
+    if data.login_email and data.login_password:
+        # Check if email already exists
+        existing_user = await db.execute(
+            select(UserModel).where(UserModel.email == data.login_email)
+        )
+        if existing_user.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail=f"Email {data.login_email} đã được sử dụng")
+        
+        # Create User account
+        new_user = UserModel(
+            tenant_id=tenant_id,
+            email=data.login_email,
+            hashed_password=get_password_hash(data.login_password),
+            full_name=data.full_name,
+            role=data.login_role or 'staff',
+            is_active=True,
+            phone_number=data.phone
+        )
+        db.add(new_user)
+        await db.flush()  # Get user ID without committing
+        user_id = new_user.id
+    
+    # Use login_email as employee email if not provided separately
+    employee_email = data.email or data.login_email
+    
     new_employee = EmployeeModel(
         tenant_id=tenant_id,
+        user_id=user_id,
         full_name=data.full_name,
         role_type=data.role_type,
         phone=data.phone,
-        email=data.email,
+        email=employee_email,
         is_fulltime=data.is_fulltime,
         hourly_rate=data.hourly_rate,
         is_active=data.is_active,
@@ -359,7 +396,7 @@ async def create_employee(data: EmployeeCreate, tenant_id: UUID = Depends(get_cu
     )
     
     db.add(new_employee)
-    await db.commit()
+    await db.commit()  # Atomic: both User + Employee commit together
     await db.refresh(new_employee)
     
     return _employee_to_response(new_employee)
@@ -880,6 +917,8 @@ def _employee_to_response(emp: EmployeeModel) -> EmployeeResponse:
         emergency_contact=emp.emergency_contact,
         joined_date=emp.joined_date.isoformat() if emp.joined_date else None,
         notes=emp.notes,
+        user_id=emp.user_id,
+        has_login_account=emp.user_id is not None,
         created_at=emp.created_at,
         updated_at=emp.updated_at
     )

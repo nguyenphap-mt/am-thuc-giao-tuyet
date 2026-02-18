@@ -14,6 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { User } from '@/types';
+import { UserFormModal } from './components/user-form-modal';
 import {
     IconSearch, IconPlus, IconEdit, IconTrash, IconShield, IconUsers,
     IconUserCheck, IconUserOff, IconRefresh, IconDotsVertical,
@@ -32,6 +33,7 @@ export default function AdminPage() {
     const [deleteId, setDeleteId] = useState<number | null>(null);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [hoveredId, setHoveredId] = useState<number | null>(null);
+    const [showAddModal, setShowAddModal] = useState(false);
     const queryClient = useQueryClient();
 
     const { data, isLoading, refetch } = useQuery({
@@ -160,7 +162,7 @@ export default function AdminPage() {
                                     className="pl-10 h-10 focus-visible:ring-purple-500"
                                 />
                             </div>
-                            <Button className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:opacity-90 transition-opacity">
+                            <Button className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:opacity-90 transition-opacity" onClick={() => setShowAddModal(true)}>
                                 <IconPlus className="mr-2 h-4 w-4" />
                                 Thêm người dùng
                             </Button>
@@ -233,7 +235,7 @@ export default function AdminPage() {
                                                 onMouseEnter={() => setHoveredId(user.id)}
                                                 onMouseLeave={() => setHoveredId(null)}
                                                 className={`flex items-center gap-3 px-4 py-3 border-b last:border-b-0 transition-colors cursor-pointer ${selectedIds.includes(user.id) ? 'bg-purple-50' :
-                                                        hoveredId === user.id ? 'bg-gray-50' : ''
+                                                    hoveredId === user.id ? 'bg-gray-50' : ''
                                                     }`}
                                             >
                                                 <Checkbox
@@ -379,6 +381,8 @@ export default function AdminPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <UserFormModal open={showAddModal} onClose={() => setShowAddModal(false)} />
         </div>
     );
 }

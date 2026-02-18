@@ -32,17 +32,14 @@ class UnifiedStaffAssignmentService:
         self.tenant_id = tenant_id
     
     async def get_employee_by_user_id(self, user_id: UUID) -> Optional[EmployeeModel]:
-        """Get employee record by user_id (users table is linked to employees)"""
-        # In current schema, staff_id in OrderStaffAssignment references users table
-        # We need to find matching employee
+        """Get employee record by user_id (linked via employees.user_id FK)"""
         result = await self.db.execute(
             select(EmployeeModel).where(
                 EmployeeModel.tenant_id == self.tenant_id,
+                EmployeeModel.user_id == user_id,
                 EmployeeModel.is_active == True
             )
         )
-        # Match by some criteria - in real app, would have user_id in employees
-        # For now, return first active employee matching potential criteria
         return result.scalars().first()
     
     async def get_unified_assignments(

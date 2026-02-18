@@ -17,6 +17,9 @@ class EmployeeModel(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
     tenant_id = Column(UUID(as_uuid=True), nullable=False)
     
+    # Link to User account (for login/auth)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='SET NULL'), unique=True, nullable=True)
+    
     # Basic info
     full_name = Column(String(100), nullable=False)
     role_type = Column(String(50), default='WAITER')  # CHEF, WAITER, DRIVER

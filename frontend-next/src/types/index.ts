@@ -150,13 +150,32 @@ export interface PurchaseOrderItem {
 // Employee
 export interface Employee {
     id: number;
+    tenant_id: string;
     full_name: string;
-    email: string;
-    phone: string;
-    position: string;
-    department: string;
+    role_type: string;
+    phone?: string;
+    email?: string;
+    is_fulltime: boolean;
+    hourly_rate: number;
+    base_salary: number;
     is_active: boolean;
-    hire_date: string;
+    id_number?: string;
+    date_of_birth?: string;
+    address?: string;
+    bank_account?: string;
+    bank_name?: string;
+    emergency_contact?: string;
+    joined_date?: string;
+    notes?: string;
+    // User-Employee link
+    user_id?: string;
+    has_login_account: boolean;
+    created_at: string;
+    updated_at: string;
+    // Legacy compat
+    position?: string;
+    department?: string;
+    hire_date?: string;
 }
 
 // Dashboard Stats

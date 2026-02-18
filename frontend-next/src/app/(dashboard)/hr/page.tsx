@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Employee } from '@/types';
+import { EmployeeFormModal } from './components/employee-form-modal';
 import {
     IconSearch,
     IconPlus,
@@ -32,6 +33,7 @@ export default function HrPage() {
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [starredIds, setStarredIds] = useState<number[]>([]);
     const [hoveredId, setHoveredId] = useState<number | null>(null);
+    const [showAddModal, setShowAddModal] = useState(false);
 
     const { data, isLoading, refetch } = useQuery({
         queryKey: ['employees', search],
@@ -56,7 +58,7 @@ export default function HrPage() {
                     <h1 className="text-xl md:text-2xl font-bold text-gray-900">Nhân sự</h1>
                     <p className="text-sm text-gray-500">Quản lý nhân viên</p>
                 </div>
-                <Button className="w-full sm:w-auto bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500">
+                <Button className="w-full sm:w-auto bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500" onClick={() => setShowAddModal(true)}>
                     <IconPlus className="mr-2 h-4 w-4" />Thêm nhân viên
                 </Button>
             </motion.div>
@@ -138,10 +140,10 @@ export default function HrPage() {
                                                     <Badge className={`${emp.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'} text-xs px-1.5 py-0.5 shrink-0`}>
                                                         {emp.is_active ? 'HĐ' : 'Nghỉ'}
                                                     </Badge>
-                                                    <span className="text-sm text-gray-500 truncate hidden sm:inline">{emp.position}</span>
+                                                    <span className="text-sm text-gray-500 truncate hidden sm:inline">{emp.role_type}</span>
                                                 </div>
                                                 <div className="text-right shrink-0 hidden md:block">
-                                                    <span className="text-sm text-gray-500">{emp.department}</span>
+                                                    <span className="text-sm text-gray-500">{emp.is_fulltime ? 'Full-time' : 'Part-time'}</span>
                                                 </div>
                                             </div>
 
@@ -168,6 +170,8 @@ export default function HrPage() {
                     <TabsContent value="leave"><Card><CardContent className="py-12 text-center text-gray-500"><IconUsers className="mx-auto h-12 w-12 text-gray-300 mb-4" />Nghỉ phép</CardContent></Card></TabsContent>
                 </Tabs>
             </motion.div>
+
+            <EmployeeFormModal open={showAddModal} onClose={() => setShowAddModal(false)} />
         </div>
     );
 }

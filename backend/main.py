@@ -11,10 +11,23 @@ from slowapi.errors import RateLimitExceeded
 # RBAC: Centralized permission enforcement
 from backend.core.auth.permissions import require_permission
 
+from contextlib import asynccontextmanager
+from backend.migrations.hotfix_logo import apply_logo_column_hotfix
+from backend.migrations.hotfix_seed_menu import seed_menu_data_hotfix
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Run hotfix migrations
+    await apply_logo_column_hotfix()
+    await seed_menu_data_hotfix()
+    yield
+    # Shutdown logic (if any)
+
 app = FastAPI(
     title="AI Workforce API",
     description="Orchestration API for Modular Monolith ERP",
     version="3.0.0",
+    lifespan=lifespan,
     # BUGFIX: BUG-20260216-004 — Users Tab Redirect to Login
     # FastAPI's default redirect_slashes=True causes 307 redirects when URL
     # trailing slash doesn't match route definition. The browser follows the 307
