@@ -253,10 +253,9 @@ const CHART_COLORS = {
 
 | Format | Phương án | Library |
 |:---|:---|:---|
-| **PDF** | Backend render → download | Backend `weasyprint` hoặc `reportlab` |
-| **Excel** | Client-side export | `xlsx` (SheetJS) — đã nhẹ, không cần AG Grid Enterprise |
-| **CSV** | Simple data export | Native JS `Blob` + `URL.createObjectURL` |
-
+| **PDF** | Backend render → download | Backend WeasyPrint kết hợp với Jinja2 |
+| **Excel** | Sử dụng Pandas | `xlsx` 
+| **CSV** | Sử dụng Pandas |
 ---
 
 ## 5. Phân tích 5 chiều

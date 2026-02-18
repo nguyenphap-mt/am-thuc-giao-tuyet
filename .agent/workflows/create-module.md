@@ -61,21 +61,6 @@ checkpoints:
 | `/status` | Xem trạng thái workflow hiện tại |
 | `/abort` | Hủy workflow và rollback tất cả |
 
-### 🆕 Automation Scripts (SWOT R1, R2, R3)
-
-```bash
-# R1: Auto-generate Domain Agent Prompts
-python .agent/scripts/generate_domain_agent.py {module_name} --entities="Entity1,Entity2"
-
-# R2: Validate API Contract (TypeScript ↔ FastAPI)
-python .agent/scripts/validate_api_contract.py --module={module_name}
-
-# R3: Workflow State Management
-python .agent/scripts/workflow_state.py start --workflow=create-module --module={module_name}
-python .agent/scripts/workflow_state.py status
-python .agent/scripts/workflow_state.py checkpoint --step=1 --status=completed
-```
-
 ---
 
 ## Step 1: Module Planning (Lập kế hoạch)
@@ -90,14 +75,11 @@ python .agent/scripts/workflow_state.py checkpoint --step=1 --status=completed
 - **Key Features**: List các features
 - **Dependencies**: Module nào liên quan?
 
-### 1.2 Tạo Domain Agent Prompt (🆕 Auto-Generated)
-```bash
-# // turbo - Auto-generate prompts
-python .agent/scripts/generate_domain_agent.py {module_name} --entities="EntityA,EntityB,EntityC"
+### 1.2 Tạo Domain Agent Prompt
 ```
-Output:
-- `.agent/prompts/modules/{module_name}.md` (Domain Agent)
-- `.agent/prompts/modules/{module_name}-ui.md` (UI Agent)
+Vị trí: .agent/prompts/modules/{module_name}.md
+        .agent/prompts/modules/{module_name}-ui.md
+```
 
 ### 1.3 Xác định API Endpoints
 ```
@@ -210,20 +192,12 @@ backend/tests/{module_name}/
 pytest backend/tests/{module_name}/ -v --cov=modules.{module_name}
 ```
 
-### 3.6 🆕 Validate API Contract (R2)
-```bash
-# // turbo - Generate TypeScript types from OpenAPI
-python .agent/scripts/validate_api_contract.py --backend-url=http://localhost:8000 --module={module_name}
-```
-Output: `frontend/src/app/{module_name}/{module_name}-api-types.ts`
-
 ### ✅ Checkpoint Validation
 ```
 □ All Python files created
 □ Unit tests written and pass
 □ Module registered in main.py
 □ API endpoints responding (check /docs)
-□ TypeScript types generated from OpenAPI (R2)
 → Save checkpoint: backend_complete
 ```
 

@@ -180,6 +180,29 @@ Every major feature request MUST be assessed across:
 - **Reference Workflow**: `.agent/workflows/auto-doc.md`
 - **Enforcement**: DoD Check sẽ reject nếu không có documentation.
 
+### Article 9: PRD Compliance Enforcement (MANDATORY)
+> [!CAUTION]
+> **TRƯỚC khi code feature/module, PHẢI đọc PRD liên quan.**
+> **Vi phạm PRD = vi phạm kiến trúc hệ thống.**
+
+- **TRƯỚC khi code bất kỳ feature liên quan module**, PHẢI:
+  1. Scan folder `.agent/prds/` tìm PRD liên quan đến module đang code
+  2. Đọc và tuân thủ **dependency map**, **integration patterns**, và **business rules**
+  3. KHÔNG được tạo integration trái chiều với PRD (vd: import trực tiếp ORM cross-module khi PRD chỉ cho phép raw SQL)
+  4. Nếu cần thay đổi kiến trúc khác PRD → báo User trước, cập nhật PRD sau
+
+- **PRD Registry** (scan khi cần):
+  | Module | PRD File |
+  | :--- | :--- |
+  | Inventory cross-module | `.agent/prds/PRD-luong-nghiep-vu-kho-hang-v2.md` |
+  | Menu Management | `.agent/prds/PRD-menu-management.md` |
+  | Finance/HR Audit | `.agent/prds/finance-hr-prd-audit-20260206.md` |
+  | Order Detail | `.agent/prds/order-detail-improvement-prd.md` |
+  | Period Management | `.agent/prds/PRD-quan-ly-ky-ke-toan.md` |
+
+- **Cross-Module Integration Source of Truth**: `.agent/config/business-flows.yaml`
+- **Enforcement**: Code Review sẽ reject nếu integration pattern không khớp PRD.
+
 ---
 ## 1. Architecture & Tech Stack
 
@@ -284,6 +307,8 @@ Every feature is complete when:
 | **Angular.dev Design System** | `prompts/angular-dev-design-system.md` |
 | **Frontend Rules** | `prompts/rules/frontend.md` |
 | Design Tokens | `frontend/src/styles/design-tokens.scss` |
+| **PRD Registry** | `.agent/prds/` |
+| **Business Flows Config** | `.agent/config/business-flows.yaml` |
 
 ---
 
@@ -315,8 +340,4 @@ Every feature is complete when:
 - Currency: `VND` với `đ` symbol
 
 ### 6.4 Icons
-- **MUST** use Material Icons **Filled** (NOT Outlined)
-- Import: `https://fonts.google.com/icons?icon.set=Material+Icons&icon.style=Filled`
-
-**Reference File**: `prompts/rules/frontend.md`
-
+- **MUST** use Material Icons **Filled** (NOT Ou
