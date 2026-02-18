@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select';
 import {
     IconUser, IconBriefcase, IconLock, IconCopy, IconCheck, IconLoader2,
-    IconBuildingBank, IconAlertTriangle, IconNotes,
+    IconBuilding, IconAlertCircle, IconFileText,
 } from '@tabler/icons-react';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
@@ -296,7 +296,7 @@ export function EmployeeFormModal({ open, onClose }: EmployeeFormModalProps) {
                     {/* Section 3: Bank Info */}
                     <div className="space-y-4">
                         <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                            <IconBuildingBank className="h-4 w-4 text-amber-500" />
+                            <IconBuilding className="h-4 w-4 text-amber-500" />
                             Thông tin ngân hàng
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -327,7 +327,7 @@ export function EmployeeFormModal({ open, onClose }: EmployeeFormModalProps) {
                     <div className="space-y-4">
                         <div>
                             <Label htmlFor="emergency_contact" className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                                <IconAlertTriangle className="h-4 w-4 text-red-400" />
+                                <IconAlertCircle className="h-4 w-4 text-red-400" />
                                 Liên hệ khẩn cấp
                             </Label>
                             <Input
@@ -340,7 +340,7 @@ export function EmployeeFormModal({ open, onClose }: EmployeeFormModalProps) {
                         </div>
                         <div>
                             <Label htmlFor="notes" className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                                <IconNotes className="h-4 w-4 text-gray-400" />
+                                <IconFileText className="h-4 w-4 text-gray-400" />
                                 Ghi chú
                             </Label>
                             <Textarea
