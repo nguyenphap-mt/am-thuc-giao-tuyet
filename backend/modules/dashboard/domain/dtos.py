@@ -41,3 +41,16 @@ class DashboardStats(BaseModel):
     customers_count: int
     orders_today: int
     revenue_today: Decimal
+
+
+class RevenueChartItem(BaseModel):
+    """Revenue data point for chart"""
+    date: str
+    revenue: float
+
+
+class OrdersChartItem(BaseModel):
+    """Order count by status for chart"""
+    status: str
+    count: int
+    color: str

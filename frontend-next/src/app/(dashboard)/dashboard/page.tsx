@@ -45,32 +45,51 @@ const chartVariants = {
     }
 };
 
+// Chart data types
+interface RevenueData {
+    date: string;
+    revenue: number;
+}
+
+interface OrdersData {
+    status: string;
+    count: number;
+    color: string;
+}
+
 export default function DashboardPage() {
     const [stats, setStats] = useState<DashboardStats | null>(null);
+    const [revenueData, setRevenueData] = useState<RevenueData[]>([]);
+    const [ordersData, setOrdersData] = useState<OrdersData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const fetchStats = async () => {
+        const fetchAll = async () => {
             try {
-                const data = await api.get<DashboardStats>('/dashboard/stats');
-                setStats(data);
+                // Fetch all dashboard data in parallel
+                const [statsRes, revenueRes, ordersRes] = await Promise.allSettled([
+                    api.get<DashboardStats>('/dashboard/stats'),
+                    api.get<RevenueData[]>('/dashboard/revenue-chart?days=7'),
+                    api.get<OrdersData[]>('/dashboard/orders-chart'),
+                ]);
+
+                if (statsRes.status === 'fulfilled') {
+                    setStats(statsRes.value);
+                }
+                if (revenueRes.status === 'fulfilled') {
+                    setRevenueData(revenueRes.value);
+                }
+                if (ordersRes.status === 'fulfilled') {
+                    setOrdersData(ordersRes.value);
+                }
             } catch (error) {
-                console.error('Failed to fetch dashboard stats:', error);
-                // Set mock data for demo
-                setStats({
-                    total_orders: 156,
-                    total_revenue: 2450000000,
-                    pending_orders: 12,
-                    customers_count: 89,
-                    orders_today: 5,
-                    revenue_today: 125000000,
-                });
+                console.error('Failed to fetch dashboard data:', error);
             } finally {
                 setIsLoading(false);
             }
         };
 
-        fetchStats();
+        fetchAll();
     }, []);
 
     const statCards = [
@@ -201,7 +220,7 @@ export default function DashboardPage() {
                                 <Skeleton className="h-full w-full rounded-lg" />
                             </div>
                         ) : (
-                            <RevenueChart />
+                            <RevenueChart data={revenueData.length > 0 ? revenueData : undefined} />
                         )}
                     </CardContent>
                 </Card>
@@ -219,7 +238,7 @@ export default function DashboardPage() {
                                 <Skeleton className="h-full w-full rounded-lg" />
                             </div>
                         ) : (
-                            <OrdersChart />
+                            <OrdersChart data={ordersData.length > 0 ? ordersData : undefined} />
                         )}
                     </CardContent>
                 </Card>
