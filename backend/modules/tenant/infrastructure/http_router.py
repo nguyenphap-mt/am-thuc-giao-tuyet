@@ -196,12 +196,16 @@ async def update_my_tenant(
     return _serialize_tenant(tenant)
 
 
-@router.get("/me/logo")
+@router.get("/{tenant_id}/logo")
 async def get_tenant_logo(
-    tenant_id: UUID = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_db),
+    tenant_id: UUID,
 ):
-    """Serve logo file for current tenant (public within tenant)"""
+    """Serve logo file for a tenant (public endpoint — no auth required).
+    
+    BUGFIX: BUG-20260218-002
+    <img> tags cannot send JWT Authorization headers, so this endpoint
+    must be public. Logo files are inherently non-sensitive assets.
+    """
     # Find any matching logo file for this tenant
     for ext in ["png", "jpg", "webp", "svg"]:
         filepath = UPLOAD_DIR / f"{tenant_id}.{ext}"
@@ -270,11 +274,12 @@ async def upload_tenant_logo(
     with open(filepath, "wb") as f:
         f.write(contents)
 
-    # Update tenant logo_url in DB — use API path so frontend fetches through backend
-    # BUGFIX: BUG-20260218-001
-    # Root Cause: Old path /uploads/logos/{filename} is on Cloud Run filesystem,
-    # not accessible from Vercel frontend. Use API-served path instead.
-    logo_url = f"/api/v1/tenants/me/logo?v={int(time.time())}"
+    # Update tenant logo_url in DB — use public API path with tenant_id
+    # BUGFIX: BUG-20260218-001 + BUG-20260218-002
+    # BUG-001: /uploads/logos/ is on Cloud Run, not accessible from Vercel
+    # BUG-002: /me/logo requires auth, but <img> tags can't send JWT tokens
+    # Solution: Public endpoint GET /tenants/{tenant_id}/logo
+    logo_url = f"/api/v1/tenants/{tenant_id}/logo?v={int(time.time())}"
     service = TenantService(db)
     tenant = await service.update_tenant(tenant_id, {"logo_url": logo_url})
 

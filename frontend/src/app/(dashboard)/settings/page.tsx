@@ -164,25 +164,28 @@ function EditableField({ label, value, icon: Icon, onSave, type = 'text' }: {
 /**
  * Resolves a logo_url from DB to a displayable URL.
  * 
- * BUGFIX: BUG-20260218-001
- * Old format: /uploads/logos/{tenant_id}.png (saved to Cloud Run filesystem, 404 on Vercel)
- * New format: /api/v1/tenants/me/logo?v={timestamp} (served through API proxy)
- * 
- * This handles both formats for backwards compatibility.
+ * BUGFIX: BUG-20260218-001 + BUG-20260218-002
+ * Old format 1: /uploads/logos/{tenant_id}.png (Cloud Run filesystem, 404 on Vercel)
+ * Old format 2: /api/v1/tenants/me/logo?v=... (requires auth, 401 from <img> tag)
+ * New format:   /api/v1/tenants/{tenant_id}/logo?v=... (public, no auth needed)
  */
-function resolveLogoUrl(logoUrl: string | null): string | null {
+function resolveLogoUrl(logoUrl: string | null, tenantId?: string): string | null {
     if (!logoUrl) return null;
-    // New format — already API-served, works through Next.js proxy
-    if (logoUrl.startsWith('/api/v1/')) return logoUrl;
-    // Old format — convert to API path with cache buster
-    if (logoUrl.startsWith('/uploads/logos/')) {
-        return `/api/v1/tenants/me/logo?v=${Date.now()}`;
+    // New format with tenant_id in path — already correct
+    if (logoUrl.match(/\/api\/v1\/tenants\/[a-f0-9-]+\/logo/)) return logoUrl;
+    // Old /me/logo format — needs tenant_id to convert to public URL
+    if (logoUrl.includes('/tenants/me/logo') && tenantId) {
+        return `/api/v1/tenants/${tenantId}/logo?v=${Date.now()}`;
+    }
+    // Old static path format
+    if (logoUrl.startsWith('/uploads/logos/') && tenantId) {
+        return `/api/v1/tenants/${tenantId}/logo?v=${Date.now()}`;
     }
     // Absolute URL or other format — pass through
     return logoUrl;
 }
 
-function LogoUploadCard({ logoUrl }: { logoUrl: string | null }) {
+function LogoUploadCard({ logoUrl, tenantId }: { logoUrl: string | null; tenantId?: string }) {
     const [dragActive, setDragActive] = useState(false);
     const [preview, setPreview] = useState<string | null>(null);
     const uploadLogo = useUploadTenantLogo();
@@ -233,7 +236,7 @@ function LogoUploadCard({ logoUrl }: { logoUrl: string | null }) {
         });
     };
 
-    const resolvedLogo = resolveLogoUrl(logoUrl);
+    const resolvedLogo = resolveLogoUrl(logoUrl, tenantId);
     const displayUrl = preview || resolvedLogo;
 
     return (
@@ -484,7 +487,7 @@ export default function SettingsPage() {
 
                             {/* Section 2b: Logo Upload */}
                             <motion.div variants={itemVariants}>
-                                <LogoUploadCard logoUrl={t?.logo_url || null} />
+                                <LogoUploadCard logoUrl={t?.logo_url || null} tenantId={t?.id} />
                             </motion.div>
 
                             {/* Section 3: Regional Preferences — Info Cards */}
