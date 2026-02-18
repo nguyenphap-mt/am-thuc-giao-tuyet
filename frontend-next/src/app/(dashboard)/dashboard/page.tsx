@@ -220,7 +220,7 @@ export default function DashboardPage() {
                                 <Skeleton className="h-full w-full rounded-lg" />
                             </div>
                         ) : (
-                            <RevenueChart data={revenueData.length > 0 ? revenueData : undefined} />
+                            <RevenueChart data={revenueData} />
                         )}
                     </CardContent>
                 </Card>
@@ -238,7 +238,7 @@ export default function DashboardPage() {
                                 <Skeleton className="h-full w-full rounded-lg" />
                             </div>
                         ) : (
-                            <OrdersChart data={ordersData.length > 0 ? ordersData : undefined} />
+                            <OrdersChart data={ordersData} />
                         )}
                     </CardContent>
                 </Card>
