@@ -149,8 +149,14 @@ app.include_router(settings_router, prefix="/api/v1",
 
 # Tenant Management Module
 from backend.modules.tenant.infrastructure.http_router import router as tenant_router
+from backend.modules.tenant.infrastructure.http_router import public_router as tenant_public_router
 app.include_router(tenant_router, prefix="/api/v1",
                    dependencies=[Depends(require_permission("tenant"))])
+
+# BUGFIX: BUG-20260218-003 — Tenant public endpoints (logo serving)
+# <img> tags cannot send JWT Authorization headers, so logo serving
+# must be on a separate router WITHOUT auth dependencies.
+app.include_router(tenant_public_router, prefix="/api/v1")
 
 @app.get("/health")
 async def health_check():

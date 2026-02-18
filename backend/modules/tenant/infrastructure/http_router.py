@@ -33,6 +33,13 @@ UPLOAD_DIR = PROJECT_ROOT / "frontend" / "public" / "uploads" / "logos"
 
 router = APIRouter(prefix="/tenants", tags=["Tenant Management"])
 
+# BUGFIX: BUG-20260218-003
+# Separate public router for endpoints that don't require auth.
+# The main `router` is mounted with `dependencies=[require_permission("tenant")]`
+# in main.py, which forces auth on ALL routes. <img> tags can't send JWT tokens,
+# so the logo serve endpoint must be truly public.
+public_router = APIRouter(prefix="/tenants", tags=["Tenant Public"])
+
 
 # =============================================
 # Pydantic Schemas
@@ -196,7 +203,7 @@ async def update_my_tenant(
     return _serialize_tenant(tenant)
 
 
-@router.get("/{tenant_id}/logo")
+@public_router.get("/{tenant_id}/logo")
 async def get_tenant_logo(
     tenant_id: UUID,
 ):
