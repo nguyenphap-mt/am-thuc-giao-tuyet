@@ -20,7 +20,7 @@ from backend.modules.dashboard.domain.dtos import (
 router = APIRouter(tags=["Dashboard KPI"])
 
 # Default tenant for development
-DEFAULT_TENANT_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000000"
 
 
 @router.get("/dashboard/stats", response_model=DashboardStats)
@@ -204,7 +204,7 @@ async def get_revenue_chart(days: int = 7, db: AsyncSession = Depends(get_db)):
             FROM orders
             WHERE tenant_id = :tid
             AND status NOT IN ('CANCELLED')
-            AND created_at AT TIME ZONE 'Asia/Ho_Chi_Minh' >= (CURRENT_DATE - :days) AT TIME ZONE 'Asia/Ho_Chi_Minh'
+            AND created_at >= (NOW() - CAST(:days || ' days' AS INTERVAL))
             GROUP BY order_date
             ORDER BY order_date
         """),
