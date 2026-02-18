@@ -1,8 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import { useLogoStore } from '@/stores/logo-store';
 import {
     IconHome,
     IconFileText,
@@ -39,6 +42,11 @@ const navigation = [
 
 export function Sidebar() {
     const pathname = usePathname();
+    const { logoUrl, fetchLogo } = useLogoStore();
+
+    useEffect(() => {
+        fetchLogo();
+    }, [fetchLogo]);
 
     return (
         <>
@@ -48,9 +56,20 @@ export function Sidebar() {
                     {/* Logo */}
                     <div className="flex h-16 shrink-0 items-center">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 rounded-xl flex items-center justify-center">
-                                <span className="text-lg font-bold text-white">GT</span>
-                            </div>
+                            {logoUrl ? (
+                                <Image
+                                    src={logoUrl}
+                                    alt="Giao Tuyết Logo"
+                                    width={40}
+                                    height={40}
+                                    className="rounded-xl object-cover"
+                                    unoptimized
+                                />
+                            ) : (
+                                <div className="w-10 h-10 bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 rounded-xl flex items-center justify-center">
+                                    <span className="text-lg font-bold text-white">GT</span>
+                                </div>
+                            )}
                             <div>
                                 <h1 className="text-lg font-bold bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
                                     Giao Tuyết

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,15 +12,20 @@ import { Switch } from '@/components/ui/switch';
 import {
     IconSettings, IconBuilding, IconPalette, IconBell,
     IconSun, IconMoon, IconCheck, IconUpload, IconMail,
-    IconMessage, IconBellRinging, IconCalendar
+    IconMessage, IconBellRinging, IconCalendar, IconTrash,
+    IconPhoto, IconCloudUpload
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
+import { useLogoStore } from '@/stores/logo-store';
 
 const containerVariants = {
     hidden: { opacity: 0 },
     show: { opacity: 1, transition: { staggerChildren: 0.05 } }
 };
 const itemVariants = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } };
+
+const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 
 export default function SettingsPage() {
     const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('light');
@@ -31,6 +37,67 @@ export default function SettingsPage() {
         events: true,
         marketing: false
     });
+    const [isDragging, setIsDragging] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const { logoUrl, isLoading, uploadLogo, deleteLogo } = useLogoStore();
+
+    const validateFile = (file: File): string | null => {
+        if (!ACCEPTED_TYPES.includes(file.type)) {
+            return 'Chỉ chấp nhận file PNG, JPG, WEBP, SVG';
+        }
+        if (file.size > MAX_FILE_SIZE) {
+            return 'File quá lớn. Tối đa 2MB';
+        }
+        return null;
+    };
+
+    const handleFileUpload = useCallback(async (file: File) => {
+        const error = validateFile(file);
+        if (error) {
+            toast.error(error);
+            return;
+        }
+
+        const success = await uploadLogo(file);
+        if (success) {
+            toast.success('Đã cập nhật logo thành công');
+        } else {
+            toast.error('Không thể upload logo. Vui lòng thử lại');
+        }
+    }, [uploadLogo]);
+
+    const handleDeleteLogo = useCallback(async () => {
+        const success = await deleteLogo();
+        if (success) {
+            toast.success('Đã xóa logo');
+        } else {
+            toast.error('Không thể xóa logo. Vui lòng thử lại');
+        }
+    }, [deleteLogo]);
+
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const file = e.dataTransfer.files[0];
+        if (file) handleFileUpload(file);
+    }, [handleFileUpload]);
+
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(true);
+    }, []);
+
+    const handleDragLeave = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+    }, []);
+
+    const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) handleFileUpload(file);
+        // Reset input so same file can be selected again
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    }, [handleFileUpload]);
 
     const handleSave = () => {
         toast.success('Đã lưu cài đặt thành công');
@@ -124,27 +191,102 @@ export default function SettingsPage() {
                                 <Card className="border-0 shadow-sm">
                                     <CardHeader className="pb-3">
                                         <CardTitle className="text-base flex items-center gap-2">
+                                            <IconCloudUpload className="h-5 w-5 text-purple-500" />
+                                            Logo công ty
+                                        </CardTitle>
+                                        <CardDescription className="text-sm">
+                                            Upload logo để hiển thị trên báo giá, báo cáo và hệ thống
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4">
+                                        <div className="flex flex-col sm:flex-row gap-4">
+                                            {/* Logo Preview */}
+                                            <div className="flex-shrink-0">
+                                                {logoUrl ? (
+                                                    <Image
+                                                        src={logoUrl}
+                                                        alt="Logo công ty"
+                                                        width={80}
+                                                        height={80}
+                                                        className="rounded-xl object-cover border border-gray-200"
+                                                        unoptimized
+                                                    />
+                                                ) : (
+                                                    <div className="h-20 w-20 bg-gradient-to-br from-pink-500 via-purple-500 to-indigo-500 rounded-xl flex items-center justify-center">
+                                                        <span className="text-white font-bold text-2xl">GT</span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Upload Dropzone */}
+                                            <div
+                                                className={`flex-1 border-2 border-dashed rounded-xl p-6 transition-all cursor-pointer
+                                                    ${isDragging
+                                                        ? 'border-purple-500 bg-purple-50'
+                                                        : 'border-gray-300 hover:border-purple-300 hover:bg-gray-50'
+                                                    }`}
+                                                onDrop={handleDrop}
+                                                onDragOver={handleDragOver}
+                                                onDragLeave={handleDragLeave}
+                                                onClick={() => fileInputRef.current?.click()}
+                                            >
+                                                <div className="flex flex-col items-center justify-center text-center">
+                                                    <IconUpload className={`h-8 w-8 mb-2 ${isDragging ? 'text-purple-500' : 'text-gray-400'}`} />
+                                                    <p className="text-sm font-medium text-gray-700">
+                                                        Kéo thả ảnh hoặc click để chọn
+                                                    </p>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        PNG, JPG, WEBP, SVG • Tối đa 2MB
+                                                    </p>
+                                                </div>
+                                                <input
+                                                    ref={fileInputRef}
+                                                    type="file"
+                                                    accept=".png,.jpg,.jpeg,.webp,.svg"
+                                                    className="hidden"
+                                                    onChange={handleFileInputChange}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Action Buttons */}
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => fileInputRef.current?.click()}
+                                                disabled={isLoading}
+                                            >
+                                                <IconPhoto className="mr-2 h-4 w-4" />
+                                                Đổi logo
+                                            </Button>
+                                            {logoUrl && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                    onClick={handleDeleteLogo}
+                                                    disabled={isLoading}
+                                                >
+                                                    <IconTrash className="mr-2 h-4 w-4" />
+                                                    Xóa
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            </motion.div>
+
+                            <motion.div variants={itemVariants}>
+                                <Card className="border-0 shadow-sm">
+                                    <CardHeader className="pb-3">
+                                        <CardTitle className="text-base flex items-center gap-2">
                                             <IconBuilding className="h-5 w-5 text-purple-500" />
                                             Thông tin công ty
                                         </CardTitle>
                                         <CardDescription className="text-sm">Cập nhật thông tin doanh nghiệp</CardDescription>
                                     </CardHeader>
                                     <CardContent className="space-y-4">
-                                        {/* Logo Upload */}
-                                        <div className="flex items-center gap-4 p-4 border-2 border-dashed rounded-lg hover:border-purple-300 transition-colors">
-                                            <div className="h-16 w-16 bg-gradient-to-br from-pink-500 via-purple-500 to-indigo-500 rounded-xl flex items-center justify-center">
-                                                <span className="text-white font-bold text-xl">GT</span>
-                                            </div>
-                                            <div className="flex-1">
-                                                <h4 className="font-medium">Logo công ty</h4>
-                                                <p className="text-sm text-gray-500">PNG, JPG tối đa 2MB</p>
-                                            </div>
-                                            <Button variant="outline" size="sm">
-                                                <IconUpload className="mr-2 h-4 w-4" />
-                                                Tải lên
-                                            </Button>
-                                        </div>
-
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div className="space-y-2">
                                                 <Label className="text-sm font-medium">Tên công ty</Label>
@@ -203,8 +345,8 @@ export default function SettingsPage() {
                                                         key={option.value}
                                                         onClick={() => setTheme(option.value as typeof theme)}
                                                         className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${theme === option.value
-                                                                ? 'border-purple-500 bg-purple-50'
-                                                                : 'border-gray-200 hover:border-gray-300'
+                                                            ? 'border-purple-500 bg-purple-50'
+                                                            : 'border-gray-200 hover:border-gray-300'
                                                             }`}
                                                     >
                                                         <option.icon className={`h-6 w-6 ${theme === option.value ? 'text-purple-500' : 'text-gray-400'}`} />
