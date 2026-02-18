@@ -16,7 +16,11 @@ import { useRouter } from 'next/navigation';
 import NotificationBell from '@/components/NotificationBell';
 import { usePermission } from '@/hooks/usePermission';
 
-export function Header() {
+interface HeaderProps {
+    onMenuClick?: () => void;
+}
+
+export function Header({ onMenuClick }: HeaderProps) {
     const router = useRouter();
     const { user, logout } = useAuthStore();
     const { canAccessModule } = usePermission();
@@ -41,6 +45,8 @@ export function Header() {
             <button
                 type="button"
                 className="lg:hidden -m-2.5 p-2.5 text-gray-700 dark:text-gray-300"
+                onClick={onMenuClick}
+                aria-label="Mở menu"
             >
                 <IconMenu2 className="h-6 w-6" />
             </button>

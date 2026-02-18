@@ -160,6 +160,28 @@ function EditableField({ label, value, icon: Icon, onSave, type = 'text' }: {
 // =============================================
 // Logo Upload Card Component
 // =============================================
+
+/**
+ * Resolves a logo_url from DB to a displayable URL.
+ * 
+ * BUGFIX: BUG-20260218-001
+ * Old format: /uploads/logos/{tenant_id}.png (saved to Cloud Run filesystem, 404 on Vercel)
+ * New format: /api/v1/tenants/me/logo?v={timestamp} (served through API proxy)
+ * 
+ * This handles both formats for backwards compatibility.
+ */
+function resolveLogoUrl(logoUrl: string | null): string | null {
+    if (!logoUrl) return null;
+    // New format — already API-served, works through Next.js proxy
+    if (logoUrl.startsWith('/api/v1/')) return logoUrl;
+    // Old format — convert to API path with cache buster
+    if (logoUrl.startsWith('/uploads/logos/')) {
+        return `/api/v1/tenants/me/logo?v=${Date.now()}`;
+    }
+    // Absolute URL or other format — pass through
+    return logoUrl;
+}
+
 function LogoUploadCard({ logoUrl }: { logoUrl: string | null }) {
     const [dragActive, setDragActive] = useState(false);
     const [preview, setPreview] = useState<string | null>(null);
@@ -211,7 +233,8 @@ function LogoUploadCard({ logoUrl }: { logoUrl: string | null }) {
         });
     };
 
-    const displayUrl = preview || logoUrl;
+    const resolvedLogo = resolveLogoUrl(logoUrl);
+    const displayUrl = preview || resolvedLogo;
 
     return (
         <Card className="border-0 shadow-sm">

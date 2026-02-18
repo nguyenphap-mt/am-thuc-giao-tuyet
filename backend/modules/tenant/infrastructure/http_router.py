@@ -8,11 +8,13 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, Field
+import time
 
 from backend.core.database import get_db
 from backend.core.dependencies import get_current_tenant
@@ -194,6 +196,30 @@ async def update_my_tenant(
     return _serialize_tenant(tenant)
 
 
+@router.get("/me/logo")
+async def get_tenant_logo(
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve logo file for current tenant (public within tenant)"""
+    # Find any matching logo file for this tenant
+    for ext in ["png", "jpg", "webp", "svg"]:
+        filepath = UPLOAD_DIR / f"{tenant_id}.{ext}"
+        if filepath.exists():
+            media_types = {
+                "png": "image/png",
+                "jpg": "image/jpeg",
+                "webp": "image/webp",
+                "svg": "image/svg+xml",
+            }
+            return FileResponse(
+                path=str(filepath),
+                media_type=media_types.get(ext, "image/png"),
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
+    raise HTTPException(status_code=404, detail="Logo không tồn tại")
+
+
 @router.post("/me/logo")
 async def upload_tenant_logo(
     file: UploadFile = File(...),
@@ -244,8 +270,11 @@ async def upload_tenant_logo(
     with open(filepath, "wb") as f:
         f.write(contents)
 
-    # Update tenant logo_url in DB
-    logo_url = f"/uploads/logos/{filename}"
+    # Update tenant logo_url in DB — use API path so frontend fetches through backend
+    # BUGFIX: BUG-20260218-001
+    # Root Cause: Old path /uploads/logos/{filename} is on Cloud Run filesystem,
+    # not accessible from Vercel frontend. Use API-served path instead.
+    logo_url = f"/api/v1/tenants/me/logo?v={int(time.time())}"
     service = TenantService(db)
     tenant = await service.update_tenant(tenant_id, {"logo_url": logo_url})
 

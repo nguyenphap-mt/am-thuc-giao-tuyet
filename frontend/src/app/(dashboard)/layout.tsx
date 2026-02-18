@@ -21,6 +21,9 @@ export default function DashboardLayout({
     const pathname = usePathname();
     const { isAuthenticated, checkAuth, isHydrated } = useAuthStore();
 
+    // Mobile sidebar state
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+
     // Quick Action Modal State
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [showExpenseModal, setShowExpenseModal] = useState(false);
@@ -46,9 +49,9 @@ export default function DashboardLayout({
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 dark:bg-gray-800 dark:bg-gray-950">
-            <Sidebar />
+            <Sidebar mobileOpen={sidebarOpen} onMobileClose={() => setSidebarOpen(false)} />
             <div className="lg:pl-64">
-                <Header />
+                <Header onMenuClick={() => setSidebarOpen(true)} />
                 <main className="p-6" role="main">
                     {children}
                 </main>

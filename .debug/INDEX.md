@@ -45,6 +45,7 @@
 | BUG-20260217-002 | HR/Leave | High | `api-mismatch` | 404, leave, not-found, missing-endpoint, hr | `hr/http_router.py` | ✅ | 2026-02-17 |
 | BUG-20260217-003 | HR/Leave | High | `missing-seed-data` | leave, dropdown, empty, seed, tenant-id, leave_types | `033_seed_leave_types_all_tenants.sql` | ✅ | 2026-02-17 |
 | BUG-20260217-004 | HR/Leave | High | `duplicate-code`, `missing-employee-link` | leave, 404, 500, my-balances, my-requests, duplicate-endpoints, schema-validation, fastapi-last-wins | `hr/http_router.py` | ✅ | 2026-02-17 |
+| BUG-20260218-001 | Tenant/Settings | High | `api-mismatch` | logo, upload, 404, Cloud Run, Vercel, FileResponse, static-files | `http_router.py`, `page.tsx` | ✅ | 2026-02-18 |
 
 ---
 
@@ -62,4 +63,4 @@
 
 ---
 
-*Last updated: 2026-02-18 07:30 (BUG-20260217-004 added)*
+*Last updated: 2026-02-18 08:10 (BUG-20260218-001 added)*
