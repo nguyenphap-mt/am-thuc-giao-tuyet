@@ -385,6 +385,11 @@ export interface EmployeePayload {
     bank_name?: string;
     emergency_contact?: string;
     notes?: string;
+    // Login account fields (User-Employee Unification)
+    create_account?: boolean;
+    login_email?: string;
+    login_password?: string;
+    login_role?: string;
     // Per-employee payroll config
     allowance_meal?: number;
     allowance_transport?: number;

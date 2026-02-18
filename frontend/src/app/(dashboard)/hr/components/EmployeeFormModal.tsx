@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
     Dialog,
     DialogContent,
@@ -23,7 +24,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { IconUser, IconPhone, IconMail, IconCash, IconId, IconBuildingBank, IconLoader2 } from '@tabler/icons-react';
+import { IconUser, IconPhone, IconMail, IconCash, IconId, IconBuildingBank, IconLoader2, IconLock, IconCopy, IconCheck } from '@tabler/icons-react';
 import { Employee, EmployeePayload } from '@/types';
 
 interface EmployeeFormModalProps {
@@ -42,6 +43,12 @@ const ROLE_TYPES = [
     { value: 'MANAGER', label: 'Quản lý' },
 ];
 
+const SYSTEM_ROLES = [
+    { value: 'staff', label: 'Nhân viên (Staff)' },
+    { value: 'manager', label: 'Quản lý (Manager)' },
+    { value: 'admin', label: 'Admin' },
+];
+
 const initialFormData: EmployeePayload = {
     full_name: '',
     role_type: 'WAITER',
@@ -58,6 +65,11 @@ const initialFormData: EmployeePayload = {
     bank_name: '',
     emergency_contact: '',
     notes: '',
+    // Login account fields
+    create_account: true,
+    login_email: '',
+    login_password: 'GiaoTuyet@2026',
+    login_role: 'staff',
     // Per-employee payroll config (undefined = use tenant default)
     allowance_meal: undefined,
     allowance_transport: undefined,
@@ -77,6 +89,7 @@ export default function EmployeeFormModal({
 }: EmployeeFormModalProps) {
     const queryClient = useQueryClient();
     const [formData, setFormData] = useState<EmployeePayload>(initialFormData);
+    const [copied, setCopied] = useState(false);
 
     useEffect(() => {
         if (mode === 'edit' && employee) {
@@ -96,11 +109,25 @@ export default function EmployeeFormModal({
                 bank_name: employee.bank_name || '',
                 emergency_contact: employee.emergency_contact || '',
                 notes: employee.notes || '',
+                create_account: false, // Don't show account section for edit mode by default
             });
         } else {
             setFormData(initialFormData);
         }
     }, [mode, employee, open]);
+
+    const generatePassword = () => {
+        const pw = `GiaoTuyet@${new Date().getFullYear()}`;
+        handleChange('login_password', pw);
+    };
+
+    const copyPassword = () => {
+        if (formData.login_password) {
+            navigator.clipboard.writeText(formData.login_password);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
 
     const createMutation = useMutation({
         mutationFn: async (data: EmployeePayload) => {
@@ -380,6 +407,82 @@ export default function EmployeeFormModal({
                                 />
                             </div>
                         </div>
+                    </div>
+
+                    {/* Login Account Section */}
+                    <div className="border-t pt-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                <IconLock className="h-4 w-4 text-green-500" />
+                                Tài khoản đăng nhập
+                            </h4>
+                            <div className="flex items-center gap-2">
+                                <Label htmlFor="create_account" className="text-xs text-gray-500">Tạo tài khoản</Label>
+                                <Switch
+                                    id="create_account"
+                                    checked={formData.create_account ?? true}
+                                    onCheckedChange={(v) => handleChange('create_account', v)}
+                                />
+                            </div>
+                        </div>
+
+                        {formData.create_account && (
+                            <div className="space-y-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                                <div className="space-y-2">
+                                    <Label htmlFor="login_email" className="flex items-center gap-1">
+                                        <IconMail className="h-4 w-4" />
+                                        Email đăng nhập <span className="text-red-500">*</span>
+                                    </Label>
+                                    <Input
+                                        id="login_email"
+                                        type="email"
+                                        value={formData.login_email || ''}
+                                        onChange={(e) => handleChange('login_email', e.target.value)}
+                                        placeholder="nhanvien@giaotuyet.com"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="login_password">Mật khẩu <span className="text-red-500">*</span></Label>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                id="login_password"
+                                                value={formData.login_password || ''}
+                                                onChange={(e) => handleChange('login_password', e.target.value)}
+                                                placeholder="Mật khẩu"
+                                            />
+                                            <Button type="button" variant="outline" size="icon" onClick={copyPassword} title="Sao chép mật khẩu">
+                                                {copied ? <IconCheck className="h-4 w-4 text-green-500" /> : <IconCopy className="h-4 w-4" />}
+                                            </Button>
+                                        </div>
+                                        <p className="text-xs text-gray-500">
+                                            Mặc định: GiaoTuyet@{new Date().getFullYear()}.
+                                            <button type="button" onClick={generatePassword} className="ml-1 text-purple-600 hover:underline">Tạo lại</button>
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="login_role">Vai trò hệ thống <span className="text-red-500">*</span></Label>
+                                        <Select
+                                            value={formData.login_role || 'staff'}
+                                            onValueChange={(value) => handleChange('login_role', value)}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Chọn vai trò" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {SYSTEM_ROLES.map((role) => (
+                                                    <SelectItem key={role.value} value={role.value}>
+                                                        {role.label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Payroll Config Section - Only for fulltime employees */}
