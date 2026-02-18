@@ -206,29 +206,29 @@ async def update_my_tenant(
 @public_router.get("/{tenant_id}/logo")
 async def get_tenant_logo(
     tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
 ):
     """Serve logo file for a tenant (public endpoint — no auth required).
     
-    BUGFIX: BUG-20260218-002
-    <img> tags cannot send JWT Authorization headers, so this endpoint
-    must be public. Logo files are inherently non-sensitive assets.
+    BUGFIX: BUG-20260218-003
+    Cloud Run filesystem is ephemeral — files are lost on redeploy.
+    Read logo bytes directly from PostgreSQL (logo_data BYTEA column).
     """
-    # Find any matching logo file for this tenant
-    for ext in ["png", "jpg", "webp", "svg"]:
-        filepath = UPLOAD_DIR / f"{tenant_id}.{ext}"
-        if filepath.exists():
-            media_types = {
-                "png": "image/png",
-                "jpg": "image/jpeg",
-                "webp": "image/webp",
-                "svg": "image/svg+xml",
-            }
-            return FileResponse(
-                path=str(filepath),
-                media_type=media_types.get(ext, "image/png"),
-                headers={"Cache-Control": "public, max-age=3600"},
-            )
-    raise HTTPException(status_code=404, detail="Logo không tồn tại")
+    from sqlalchemy import text
+    result = await db.execute(
+        text("SELECT logo_data, logo_content_type FROM tenants WHERE id = :tid"),
+        {"tid": str(tenant_id)}
+    )
+    row = result.first()
+    if not row or not row.logo_data:
+        raise HTTPException(status_code=404, detail="Logo không tồn tại")
+    
+    from fastapi.responses import Response
+    return Response(
+        content=row.logo_data,
+        media_type=row.logo_content_type or "image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @router.post("/me/logo")
@@ -281,14 +281,16 @@ async def upload_tenant_logo(
     with open(filepath, "wb") as f:
         f.write(contents)
 
-    # Update tenant logo_url in DB — use public API path with tenant_id
-    # BUGFIX: BUG-20260218-001 + BUG-20260218-002
-    # BUG-001: /uploads/logos/ is on Cloud Run, not accessible from Vercel
-    # BUG-002: /me/logo requires auth, but <img> tags can't send JWT tokens
-    # Solution: Public endpoint GET /tenants/{tenant_id}/logo
+    # Update tenant: logo_url + logo_data in DB
+    # BUGFIX: BUG-20260218-003 — Cloud Run filesystem is ephemeral
+    # Store image bytes directly in PostgreSQL BYTEA column
     logo_url = f"/api/v1/tenants/{tenant_id}/logo?v={int(time.time())}"
     service = TenantService(db)
-    tenant = await service.update_tenant(tenant_id, {"logo_url": logo_url})
+    tenant = await service.update_tenant(tenant_id, {
+        "logo_url": logo_url,
+        "logo_data": contents,
+        "logo_content_type": file.content_type,
+    })
 
     return {"logo_url": logo_url, "message": "Upload logo thành công"}
 

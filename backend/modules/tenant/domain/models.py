@@ -3,7 +3,7 @@ Tenant Module - Domain Models (ORM)
 SQLAlchemy models for tenants and tenant_usage tables
 """
 
-from sqlalchemy import Column, String, Boolean, DateTime, Text, Numeric, Date
+from sqlalchemy import Column, String, Boolean, DateTime, Text, Numeric, Date, LargeBinary
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from backend.core.database import Base
@@ -31,6 +31,8 @@ class TenantModel(Base):
     status = Column(String(20), default='active')
     domain = Column(String(255))
     logo_url = Column(Text)
+    logo_data = Column(LargeBinary)  # BYTEA — store logo bytes in DB (Cloud Run filesystem is ephemeral)
+    logo_content_type = Column(String(50))  # e.g. "image/png"
     plan_details = Column(JSONB, default={})
     contact_email = Column(String(255))
     contact_phone = Column(String(20))

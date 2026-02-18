@@ -110,6 +110,7 @@ class TenantService:
         # Update only provided fields
         updatable_fields = [
             "name", "slug", "plan", "domain", "logo_url", 
+            "logo_data", "logo_content_type",
             "plan_details", "contact_email", "contact_phone",
             "address", "metadata"
         ]
