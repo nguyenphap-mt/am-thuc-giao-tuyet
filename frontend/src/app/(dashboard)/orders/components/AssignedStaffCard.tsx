@@ -16,7 +16,8 @@ import {
     IconEdit,
     IconTrash,
     IconCheck,
-    IconArrowRight
+    IconArrowRight,
+    IconCalendar
 } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -102,11 +103,31 @@ function formatTime(isoString?: string): string {
     }
 }
 
+function formatDate(isoString?: string): string {
+    if (!isoString) return '';
+    try {
+        const d = new Date(isoString);
+        return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+    } catch {
+        return '';
+    }
+}
+
 function extractTimeValue(isoString?: string): string {
     if (!isoString) return '';
     try {
         const d = new Date(isoString);
         return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    } catch {
+        return '';
+    }
+}
+
+function extractDateValue(isoString?: string): string {
+    if (!isoString) return '';
+    try {
+        const d = new Date(isoString);
+        return d.toISOString().split('T')[0]; // yyyy-MM-dd for input[type=date]
     } catch {
         return '';
     }
@@ -129,6 +150,7 @@ export function AssignedStaffCard({
 
     // Edit state
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [editDate, setEditDate] = useState('');
     const [editStartTime, setEditStartTime] = useState('');
     const [editEndTime, setEditEndTime] = useState('');
 
@@ -162,20 +184,22 @@ export function AssignedStaffCard({
 
     const startEdit = (staff: StaffAssignment) => {
         setEditingId(staff.assignment_id);
+        setEditDate(extractDateValue(staff.start_time) || new Date().toISOString().split('T')[0]);
         setEditStartTime(extractTimeValue(staff.start_time) || '08:00');
         setEditEndTime(extractTimeValue(staff.end_time) || '16:00');
     };
 
     const cancelEdit = () => {
         setEditingId(null);
+        setEditDate('');
         setEditStartTime('');
         setEditEndTime('');
     };
 
-    // Build ISO datetime from time string (using today as base date)
+    // Build ISO datetime from editDate + time string
     const buildDatetime = (timeStr: string): string => {
-        const today = new Date().toISOString().split('T')[0];
-        return `${today}T${timeStr}:00`;
+        const dateStr = editDate || new Date().toISOString().split('T')[0];
+        return `${dateStr}T${timeStr}:00`;
     };
 
     // Calculate hours between two time strings
@@ -316,10 +340,12 @@ export function AssignedStaffCard({
                                                             {roleLabels[staff.role] || staff.role}
                                                         </span>
 
-                                                        {/* Time Range Display */}
+                                                        {/* Date + Time Range Display */}
                                                         {hasTime ? (
                                                             <span className="flex items-center gap-1 text-purple-600 font-medium">
-                                                                <IconClock className="w-3.5 h-3.5" />
+                                                                <IconCalendar className="w-3.5 h-3.5" />
+                                                                {formatDate(staff.start_time)}
+                                                                <IconClock className="w-3.5 h-3.5 ml-1" />
                                                                 {formatTime(staff.start_time)}
                                                                 <IconArrowRight className="w-3 h-3" />
                                                                 {formatTime(staff.end_time)}
@@ -383,7 +409,16 @@ export function AssignedStaffCard({
                                             {isEditing && (
                                                 <div className="ml-16 mt-2 p-3 bg-purple-50 rounded-lg border border-purple-100 animate-in slide-in-from-top-2 duration-200">
                                                     <p className="text-xs font-medium text-purple-700 mb-2">Sửa giờ phân công</p>
-                                                    <div className="flex items-center gap-3">
+                                                    <div className="flex items-center gap-3 flex-wrap">
+                                                        <div className="flex items-center gap-2">
+                                                            <IconCalendar className="w-4 h-4 text-purple-500" />
+                                                            <input
+                                                                type="date"
+                                                                value={editDate}
+                                                                onChange={(e) => setEditDate(e.target.value)}
+                                                                className="px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
+                                                            />
+                                                        </div>
                                                         <div className="flex items-center gap-2">
                                                             <label className="text-xs text-gray-500">Từ</label>
                                                             <input
