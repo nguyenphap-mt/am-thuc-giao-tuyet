@@ -29,9 +29,9 @@ class JournalService:
     ACCOUNT_SALARY = "642"     # Chi phí tiền lương
     ACCOUNT_PAYABLE = "331"    # Phải trả người bán
     
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, tenant_id: UUID = None):
         self.db = db
-        self.tenant_id = self.DEFAULT_TENANT_ID
+        self.tenant_id = tenant_id or self.DEFAULT_TENANT_ID
     
     async def get_or_create_account(self, code: str, name: str, account_type: str) -> AccountModel:
         """Get existing account or create if not exists"""

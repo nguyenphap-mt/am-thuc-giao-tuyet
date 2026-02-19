@@ -1673,7 +1673,7 @@ async def add_payment(order_id: UUID, data: OrderPaymentBase, tenant_id: UUID = 
     # and silent failures. Now both payment + journal are in the same transaction.
     try:
         from backend.modules.finance.services.journal_service import JournalService
-        journal_service = JournalService(db)
+        journal_service = JournalService(db, tenant_id=tenant_id)
         await journal_service.create_journal_from_payment(
             payment_id=new_payment.id,
             order_id=order_id,

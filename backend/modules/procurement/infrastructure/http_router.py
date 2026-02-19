@@ -515,7 +515,7 @@ async def update_order_status(
             try:
                 from backend.modules.finance.services.journal_service import JournalService
                 
-                journal_service = JournalService(db)
+                journal_service = JournalService(db, tenant_id=tenant_id)
                 
                 # Get supplier name for description
                 supplier_name = ""

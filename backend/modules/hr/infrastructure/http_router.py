@@ -2142,7 +2142,7 @@ async def approve_payroll(period_id: UUID, tenant_id: UUID = Depends(get_current
     # Sprint 17.2: Auto-create Journal Entry for payroll
     try:
         from backend.modules.finance.services.journal_service import JournalService
-        journal_service = JournalService(db)
+        journal_service = JournalService(db, tenant_id=tenant_id)
         await journal_service.create_journal_from_payroll(
             payroll_period_id=period_id,
             total_amount=period.total_net or Decimal(0),
