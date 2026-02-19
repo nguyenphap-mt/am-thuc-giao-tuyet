@@ -7,15 +7,16 @@ import {
     IconPlayerPause,
     IconCheck,
     IconAlertTriangle,
-    IconX
+    IconX,
+    IconRotate,
 } from '@tabler/icons-react';
 
 interface StatusConfirmationModalProps {
     open: boolean;
     onClose: () => void;
-    onConfirm: () => void;
+    onConfirm: (reason?: string) => void;
     isLoading?: boolean;
-    action: 'hold' | 'complete' | 'resume';
+    action: 'hold' | 'complete' | 'resume' | 'reopen';
 }
 
 const actionConfig = {
@@ -54,6 +55,23 @@ const actionConfig = {
         confirmClass: 'bg-blue-500 hover:bg-blue-600 text-white',
         warning: null,
     },
+    reopen: {
+        title: 'Mở lại đơn hàng?',
+        description: 'Đơn hàng sẽ quay lại trạng thái "Đang thực hiện". Hệ thống sẽ tự động hoàn trả:',
+        icon: IconRotate,
+        iconBg: 'bg-orange-100',
+        iconColor: 'text-orange-600',
+        confirmLabel: 'Mở lại đơn hàng',
+        confirmClass: 'bg-orange-500 hover:bg-orange-600 text-white',
+        warning: 'Hành động này sẽ hoàn trả kho nguyên liệu, xóa chấm công tự động, và trừ điểm tích lũy.',
+        requiresReason: true,
+        rollbackItems: [
+            'Hoàn trả nguyên liệu đã trừ về kho',
+            'Xóa bản chấm công tự động tạo',
+            'Trừ điểm tích lũy đã tích cho khách',
+            'Cập nhật lại thống kê khách hàng'
+        ]
+    },
 };
 
 export function StatusConfirmationModal({
@@ -66,6 +84,22 @@ export function StatusConfirmationModal({
     const config = actionConfig[action];
     const Icon = config.icon;
     const prefersReducedMotion = useReducedMotion();
+    const [reason, setReason] = useState('');
+    const needsReason = 'requiresReason' in config && config.requiresReason;
+
+    const handleClose = () => {
+        setReason('');
+        onClose();
+    };
+
+    const handleConfirm = () => {
+        if (needsReason) {
+            onConfirm(reason);
+        } else {
+            onConfirm();
+        }
+        setReason('');
+    };
 
     return (
         <AnimatePresence>
@@ -77,7 +111,7 @@ export function StatusConfirmationModal({
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         className="fixed inset-0 bg-black/50 z-50"
-                        onClick={onClose}
+                        onClick={handleClose}
                     />
 
                     {/* Modal */}
@@ -102,21 +136,36 @@ export function StatusConfirmationModal({
                                 </p>
                             </div>
                             <button
-                                onClick={onClose}
+                                onClick={handleClose}
                                 aria-label="Đóng"
-                                className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-800 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 dark:text-gray-600 dark:text-gray-400 transition-colors"
+                                className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                             >
                                 <IconX className="h-5 w-5" aria-hidden="true" />
                             </button>
                         </div>
 
                         {/* Content */}
-                        <div className="px-6 pb-4">
+                        <div className="px-6 pb-4 space-y-3">
                             {/* Warning */}
                             {config.warning && (
                                 <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
                                     <IconAlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
                                     <span className="text-amber-700">{config.warning}</span>
+                                </div>
+                            )}
+
+                            {/* Rollback Items (for reopen action) */}
+                            {'rollbackItems' in config && config.rollbackItems && (
+                                <div className="space-y-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                                    <p className="text-sm font-medium text-orange-800">Hệ thống sẽ tự động:</p>
+                                    <ul className="space-y-1.5">
+                                        {config.rollbackItems.map((item: string, index: number) => (
+                                            <li key={index} className="flex items-center gap-2 text-sm text-orange-700">
+                                                <IconRotate className="h-4 w-4 text-orange-500" aria-hidden="true" />
+                                                {item}
+                                            </li>
+                                        ))}
+                                    </ul>
                                 </div>
                             )}
 
@@ -134,20 +183,37 @@ export function StatusConfirmationModal({
                                     </ul>
                                 </div>
                             )}
+
+                            {/* Reason textarea (for reopen action) */}
+                            {needsReason && (
+                                <div className="space-y-1.5">
+                                    <label htmlFor="reopen-reason" className="text-sm font-medium text-gray-700">
+                                        Lý do mở lại <span className="text-red-500">*</span>
+                                    </label>
+                                    <textarea
+                                        id="reopen-reason"
+                                        value={reason}
+                                        onChange={(e) => setReason(e.target.value)}
+                                        placeholder="Nhập lý do mở lại đơn hàng..."
+                                        rows={3}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 resize-none"
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         {/* Actions */}
                         <div className="flex items-center justify-end gap-3 p-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
                             <Button
                                 variant="outline"
-                                onClick={onClose}
+                                onClick={handleClose}
                                 disabled={isLoading}
                             >
                                 Hủy
                             </Button>
                             <Button
-                                onClick={onConfirm}
-                                disabled={isLoading}
+                                onClick={handleConfirm}
+                                disabled={isLoading || (needsReason && !reason.trim())}
                                 className={config.confirmClass}
                             >
                                 {isLoading ? (

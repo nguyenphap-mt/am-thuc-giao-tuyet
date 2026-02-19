@@ -41,7 +41,7 @@ export function useOrder(id: string) {
 }
 
 // ISS-004 Fix: Use correct backend endpoints for status changes
-type OrderAction = 'confirm' | 'start' | 'complete' | 'cancel' | 'hold' | 'resume' | 'mark-paid';
+type OrderAction = 'confirm' | 'start' | 'complete' | 'cancel' | 'hold' | 'resume' | 'mark-paid' | 'reopen';
 
 export function useOrderAction() {
     const queryClient = useQueryClient();
@@ -60,11 +60,31 @@ export function useOrderAction() {
                 'hold': 'Tạm hoãn đơn hàng',
                 'resume': 'Tiếp tục đơn hàng',
                 'mark-paid': 'Đánh dấu đã thanh toán',
+                'reopen': 'Mở lại đơn hàng',
             };
             toast.success(`${actionLabels[variables.action]} thành công`);
         },
         onError: () => {
             toast.error('Không thể thực hiện thao tác');
+        },
+    });
+}
+
+// Reopen a COMPLETED order (requires reason)
+export function useReopenOrder() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) =>
+            api.post<Order>(`/orders/${orderId}/reopen`, { reason }),
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['orders'] });
+            queryClient.invalidateQueries({ queryKey: ['order', variables.orderId] });
+            toast.success('Mở lại đơn hàng thành công! Tất cả side effects đã được hoàn trả.');
+        },
+        onError: (error: any) => {
+            const message = error?.response?.data?.detail || error?.message || 'Không thể mở lại đơn hàng';
+            toast.error(message);
         },
     });
 }

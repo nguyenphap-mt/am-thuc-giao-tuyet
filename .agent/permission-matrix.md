@@ -92,6 +92,7 @@
 | Confirm Order | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
 | Cancel Order | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
 | Update Status | ✅ | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
+| Reopen Order | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
 
 ### 3.5 Calendar Module
 | Action | admin | manager | chef | sales | staff |

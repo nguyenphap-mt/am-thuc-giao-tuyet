@@ -1285,6 +1285,233 @@ async def complete_order(order_id: UUID, tenant_id: UUID = Depends(get_current_t
     return result.scalar_one()
 
 
+# ============ ORDER REOPEN (Full Rollback) ============
+
+from pydantic import BaseModel as PydanticBaseModel
+
+class ReopenOrderRequest(PydanticBaseModel):
+    reason: str
+
+
+@router.post("/{order_id}/reopen", response_model=Order)
+async def reopen_order(
+    order_id: UUID,
+    body: ReopenOrderRequest,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reopen a COMPLETED order back to IN_PROGRESS.
+    Performs full rollback of all side effects:
+    1. Reverse inventory deductions (EXPORT → IMPORT)
+    2. Delete auto-created timesheets (source=AUTO_ORDER)
+    3. Reverse loyalty points earned
+    4. Recalculate CRM customer stats
+    """
+    result = await db.execute(
+        select(OrderModel)
+        .options(selectinload(OrderModel.items))
+        .where(
+            (OrderModel.id == order_id) &
+            (OrderModel.tenant_id == tenant_id)
+        )
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.status != 'COMPLETED':
+        raise HTTPException(
+            status_code=400,
+            detail=f"Chỉ có thể mở lại đơn hàng đã hoàn thành. Trạng thái hiện tại: {order.status}"
+        )
+
+    rollback_summary = []
+
+    # ============ ROLLBACK 1: Reverse Inventory Deductions ============
+    try:
+        from backend.modules.inventory.domain.models import InventoryTransactionModel, InventoryStockModel
+
+        # Find all EXPORT transactions related to this order
+        inv_result = await db.execute(
+            select(InventoryTransactionModel).where(
+                InventoryTransactionModel.tenant_id == tenant_id,
+                InventoryTransactionModel.reference_doc == f"ORDER-{order.code}",
+                InventoryTransactionModel.transaction_type == "EXPORT",
+                InventoryTransactionModel.is_reversed == False
+            )
+        )
+        export_txns = inv_result.scalars().all()
+
+        reversed_count = 0
+        for txn in export_txns:
+            # Create IMPORT reversal transaction
+            reversal = InventoryTransactionModel(
+                tenant_id=tenant_id,
+                item_id=txn.item_id,
+                warehouse_id=txn.warehouse_id,
+                transaction_type="IMPORT",
+                quantity=txn.quantity,
+                unit_price=txn.unit_price,
+                reference_doc=f"REOPEN-{order.code}",
+                notes=f"Hoàn trả kho do mở lại đơn hàng {order.code}: {body.reason}",
+                reverses_txn_id=txn.id
+            )
+            db.add(reversal)
+
+            # Update stock
+            stock_result = await db.execute(
+                select(InventoryStockModel).where(
+                    InventoryStockModel.item_id == txn.item_id,
+                    InventoryStockModel.warehouse_id == txn.warehouse_id,
+                    InventoryStockModel.tenant_id == tenant_id
+                )
+            )
+            stock = stock_result.scalar_one_or_none()
+            if stock:
+                stock.quantity += txn.quantity  # Undo export
+
+            # Mark original as reversed
+            txn.is_reversed = True
+
+            reversed_count += 1
+
+        if reversed_count > 0:
+            rollback_summary.append(f"Hoàn trả {reversed_count} giao dịch kho")
+            logger.info(f"Order {order.code} reopen: Reversed {reversed_count} inventory transactions")
+
+    except ImportError:
+        logger.warning("Inventory module not available for rollback")
+    except Exception as e:
+        logger.warning(f"Inventory rollback failed for order {order.code}: {e}")
+
+    # ============ ROLLBACK 2: Delete Auto-Created Timesheets ============
+    try:
+        from backend.modules.hr.domain.models import TimesheetModel
+
+        ts_result = await db.execute(
+            select(TimesheetModel).where(
+                TimesheetModel.tenant_id == tenant_id,
+                TimesheetModel.order_id == order_id,
+                TimesheetModel.source == 'AUTO_ORDER'
+            )
+        )
+        auto_timesheets = ts_result.scalars().all()
+
+        ts_count = 0
+        for ts in auto_timesheets:
+            await db.delete(ts)
+            ts_count += 1
+
+        if ts_count > 0:
+            rollback_summary.append(f"Xóa {ts_count} bản chấm công tự động")
+            logger.info(f"Order {order.code} reopen: Deleted {ts_count} auto-created timesheets")
+
+    except ImportError:
+        logger.warning("HR module not available for rollback")
+    except Exception as e:
+        logger.warning(f"Timesheet rollback failed for order {order.code}: {e}")
+
+    # ============ ROLLBACK 3: Reverse Loyalty Points ============
+    if order.customer_id:
+        try:
+            from backend.modules.crm.domain.models import LoyaltyPointsHistoryModel, CustomerModel
+
+            # Find loyalty points earned for this order
+            points_result = await db.execute(
+                select(LoyaltyPointsHistoryModel).where(
+                    LoyaltyPointsHistoryModel.tenant_id == tenant_id,
+                    LoyaltyPointsHistoryModel.reference_id == order_id,
+                    LoyaltyPointsHistoryModel.reference_type == "ORDER",
+                    LoyaltyPointsHistoryModel.type == "EARN"
+                )
+            )
+            earn_records = points_result.scalars().all()
+
+            total_points_to_reverse = sum(r.points for r in earn_records)
+
+            if total_points_to_reverse > 0:
+                # Get current customer points
+                cust_result = await db.execute(
+                    select(CustomerModel).where(CustomerModel.id == order.customer_id)
+                )
+                customer = cust_result.scalar_one_or_none()
+
+                if customer:
+                    new_balance = max(0, (customer.loyalty_points or 0) - total_points_to_reverse)
+                    await db.execute(
+                        update(CustomerModel)
+                        .where(CustomerModel.id == order.customer_id)
+                        .values(loyalty_points=new_balance)
+                    )
+
+                    # Create reversal history record
+                    reversal_history = LoyaltyPointsHistoryModel(
+                        tenant_id=tenant_id,
+                        customer_id=order.customer_id,
+                        points=-total_points_to_reverse,
+                        type="REVERSAL",
+                        reference_type="ORDER_REOPEN",
+                        reference_id=order_id,
+                        description=f"Hoàn trả điểm do mở lại đơn hàng {order.code}",
+                        balance_after=new_balance
+                    )
+                    db.add(reversal_history)
+
+                    rollback_summary.append(f"Hoàn trả {total_points_to_reverse} điểm tích lũy")
+                    logger.info(f"Order {order.code} reopen: Reversed {total_points_to_reverse} loyalty points")
+
+        except ImportError:
+            logger.warning("CRM loyalty module not available for rollback")
+        except Exception as e:
+            logger.warning(f"Loyalty points rollback failed for order {order.code}: {e}")
+
+    # ============ ROLLBACK 4: Update Order Status ============
+    order.status = 'IN_PROGRESS'
+    order.completed_at = None
+    order.updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
+
+    # ============ ROLLBACK 5: Recalculate CRM Stats ============
+    if order.customer_id:
+        try:
+            await CrmIntegrationService.recalculate_stats(db, tenant_id, order.customer_id)
+        except Exception as e:
+            logger.warning(f"CRM stats recalculation failed for order {order.code}: {e}")
+
+    # ============ Create Audit Note ============
+    try:
+        from backend.modules.order.domain.models import OrderNoteModel
+        summary_text = "; ".join(rollback_summary) if rollback_summary else "Không có side effect cần rollback"
+        note = OrderNoteModel(
+            tenant_id=tenant_id,
+            order_id=order_id,
+            content=f"🔄 Đơn hàng được mở lại.\nLý do: {body.reason}\nRollback: {summary_text}",
+            note_type="SYSTEM",
+        )
+        db.add(note)
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to create reopen audit note: {e}")
+
+    logger.info(f"Order {order.code} reopened by request. Reason: {body.reason}. Rollback: {rollback_summary}")
+
+    # Reload with relationships
+    result = await db.execute(
+        select(OrderModel)
+        .options(
+            selectinload(OrderModel.items),
+            selectinload(OrderModel.payments)
+        )
+        .where(OrderModel.id == order_id)
+    )
+    return result.scalar_one()
+
+# ============ END ORDER REOPEN ============
+
+
 @router.post("/{order_id}/cancel", response_model=Order)
 async def cancel_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Cancel an order"""

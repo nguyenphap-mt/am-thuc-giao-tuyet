@@ -4,7 +4,7 @@ import { useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, useReducedMotion } from 'framer-motion';
-import { useOrder, useOrderAction, useDeletePayment } from '@/hooks/use-orders';
+import { useOrder, useOrderAction, useDeletePayment, useReopenOrder } from '@/hooks/use-orders';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { printMenuA5 } from '@/lib/menu-print-engine';
@@ -61,6 +61,7 @@ import {
     IconToolsKitchen2,
     IconEdit,
     IconTrash,
+    IconRotate,
 } from '@tabler/icons-react';
 
 const statusColors: Record<string, string> = {
@@ -104,6 +105,7 @@ export default function OrderDetailPage({ params }: PageProps) {
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [showCompleteModal, setShowCompleteModal] = useState(false);
     const [showResumeModal, setShowResumeModal] = useState(false);
+    const [showReopenModal, setShowReopenModal] = useState(false);
     // Payment management
     const [editingPayment, setEditingPayment] = useState<any>(null);
     const [deletingPayment, setDeletingPayment] = useState<any>(null);
@@ -116,6 +118,7 @@ export default function OrderDetailPage({ params }: PageProps) {
 
     const { data: order, isLoading, error, refetch } = useOrder(orderId);
     const orderAction = useOrderAction();
+    const reopenOrder = useReopenOrder();
     const deletePaymentMutation = useDeletePayment();
 
     // Fetch order expenses
@@ -335,6 +338,21 @@ export default function OrderDetailPage({ params }: PageProps) {
                         >
                             <IconX className="h-4 w-4 mr-1" />
                             Hủy
+                        </Button>
+                    )}
+
+                    {/* Reopen Button - COMPLETED orders only */}
+                    {order.status === 'COMPLETED' && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-orange-400 text-orange-600 hover:bg-orange-50"
+                            onClick={() => setShowReopenModal(true)}
+                            disabled={orderAction.isPending || reopenOrder.isPending}
+                            aria-label="Mở lại đơn hàng"
+                        >
+                            <IconRotate className="h-4 w-4 mr-1" />
+                            Mở lại
                         </Button>
                     )}
                 </div>
@@ -943,6 +961,19 @@ export default function OrderDetailPage({ params }: PageProps) {
                 }}
                 isLoading={orderAction.isPending}
                 action="resume"
+            />
+            <StatusConfirmationModal
+                open={showReopenModal}
+                onClose={() => setShowReopenModal(false)}
+                onConfirm={async (reason?: string) => {
+                    if (reason) {
+                        await reopenOrder.mutateAsync({ orderId, reason });
+                        setShowReopenModal(false);
+                        refetch();
+                    }
+                }}
+                isLoading={reopenOrder.isPending}
+                action="reopen"
             />
         </div >
     );
