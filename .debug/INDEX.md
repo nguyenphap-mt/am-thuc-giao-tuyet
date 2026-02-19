@@ -16,6 +16,7 @@
 | `timezone` | Timezone mismatch (naive vs aware, UTC vs +07:00) | BUG-20260204-001, 002 |
 | `auth-storage` | Token/session storage key sai hoặc conflict | BUG-20260201-001, 003, 004 |
 | `schema-mismatch` | DB schema thiếu column hoặc type sai | BUG-20260216-001, Mixed Content fix (2026-02-16) |
+| `stale-fk` | FK constraint cũ không còn phù hợp với business logic hiện tại | BUG-20260219-002 |
 | `missing-header` | Thiếu header HTTP (X-Tenant-ID, Authorization) | BUG-20260204-001 |
 | `duplicate-code` | Code duplication gây inconsistency | BUG-20260202-004, BUG-20260217-004 |
 | `missing-tests` | Module thiếu test coverage | BUG-20260202-001 |
@@ -51,6 +52,7 @@
 | BUG-20260218-003 | HR Management | Critical | `schema-mismatch` | 500, user_id, employees, column-does-not-exist, supabase, user-employee-unification | `052_employee_user_link.sql` | ✅ | 2026-02-18 |
 | BUG-20260218-005 | Security/Database | High | `missing-rls` | supabase, RLS, security-advisor, tenant_id, extensions, row-level-security, mutable-search-path | `060_fix_supabase_security_warnings.sql`, `061_fix_remaining_supabase_warnings.sql` | ✅ | 2026-02-18 |
 | BUG-20260219-001 | Security/Database | High | `missing-rls` | supabase, RLS, security-advisor, tenant_id, quote_note_presets, user_sessions, extensions-schema, pg_trgm, unaccent, vector | `061_fix_remaining_supabase_warnings.sql`, `models.py`, `session_model.py` | ✅ | 2026-02-19 |
+| BUG-20260219-002 | HR/StaffAssignment | Critical | `stale-fk` | 500, staff_assignments, event_id, foreign-key, events, orders, supabase, phân-công | `064_fix_staff_assignments_event_fk.sql` | ✅ | 2026-02-19 |
 
 ---
 
@@ -68,4 +70,4 @@
 
 ---
 
-*Last updated: 2026-02-19 07:19 (BUG-20260218-005, BUG-20260219-001 added — Supabase Security Advisor 12→0 issues)*
+*Last updated: 2026-02-19 16:25 (BUG-20260219-002 added — Staff Assignment stale FK constraint on event_id)*

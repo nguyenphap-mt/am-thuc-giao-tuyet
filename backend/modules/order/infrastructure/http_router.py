@@ -414,6 +414,7 @@ class SuggestStaffResponse(BaseModel):
     order_id: str
     order_code: str
     event_date: Optional[str]
+    event_time: Optional[str] = None  # HH:mm format from order
     required_roles: List[str]
     suggestions: List[StaffSuggestion]
     total_available: int
@@ -562,6 +563,7 @@ async def suggest_staff_for_order(
         order_id=str(order_id),
         order_code=order.code,
         event_date=str(order.event_date) if order.event_date else None,
+        event_time=order.event_time if hasattr(order, 'event_time') else None,
         required_roles=list(required_roles),
         suggestions=suggestions[:limit],
         total_available=len([s for s in suggestions if s.is_available])
