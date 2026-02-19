@@ -7,6 +7,14 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { useOrder, useOrderAction } from '@/hooks/use-orders';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { printMenuA5 } from '@/lib/menu-print-engine';
+import { printContract } from '@/lib/contract-print-engine';
+import {
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +50,8 @@ import {
     IconReceipt2,
     IconFileDescription,
     IconUserCircle,
+    IconChevronDown,
+    IconToolsKitchen2,
 } from '@tabler/icons-react';
 
 const statusColors: Record<string, string> = {
@@ -203,10 +213,36 @@ export default function OrderDetailPage({ params }: PageProps) {
                     </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                    <Button variant="outline" size="sm" aria-label="In đơn hàng">
-                        <IconPrinter className="h-4 w-4 mr-1" />
-                        In
-                    </Button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" aria-label="In">
+                                <IconPrinter className="h-4 w-4 mr-1" />
+                                In
+                                <IconChevronDown className="h-3 w-3 ml-1" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                                onClick={() => printMenuA5({
+                                    orderId: order.id,
+                                    orderCode: order.code,
+                                })}
+                            >
+                                <IconToolsKitchen2 className="h-4 w-4 mr-2" />
+                                In Thực Đơn (A5)
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem
+                                onClick={() => printContract({
+                                    orderId: order.id,
+                                    orderCode: order.code,
+                                })}
+                            >
+                                <IconReceipt className="h-4 w-4 mr-2" />
+                                In Hợp Đồng
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                     {/* Revision Quote Button (CONFIRMED/IN_PROGRESS orders only) */}
                     {(order.status === 'CONFIRMED' || order.status === 'IN_PROGRESS') && (
                         <Button

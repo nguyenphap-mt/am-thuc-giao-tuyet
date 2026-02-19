@@ -2427,3 +2427,152 @@ async def generate_pull_sheet(
         generated_at=datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M")
     )
 
+
+# ============ MENU DOCX GENERATION ============
+
+from fastapi.responses import StreamingResponse
+
+@router.get("/{order_id}/menu-docx")
+async def generate_menu_docx(
+    order_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate a .docx menu card for the order.
+    Uses the Word template ('menu mẫu.docx') and replaces dish names.
+    Returns a downloadable .docx file.
+    """
+    # Get order with items
+    result = await db.execute(
+        select(OrderModel)
+        .options(selectinload(OrderModel.items))
+        .where(
+            (OrderModel.id == order_id) &
+            (OrderModel.tenant_id == tenant_id)
+        )
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if not order.items:
+        raise HTTPException(status_code=400, detail="Đơn hàng chưa có món ăn")
+
+    # Extract dish names, excluding SERVICE items (e.g., bàn ghế, nhân viên)
+    # BUGFIX: BUG-20260219-003 — Service items should not appear on menu card
+    # order_items.category = 'SERVICE' for non-food items (bàn ghế, nhân viên, etc.)
+    dish_names = [
+        item.item_name for item in order.items
+        if item.category != 'SERVICE'
+    ]
+
+    # Generate the menu .docx
+    try:
+        from backend.modules.order.application.menu_generator import generate_menu_docx as gen_menu
+        docx_buffer = gen_menu(dish_names)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=f"Template không tìm thấy: {str(e)}")
+    except Exception as e:
+        logger.error(f"Menu generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Lỗi tạo thực đơn: {str(e)}")
+
+    # Return as downloadable file
+    safe_code = order.code.replace("/", "-") if order.code else "menu"
+    filename = f"ThucDon-{safe_code}.docx"
+
+    return StreamingResponse(
+        docx_buffer,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+
+# ============ CONTRACT DOCX GENERATION ============
+
+@router.get("/{order_id}/contract-docx")
+async def generate_contract_docx_endpoint(
+    order_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate a .docx contract for the order.
+    Uses the Word template ('HDDV Giao Tuyet Template.docx') and fills in order data.
+    Returns a downloadable .docx file.
+    """
+    # Get order with items and payments
+    result = await db.execute(
+        select(OrderModel)
+        .options(
+            selectinload(OrderModel.items),
+            selectinload(OrderModel.payments)
+        )
+        .where(
+            (OrderModel.id == order_id) &
+            (OrderModel.tenant_id == tenant_id)
+        )
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Calculate contract data
+    # Table count = quantity of first food item (all food items share same qty = number of tables)
+    food_items = [item for item in order.items if item.category != 'SERVICE']
+    table_count = food_items[0].quantity if food_items else 0
+
+    # Dish names (food only)
+    dish_names = [item.item_name for item in order.items if item.category != 'SERVICE']
+
+    # Financial calculations
+    total_amount = int(order.final_amount or order.total_amount or 0)
+    deposit_amount = int(order.paid_amount or 0)
+    remaining_amount = total_amount - deposit_amount
+    unit_price_per_table = total_amount // table_count if table_count > 0 else 0
+
+    # Customer address: use event_address as fallback
+    customer_address = order.event_address or ''
+
+    # Build contract data
+    from backend.modules.order.application.contract_generator import ContractData, generate_contract_docx
+
+    contract_data = ContractData(
+        order_code=order.code or '',
+        customer_name=order.customer_name or '',
+        customer_phone=order.customer_phone or '',
+        customer_address=customer_address,
+        event_date=order.event_date,
+        event_time=order.event_time,
+        event_address=order.event_address or '',
+        table_count=table_count,
+        dish_names=dish_names,
+        unit_price_per_table=unit_price_per_table,
+        total_amount=total_amount,
+        deposit_amount=deposit_amount,
+        remaining_amount=remaining_amount,
+    )
+
+    try:
+        docx_buffer = generate_contract_docx(contract_data)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=f"Template không tìm thấy: {str(e)}")
+    except Exception as e:
+        logger.error(f"Contract generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Lỗi tạo hợp đồng: {str(e)}")
+
+    # Return as downloadable file
+    safe_code = order.code.replace("/", "-") if order.code else "contract"
+    filename = f"HopDong-{safe_code}.docx"
+
+    return StreamingResponse(
+        docx_buffer,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
