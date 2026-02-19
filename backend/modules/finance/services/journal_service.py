@@ -150,7 +150,9 @@ class JournalService:
         )
         self.db.add(transaction)
         
-        await self.db.commit()
+        # Use flush instead of commit — let the caller control transaction boundary
+        # BUGFIX: Previously called commit() here, but caller also commits → double-commit
+        await self.db.flush()
         return journal
     
     async def create_journal_from_payroll(
@@ -231,7 +233,8 @@ class JournalService:
         )
         self.db.add(transaction)
         
-        await self.db.commit()
+        # Use flush instead of commit — let the caller control transaction boundary
+        await self.db.flush()
         return journal
 
 

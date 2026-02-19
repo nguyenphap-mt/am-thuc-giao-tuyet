@@ -1668,10 +1668,9 @@ async def add_payment(order_id: UUID, data: OrderPaymentBase, tenant_id: UUID = 
     
     order.updated_at = datetime.now(timezone.utc)
     
-    await db.commit()
-    await db.refresh(new_payment)
-    
-    # Sprint 17.1: Auto-create Journal Entry for payment
+    # Sprint 17.1: Auto-create Journal Entry for payment (BEFORE commit, same transaction)
+    # BUGFIX: Previously journal was created AFTER commit, causing double-commit issue
+    # and silent failures. Now both payment + journal are in the same transaction.
     try:
         from backend.modules.finance.services.journal_service import JournalService
         journal_service = JournalService(db)
@@ -1685,6 +1684,9 @@ async def add_payment(order_id: UUID, data: OrderPaymentBase, tenant_id: UUID = 
     except Exception as e:
         # Log error but don't fail the payment
         logger.warning(f" Failed to create journal entry: {e}")
+    
+    await db.commit()
+    await db.refresh(new_payment)
     
     return new_payment
 
