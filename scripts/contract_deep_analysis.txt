@@ -1,0 +1,262 @@
+================================================================================
+RUN-LEVEL DETAIL FOR KEY PARAGRAPHS
+================================================================================
+
+P6: 'Hôm nay, vào, tại:  chúng tôi gồm:'
+  Style: Normal
+  Runs (8):
+    R0: ' ' | bold=None font=Times New Roman size=152400
+    R1: 'Hôm nay' | bold=None font=Times New Roman size=152400
+    R2: ', vào' | bold=None font=Times New Roman size=152400
+    R3: ', ' | bold=None font=Times New Roman size=152400
+    R4: 'tại:' | bold=None font=Times New Roman size=152400
+    R5: ' ' | bold=None font=Times New Roman size=152400
+    R6: ' ' | bold=None font=Times New Roman size=152400
+    R7: 'chúng tôi gồm:' | bold=None font=Times New Roman size=152400
+
+P9: 'Ông/Bà:'
+  Style: Normal
+  Runs (3):
+    R0: 'Ông/Bà:' | bold=None font=Times New Roman size=152400
+    R1: ' ' | bold=None font=Times New Roman size=152400
+    R2: '	' | bold=None font=Times New Roman size=152400
+
+P10: 'Địa chỉ:'
+  Style: Normal
+  Runs (4):
+    R0: 'Địa chỉ' | bold=None font=Times New Roman size=152400
+    R1: ':' | bold=None font=Times New Roman size=152400
+    R2: ' ' | bold=None font=Times New Roman size=152400
+    R3: '	' | bold=None font=Times New Roman size=152400
+
+P11: 'CMND/CCCD : 	Ngày Cấp:'
+  Style: Normal
+  Runs (6):
+    R0: 'CMND' | bold=None font=Times New Roman size=152400
+    R1: '/CCCD' | bold=None font=Times New Roman size=152400
+    R2: ' : ' | bold=None font=Times New Roman size=152400
+    R3: '	Ngày Cấp:' | bold=None font=Times New Roman size=152400
+    R4: ' ' | bold=None font=Times New Roman size=152400
+    R5: '	' | bold=None font=Times New Roman size=152400
+
+P12: 'Điện thoại:'
+  Style: Normal
+  Runs (4):
+    R0: 'Điện thoạ' | bold=None font=Times New Roman size=152400
+    R1: 'i:' | bold=None font=Times New Roman size=152400
+    R2: ' ' | bold=None font=Times New Roman size=152400
+    R3: '	' | bold=None font=Times New Roman size=152400
+
+P15: 'Địa chỉ trụ sở: 20 Đường số 2, Trường Thọ, TP Thủ Đức, TP Hồ Chí Minh.'
+  Style: Normal
+  Runs (10):
+    R0: 'Địa chỉ' | bold=None font=Times New Roman size=152400
+    R1: ' trụ sở' | bold=None font=Times New Roman size=152400
+    R2: ':' | bold=None font=Times New Roman size=152400
+    R3: ' ' | bold=None font=Times New Roman size=152400
+    R4: '20 Đường số 2, Trường Thọ' | bold=None font=Times New Roman size=152400
+    R5: ',' | bold=None font=Times New Roman size=152400
+    R6: ' ' | bold=None font=Times New Roman size=152400
+    R7: 'TP ' | bold=None font=Times New Roman size=152400
+    R8: 'Thủ Đức, TP Hồ Chí Minh' | bold=None font=Times New Roman size=152400
+    R9: '.' | bold=None font=Times New Roman size=152400
+
+P16: 'Điện thoại: 0902786689'
+  Style: Normal
+  Runs (2):
+    R0: 'Điện thoại: ' | bold=None font=Times New Roman size=152400
+    R1: '0902786689' | bold=None font=Times New Roman size=152400
+
+P21: 'Thời gian đãi tiệc :  ngày'
+  Style: List Paragraph
+  Runs (4):
+    R0: 'Thời gian đãi tiệc :' | bold=None font=Times New Roman size=152400
+    R1: ' ' | bold=None font=Times New Roman size=152400
+    R2: ' ngày ' | bold=None font=Times New Roman size=152400
+    R3: '	' | bold=None font=Times New Roman size=152400
+
+P22: 'Thời gian kết thúc tiệc:  ngày'
+  Style: List Paragraph
+  Runs (4):
+    R0: 'Thời gian kết thúc tiệc:' | bold=None font=Times New Roman size=152400
+    R1: ' ' | bold=None font=Times New Roman size=152400
+    R2: ' ngày ' | bold=None font=Times New Roman size=152400
+    R3: '	' | bold=None font=Times New Roman size=152400
+
+P23: 'Địa chỉ đãi tiệc:'
+  Style: List Paragraph
+  Runs (8):
+    R0: 'Địa' | bold=None font=Times New Roman size=152400
+    R1: ' ' | bold=None font=Times New Roman size=152400
+    R2: 'chỉ' | bold=None font=Times New Roman size=152400
+    R3: ' ' | bold=None font=Times New Roman size=152400
+    R4: 'đãi' | bold=None font=Times New Roman size=152400
+    R5: ' ' | bold=None font=Times New Roman size=152400
+    R6: 'tiệc' | bold=None font=Times New Roman size=152400
+    R7: ': ' | bold=None font=Times New Roman size=152400
+
+P24: 'Số Bàn Tiệc :  bàn'
+  Style: List Paragraph
+  Runs (6):
+    R0: 'Số Bàn Tiệc :' | bold=None font=Times New Roman size=152400
+    R1: ' ' | bold=None font=Times New Roman size=152400
+    R2: ' ' | bold=None font=Times New Roman size=152400
+    R3: 'bàn' | bold=None font=Times New Roman size=152400
+    R4: '	' | bold=None font=Times New Roman size=152400
+    R5: ' ' | bold=None font=Times New Roman size=152400
+
+P25: 'Thực Đơn : bao gồm những món ăn sau đây:'
+  Style: List Paragraph
+  Runs (3):
+    R0: 'Thự' | bold=None font=Times New Roman size=152400
+    R1: 'c Đơn : bao gồm những món ăn sau đây' | bold=None font=Times New Roman size=152400
+    R2: ':' | bold=None font=Times New Roman size=152400
+
+P32: 'Đơn Giá : đ'
+  Style: Normal
+  Runs (8):
+    R0: 'Đơn' | bold=None font=Times New Roman size=152400
+    R1: ' ' | bold=None font=Times New Roman size=152400
+    R2: 'Giá' | bold=None font=Times New Roman size=152400
+    R3: ' ' | bold=None font=Times New Roman size=152400
+    R4: ':' | bold=None font=Times New Roman size=152400
+    R5: ' ' | bold=None font=Times New Roman size=152400
+    R6: 'đ' | bold=None font=Times New Roman size=152400
+    R7: '	' | bold=None font=Times New Roman size=152400
+
+P33: 'Tổng Cộng Thanh Toán : đ'
+  Style: List Paragraph
+  Runs (11):
+    R0: 'Tổng' | bold=True font=Times New Roman size=152400
+    R1: ' ' | bold=True font=Times New Roman size=152400
+    R2: 'C' | bold=True font=Times New Roman size=152400
+    R3: 'ộ' | bold=True font=Times New Roman size=152400
+    R4: 'ng' | bold=True font=Times New Roman size=152400
+    R5: ' Thanh ' | bold=True font=Times New Roman size=152400
+    R6: 'Toán' | bold=True font=Times New Roman size=152400
+    R7: ' :' | bold=None font=Times New Roman size=152400
+    R8: ' ' | bold=None font=Times New Roman size=152400
+    R9: 'đ' | bold=None font=Times New Roman size=152400
+    R10: '	' | bold=None font=Times New Roman size=152400
+
+P34: 'Viết Bằng chữ :'
+  Style: List Paragraph
+  Runs (8):
+    R0: 'Viết' | bold=None font=Times New Roman size=152400
+    R1: ' ' | bold=None font=Times New Roman size=152400
+    R2: 'Bằng' | bold=None font=Times New Roman size=152400
+    R3: ' ' | bold=None font=Times New Roman size=152400
+    R4: 'chữ' | bold=None font=Times New Roman size=152400
+    R5: ' :' | bold=None font=Times New Roman size=152400
+    R6: ' ' | bold=None font=Times New Roman size=152400
+    R7: '	' | bold=None font=Times New Roman size=152400
+
+P48: 'Lần 1 : đ khi ký hợp đồng.'
+  Style: List Paragraph
+  Runs (13):
+    R0: 'Lần' | bold=None font=Times New Roman size=152400
+    R1: ' 1 :' | bold=None font=Times New Roman size=152400
+    R2: ' ' | bold=None font=Times New Roman size=152400
+    R3: 'đ' | bold=None font=Times New Roman size=152400
+    R4: ' ' | bold=None font=Times New Roman size=152400
+    R5: 'khi' | bold=None font=Times New Roman size=152400
+    R6: ' ' | bold=None font=Times New Roman size=152400
+    R7: 'ký' | bold=None font=Times New Roman size=152400
+    R8: ' ' | bold=None font=Times New Roman size=152400
+    R9: 'hợp' | bold=None font=Times New Roman size=152400
+    R10: ' ' | bold=None font=Times New Roman size=152400
+    R11: 'đồng' | bold=None font=Times New Roman size=152400
+    R12: '.' | bold=None font=Times New Roman size=152400
+
+P49: 'Viết bằng chữ:'
+  Style: List Paragraph
+  Runs (11):
+    R0: 'Vi' | bold=None font=Times New Roman size=152400
+    R1: 'ết' | bold=None font=Times New Roman size=152400
+    R2: ' ' | bold=None font=Times New Roman size=152400
+    R3: 'b' | bold=None font=Times New Roman size=152400
+    R4: 'ằng' | bold=None font=Times New Roman size=152400
+    R5: ' ' | bold=None font=Times New Roman size=152400
+    R6: 'ch' | bold=None font=Times New Roman size=152400
+    R7: 'ữ' | bold=None font=Times New Roman size=152400
+    R8: ':' | bold=None font=Times New Roman size=152400
+    R9: ' ' | bold=None font=Times New Roman size=152400
+    R10: '	' | bold=None font=Times New Roman size=152400
+
+P50: 'Lần 2 :  khi kết thúc tiệc.'
+  Style: List Paragraph
+  Runs (11):
+    R0: 'Lần' | bold=None font=Times New Roman size=152400
+    R1: ' 2 : ' | bold=None font=Times New Roman size=152400
+    R2: ' ' | bold=None font=Times New Roman size=152400
+    R3: 'khi' | bold=None font=Times New Roman size=152400
+    R4: ' ' | bold=None font=Times New Roman size=152400
+    R5: 'kết' | bold=None font=Times New Roman size=152400
+    R6: ' ' | bold=None font=Times New Roman size=152400
+    R7: 'thúc' | bold=None font=Times New Roman size=152400
+    R8: ' ' | bold=None font=Times New Roman size=152400
+    R9: 'tiệc' | bold=None font=Times New Roman size=152400
+    R10: '.' | bold=None font=Times New Roman size=152400
+
+P51: 'Viết bằng chữ:'
+  Style: List Paragraph
+  Runs (11):
+    R0: 'Vi' | bold=None font=Times New Roman size=152400
+    R1: 'ết' | bold=None font=Times New Roman size=152400
+    R2: ' ' | bold=None font=Times New Roman size=152400
+    R3: 'b' | bold=None font=Times New Roman size=152400
+    R4: 'ằng' | bold=None font=Times New Roman size=152400
+    R5: ' ' | bold=None font=Times New Roman size=152400
+    R6: 'ch' | bold=None font=Times New Roman size=152400
+    R7: 'ữ' | bold=None font=Times New Roman size=152400
+    R8: ':' | bold=None font=Times New Roman size=152400
+    R9: ' ' | bold=None font=Times New Roman size=152400
+    R10: '	' | bold=None font=Times New Roman size=152400
+
+================================================================================
+TABLE 0 - HEADER (Contract Number)
+================================================================================
+
+T0.R0.C0.P0: 'DỊCH VỤ ẨM THƯC GIÁO TUYẾT'
+    R0: 'DỊCH VỤ ' | bold=True font=Times New Roman
+    R1: 'ẨM' | bold=True font=Times New Roman
+    R2: ' TH' | bold=True font=Times New Roman
+    R3: 'Ư' | bold=True font=Times New Roman
+    R4: 'C' | bold=True font=Times New Roman
+    R5: ' GIÁO TUYẾT' | bold=True font=Times New Roman
+
+T0.R0.C0.P2: 'Số :'
+    R0: 'Số' | bold=True font=Times New Roman
+    R1: ' : ' | bold=True font=Times New Roman
+
+T0.R0.C1.P1: 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM'
+    R0: 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM' | bold=True font=Times New Roman
+
+T0.R0.C1.P2: 'Độc lập – Tự do – Hạnh phúc'
+    R0: 'Độc' | bold=True font=Times New Roman
+    R1: ' ' | bold=True font=Times New Roman
+    R2: 'lập' | bold=True font=Times New Roman
+    R3: ' – ' | bold=True font=Times New Roman
+    R4: 'Tự' | bold=True font=Times New Roman
+    R5: ' do – ' | bold=True font=Times New Roman
+    R6: 'Hạnh' | bold=True font=Times New Roman
+    R7: ' ' | bold=True font=Times New Roman
+    R8: 'phúc' | bold=True font=Times New Roman
+
+T0.R0.C1.P3: '----------***----------'
+    R0: '----------***----------' | bold=None font=Times New Roman
+
+================================================================================
+PARAGRAPHS P25-P35 (Menu items area)
+================================================================================
+P25: 'Thực Đơn : bao gồm những món ăn sau đây:' | style=List Paragraph
+P26: '	' | style=List Paragraph
+P27: '	' | style=List Paragraph
+P28: '	' | style=List Paragraph
+P29: ' 	' | style=List Paragraph
+P30: '	' | style=List Paragraph
+P31: '	' | style=List Paragraph
+P32: 'Đơn Giá : đ	' | style=Normal
+P33: 'Tổng Cộng Thanh Toán : đ	' | style=List Paragraph
+P34: 'Viết Bằng chữ : 	' | style=List Paragraph
+P35: '	' | style=List Paragraph

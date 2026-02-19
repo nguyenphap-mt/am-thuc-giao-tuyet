@@ -4,7 +4,7 @@ import { useState, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, useReducedMotion } from 'framer-motion';
-import { useOrder, useOrderAction } from '@/hooks/use-orders';
+import { useOrder, useOrderAction, useDeletePayment } from '@/hooks/use-orders';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { printMenuA5 } from '@/lib/menu-print-engine';
@@ -15,6 +15,12 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { OrderStatusStepper } from '@/components/orders/OrderStatusStepper';
 import { AddPaymentModal } from '@/components/orders/AddPaymentModal';
+import { EditPaymentModal } from '@/components/orders/EditPaymentModal';
 import { AddOrderExpenseModal } from '@/components/orders/AddOrderExpenseModal';
 import { CreateRevisionQuoteModal } from '@/components/orders/CreateRevisionQuoteModal';
 import { CancelOrderWithRefundModal } from '@/components/orders/CancelOrderWithRefundModal';
@@ -52,6 +59,8 @@ import {
     IconUserCircle,
     IconChevronDown,
     IconToolsKitchen2,
+    IconEdit,
+    IconTrash,
 } from '@tabler/icons-react';
 
 const statusColors: Record<string, string> = {
@@ -95,6 +104,9 @@ export default function OrderDetailPage({ params }: PageProps) {
     const [showHoldModal, setShowHoldModal] = useState(false);
     const [showCompleteModal, setShowCompleteModal] = useState(false);
     const [showResumeModal, setShowResumeModal] = useState(false);
+    // Payment management
+    const [editingPayment, setEditingPayment] = useState<any>(null);
+    const [deletingPayment, setDeletingPayment] = useState<any>(null);
 
     // Accessibility: Honor user's motion preferences
     const prefersReducedMotion = useReducedMotion();
@@ -104,6 +116,7 @@ export default function OrderDetailPage({ params }: PageProps) {
 
     const { data: order, isLoading, error, refetch } = useOrder(orderId);
     const orderAction = useOrderAction();
+    const deletePaymentMutation = useDeletePayment();
 
     // Fetch order expenses
     const { data: expenses = [], refetch: refetchExpenses } = useQuery({
@@ -563,7 +576,7 @@ export default function OrderDetailPage({ params }: PageProps) {
                                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Lịch sử thanh toán</p>
                                 <div className="divide-y rounded-lg border">
                                     {order.payments.map((payment) => (
-                                        <div key={payment.id} className="flex items-center justify-between p-3 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800">
+                                        <div key={payment.id} className="group relative flex items-center justify-between p-3 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800">
                                             <div>
                                                 <p className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(payment.amount)}</p>
                                                 <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -572,10 +585,34 @@ export default function OrderDetailPage({ params }: PageProps) {
                                                 {payment.note && (
                                                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{payment.note}</p>
                                                 )}
+                                                {payment.reference_no && (
+                                                    <p className="text-xs text-gray-400 dark:text-gray-500">Ref: {payment.reference_no}</p>
+                                                )}
                                             </div>
-                                            <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
-                                                Đã thu
-                                            </Badge>
+                                            <div className="flex items-center gap-2">
+                                                <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
+                                                    Đã thu
+                                                </Badge>
+                                                {/* Hover action buttons */}
+                                                {order.status !== 'CANCELLED' && (
+                                                    <div className="hidden group-hover:flex items-center gap-1 absolute right-3 top-1/2 -translate-y-1/2 bg-white dark:bg-gray-900 shadow-sm border rounded-md px-1 py-0.5">
+                                                        <button
+                                                            onClick={() => setEditingPayment(payment)}
+                                                            className="p-1.5 rounded hover:bg-purple-50 text-gray-500 hover:text-purple-600 transition-colors"
+                                                            title="Sửa thanh toán"
+                                                        >
+                                                            <IconEdit className="h-3.5 w-3.5" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setDeletingPayment(payment)}
+                                                            className="p-1.5 rounded hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors"
+                                                            title="Xóa thanh toán"
+                                                        >
+                                                            <IconTrash className="h-3.5 w-3.5" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -778,6 +815,56 @@ export default function OrderDetailPage({ params }: PageProps) {
                     refetch();
                 }}
             />
+
+            {/* Edit Payment Modal */}
+            <EditPaymentModal
+                isOpen={!!editingPayment}
+                onClose={() => setEditingPayment(null)}
+                orderId={orderId}
+                orderCode={order.code}
+                payment={editingPayment}
+                onSuccess={() => {
+                    setEditingPayment(null);
+                    refetch();
+                }}
+            />
+
+            {/* Delete Payment Confirmation */}
+            {deletingPayment && (
+                <Dialog open={!!deletingPayment} onOpenChange={() => setDeletingPayment(null)}>
+                    <DialogContent className="sm:max-w-sm">
+                        <DialogHeader>
+                            <DialogTitle className="text-red-600 flex items-center gap-2">
+                                <IconTrash className="h-5 w-5" />
+                                Xóa thanh toán
+                            </DialogTitle>
+                        </DialogHeader>
+                        <p className="text-sm text-gray-600">
+                            Bạn có chắc muốn xóa khoản thanh toán <span className="font-bold">{formatCurrency(deletingPayment.amount)}</span> không?
+                            Số tiền sẽ được cộng lại vào dư nợ đơn hàng.
+                        </p>
+                        <div className="flex justify-end gap-2 mt-4">
+                            <Button variant="outline" onClick={() => setDeletingPayment(null)}>
+                                Hủy
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                disabled={deletePaymentMutation.isPending}
+                                onClick={async () => {
+                                    await deletePaymentMutation.mutateAsync({
+                                        orderId,
+                                        paymentId: deletingPayment.id,
+                                    });
+                                    setDeletingPayment(null);
+                                    refetch();
+                                }}
+                            >
+                                {deletePaymentMutation.isPending ? 'Đang xóa...' : 'Xóa'}
+                            </Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
 
             {/* Order Expense Modal (PRD 4.3) */}
             <AddOrderExpenseModal

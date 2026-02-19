@@ -23,6 +23,7 @@
 | `missing-api` | Frontend thiếu tích hợp endpoint backend đã tồn tại | BUG-20260217-002 |
 | `missing-employee-link` | User account không liên kết Employee record → endpoint 404 | BUG-20260217-004 |
 | `fastapi-route-conflict` | Duplicate route definitions gây schema validation 500 (last-handler-wins) | BUG-20260217-004 |
+| `missing-rls` | Table thiếu RLS policy hoặc tenant_id, extensions trong public schema | BUG-20260219-001 |
 
 ---
 
@@ -48,6 +49,8 @@
 | BUG-20260218-001 | Tenant/Settings | High | `api-mismatch` | logo, upload, 404, Cloud Run, Vercel, FileResponse, static-files | `http_router.py`, `page.tsx` | ✅ | 2026-02-18 |
 | BUG-20260218-002 | Menu Management | Critical | `schema-mismatch` | 500, menu_item_name, recipes, column-does-not-exist, supabase | `fix_menu_schema_mismatches_20260216.sql` | ✅ | 2026-02-18 |
 | BUG-20260218-003 | HR Management | Critical | `schema-mismatch` | 500, user_id, employees, column-does-not-exist, supabase, user-employee-unification | `052_employee_user_link.sql` | ✅ | 2026-02-18 |
+| BUG-20260218-005 | Security/Database | High | `missing-rls` | supabase, RLS, security-advisor, tenant_id, extensions, row-level-security, mutable-search-path | `060_fix_supabase_security_warnings.sql`, `061_fix_remaining_supabase_warnings.sql` | ✅ | 2026-02-18 |
+| BUG-20260219-001 | Security/Database | High | `missing-rls` | supabase, RLS, security-advisor, tenant_id, quote_note_presets, user_sessions, extensions-schema, pg_trgm, unaccent, vector | `061_fix_remaining_supabase_warnings.sql`, `models.py`, `session_model.py` | ✅ | 2026-02-19 |
 
 ---
 
@@ -65,4 +68,4 @@
 
 ---
 
-*Last updated: 2026-02-18 22:35 (BUG-20260218-002, BUG-20260218-003 added)*
+*Last updated: 2026-02-19 07:19 (BUG-20260218-005, BUG-20260219-001 added — Supabase Security Advisor 12→0 issues)*

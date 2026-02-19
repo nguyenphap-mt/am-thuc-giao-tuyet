@@ -1,0 +1,74 @@
+================================================================================
+ALL PARAGRAPHS WITH TEXT
+================================================================================
+P  1: HỢP ĐỒNG CUNG CẤP DỊCH VỤ  NẤU TIỆC
+P  3: Căn cứ Bộ luật dân sự nước Cộng hòa xã hội chủ nghĩa Việt nam
+P  4: Căn cứ yêu cầu của bên sử dụng và điều kiện, khả năng cung cấp dịch vụ của Dịch vụ Ẩm thực Giáo Tuyết.
+P  6: Hôm nay, vào, tại:  chúng tôi gồm:
+P  8: Bên sử dụng dịch vụ (gọi tắt là Bên A)
+P  9: Ông/Bà:
+P 10: Địa chỉ:
+P 11: CMND/CCCD : 	Ngày Cấp:
+P 12: Điện thoại:
+P 13: Bên cung cấp dịch vụ (gọi tắt là Bên B)
+P 14: Tên cơ quan: DỊCH VỤ ẨM THỰC GIÁO TUYẾT
+P 15: Địa chỉ trụ sở: 20 Đường số 2, Trường Thọ, TP Thủ Đức, TP Hồ Chí Minh.
+P 16: Điện thoại: 0902786689
+P 17: Người đại diện:  Ông Nguyễn Văn Pháp
+P 18: CCCD số:  077086002546 Ngày cấp : 23/06/2023 Nơi cấp : Cục CSQLHCVTTXH
+P 19: Hai bên cùng nhau thỏa thuận ký kết hợp đồng với nội dung như sau:
+P 20: Điều 1: Cung cấp Dich Vụ Nấu Tiệc Tại Nhà
+P 21: Thời gian đãi tiệc :  ngày
+P 22: Thời gian kết thúc tiệc:  ngày
+P 23: Địa chỉ đãi tiệc:
+P 24: Số Bàn Tiệc :  bàn
+P 25: Thực Đơn : bao gồm những món ăn sau đây:
+P 32: Đơn Giá : đ
+P 33: Tổng Cộng Thanh Toán : đ
+P 34: Viết Bằng chữ :
+P 36: *Lưu ý : Đơn giá trên : Bao gồm những mục được tích chọn sau đây.
+P 37: - Thức ăn nóng sốt theo thực đơn đã chọn
+P 38: - Lên món ăn tại bàn
+P 39: - Bàn tròn ghế inox không tựa
+P 40: - Bàn tròn ghế dựa nơ
+P 41: - Ly thủy tinh, chén dĩa
+P 42: - Rạp
+P 43: - Phục vụ
+P 44: - Khác :
+P 46: Điều 2: Hình thức thanh toán
+P 47: Thanh toán thành 2 lần :
+P 48: Lần 1 : đ khi ký hợp đồng.
+P 49: Viết bằng chữ:
+P 50: Lần 2 :  khi kết thúc tiệc.
+P 51: Viết bằng chữ:
+P 52: Nếu bên A có nhu cầu xuất hóa đơn tài chính bên b có nhiệm vụ xuất hóa đơn và thu 8% thuế VAT trên giá trị hóa đơn.
+P 53: Điều 3: Quyền và nghĩa vụ của bên A:
+P 54: Bên A có quyền nhận được dịch vụ tốt nhất do bên B cung cấp và quyền giám sát hoạt động cung cấp dịch vụ của bên B
+P 55: Bên A có nghĩa vụ Thanh toán cho bên B theo điều 2 và hỗ trợ bên B giải quyết những phát sinh trong tiệc thuộc về trách nhiệm của bên A
+P 56: Điều 4: Quyền và nghĩa vụ của bên B
+P 57: Quyền lợi:  nhận được đầy đủ thanh toán của bên A như điều 2.
+P 58: Nghĩa vụ
+- Bảo đảm cung cấp cho bên A các hạng hạng mục đã nêu với số lượng, chất lượng như yêu cầu.
+- Phối hợp với bên A giải quyết các vấn đề phát sinh xảy ra trong bữa tiệc thuộc về trách nhiệm của bên B.
+- Bên B sẽ không chịu trách nhiệm về những dịch vụ nào khác ngoài nội dung và phụ lục hợp đồng.
+P 59: Điều 5: Hủy hợp đồng
+P 60: Do những điều kiện khách quan và bất khả kháng khiến cho bên A buộc phải hủy hợp đồng thì cần phải tuân thủ những nguyên tắc sau:
+P 61: Bên A buộc phải báo trước cho bên B trước 3 ngày của ngày diễn ra tiệc.
+P 62: Nếu bên A  không thực hiện theo thời gian như trên thì buộc phải thanh toán 100% hợp đồng cho bên B
+P 63: Do những điều kiện khách quan và bất khả kháng nếu bên B muốn hủy hợp đồng cũng phải báo trước cho bên A trước 3 ngày và hoàn cọc cho bên A. Trường hợp không đúng theo thời gian quy định thì phải đền 100% giá trị hơp đồng cho bên A.
+P 65: Điều 6: Giải quyết tranh chấp
+P 66: Hai bên cam kết thực hiện đúng và đầy đủ các nội dung trong hợp đồng này. Mọi sửa đổi bổ sung đối với hợp đồng này và bản kê chi tiết hạng mục đính kèm phải được hai Bên thống nhất và lập thành văn bản.
+P 67: Hai bên chủ động thông báo cho nhau biết tiến độ thực hiện hợp đồng, nếu có các bất đồng và tranh chấp phát sinh liên quan đến việc thực hiện Hợp đồng, trước tiên sẽ được giải quyết thông qua thương lượng hữu nghị, nếu không giải quyết được vụ việc sẽ được đưa lên cơ quan tòa án Việt nam có thẩm quyền để giải quyết.
+P 68: Hợp đồng được lập được thành hai (02) bản được đóng dấu và ký bởi đại diện có thẩm quyền của 2 bên có giá trị như nhau, mỗi bên giữ một (01) bản chính.
+P 70: NGUYỄN VĂN PHÁP
+
+================================================================================
+TABLES
+================================================================================
+
+Table 0: 2 rows x 3 cols
+  R0: DỊCH VỤ ẨM THƯC GIÁO TUYẾT |  | Số : || CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM | Độc lập – Tự do – Hạnh phúc | ----------***---------- || (empty)
+  R1: (empty) || (empty)
+
+Table 1: 1 rows x 2 cols
+  R0: ĐẠI DIỆN BÊN A | (Ký tên) || ĐẠI DIỆN BÊN B | (Ký tên)

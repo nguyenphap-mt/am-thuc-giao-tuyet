@@ -1691,6 +1691,66 @@ async def add_payment(order_id: UUID, data: OrderPaymentBase, tenant_id: UUID = 
     return new_payment
 
 
+class UpdatePaymentRequest(BaseModel):
+    """Request body for updating a payment"""
+    amount: Optional[Decimal] = None
+    payment_method: Optional[str] = None
+    reference_no: Optional[str] = None
+    note: Optional[str] = None
+
+
+@router.put("/{order_id}/payments/{payment_id}", response_model=OrderPayment)
+async def update_payment(order_id: UUID, payment_id: UUID, data: UpdatePaymentRequest, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
+    """Update an existing payment"""
+    # Get payment
+    result = await db.execute(
+        select(OrderPaymentModel).where(
+            (OrderPaymentModel.id == payment_id) &
+            (OrderPaymentModel.order_id == order_id)
+        )
+    )
+    payment = result.scalar_one_or_none()
+    
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    
+    # Get order to recalculate totals
+    order_result = await db.execute(
+        select(OrderModel).where(
+            (OrderModel.id == order_id) &
+            (OrderModel.tenant_id == tenant_id)
+        )
+    )
+    order = order_result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    old_amount = payment.amount or Decimal(0)
+    
+    # Update fields
+    if data.amount is not None:
+        payment.amount = data.amount
+    if data.payment_method is not None:
+        payment.payment_method = data.payment_method
+    if data.reference_no is not None:
+        payment.reference_no = data.reference_no
+    if data.note is not None:
+        payment.note = data.note
+    
+    # Recalculate order totals if amount changed
+    new_amount = payment.amount or Decimal(0)
+    if new_amount != old_amount:
+        diff = new_amount - old_amount
+        order.paid_amount = (order.paid_amount or Decimal(0)) + diff
+        order.balance_amount = (order.final_amount or Decimal(0)) - order.paid_amount
+        order.updated_at = datetime.now(timezone.utc)
+    
+    await db.commit()
+    await db.refresh(payment)
+    
+    return payment
+
+
 @router.delete("/{order_id}/payments/{payment_id}")
 async def delete_payment(order_id: UUID, payment_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Delete a payment from an order"""
@@ -1704,6 +1764,41 @@ async def delete_payment(order_id: UUID, payment_id: UUID, tenant_id: UUID = Dep
     
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
+    
+    # BUGFIX: Recalculate order totals before deleting
+    order_result = await db.execute(
+        select(OrderModel).where(
+            (OrderModel.id == order_id) &
+            (OrderModel.tenant_id == tenant_id)
+        )
+    )
+    order = order_result.scalar_one_or_none()
+    if order:
+        order.paid_amount = (order.paid_amount or Decimal(0)) - (payment.amount or Decimal(0))
+        if order.paid_amount < 0:
+            order.paid_amount = Decimal(0)
+        order.balance_amount = (order.final_amount or Decimal(0)) - order.paid_amount
+        order.updated_at = datetime.now(timezone.utc)
+        
+        # If was PAID but now has balance, revert status
+        if order.status == 'PAID' and order.balance_amount > 0:
+            order.status = 'CONFIRMED'
+    
+    # Delete related finance transaction if exists
+    try:
+        from backend.modules.finance.domain.models import FinanceTransactionModel
+        tx_result = await db.execute(
+            select(FinanceTransactionModel).where(
+                (FinanceTransactionModel.reference_id == order_id) &
+                (FinanceTransactionModel.reference_type == "ORDER") &
+                (FinanceTransactionModel.amount == payment.amount)
+            )
+        )
+        finance_tx = tx_result.scalar_one_or_none()
+        if finance_tx:
+            await db.delete(finance_tx)
+    except Exception as e:
+        logger.warning(f"Failed to delete finance transaction: {e}")
     
     await db.delete(payment)
     await db.commit()

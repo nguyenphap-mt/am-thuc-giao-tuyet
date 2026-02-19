@@ -116,3 +116,39 @@ export function useAddPayment() {
         },
     });
 }
+
+// Update an existing payment
+export function useUpdatePayment() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ orderId, paymentId, data }: { orderId: string; paymentId: string; data: Partial<AddPaymentData> }) =>
+            api.put<OrderPayment>(`/orders/${orderId}/payments/${paymentId}`, data),
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['orders'] });
+            queryClient.invalidateQueries({ queryKey: ['order', variables.orderId] });
+            toast.success('Cập nhật thanh toán thành công');
+        },
+        onError: () => {
+            toast.error('Không thể cập nhật thanh toán');
+        },
+    });
+}
+
+// Delete a payment from an order
+export function useDeletePayment() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ orderId, paymentId }: { orderId: string; paymentId: string }) =>
+            api.delete(`/orders/${orderId}/payments/${paymentId}`),
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['orders'] });
+            queryClient.invalidateQueries({ queryKey: ['order', variables.orderId] });
+            toast.success('Xóa thanh toán thành công');
+        },
+        onError: () => {
+            toast.error('Không thể xóa thanh toán');
+        },
+    });
+}
