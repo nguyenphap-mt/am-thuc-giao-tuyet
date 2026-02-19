@@ -133,6 +133,7 @@ export default function OrderDetailPage({ params }: PageProps) {
 
     // Fetch staff costs (P3: Order Staff Cost Tracking)
     interface StaffCostItem {
+        assignment_id: string;
         employee_id: string;
         employee_name: string;
         role: string;
@@ -142,6 +143,9 @@ export default function OrderDetailPage({ params }: PageProps) {
         actual_hours: number;
         cost: number;
         status: string;
+        phone?: string;
+        start_time?: string;
+        end_time?: string;
     }
 
     interface StaffCostsResponse {
@@ -154,7 +158,7 @@ export default function OrderDetailPage({ params }: PageProps) {
         assignments: StaffCostItem[];
     }
 
-    const { data: staffCosts } = useQuery({
+    const { data: staffCosts, refetch: refetchStaffCosts } = useQuery({
         queryKey: ['order-staff-costs', orderId],
         queryFn: () => api.get<StaffCostsResponse>(`/orders/${orderId}/staff-costs`),
         enabled: !!orderId,
@@ -744,12 +748,14 @@ export default function OrderDetailPage({ params }: PageProps) {
 
             {/* P0: Assigned Staff Section (Improved from PRD) */}
             <AssignedStaffCard
+                orderId={orderId}
                 assignments={staffCosts?.assignments || []}
                 totalCost={staffCosts?.total_staff_cost || 0}
                 totalPlannedHours={staffCosts?.total_planned_hours || 0}
                 totalActualHours={staffCosts?.total_actual_hours || 0}
                 onSuggestClick={() => setShowStaffSuggestionModal(true)}
                 canSuggestStaff={order.status === 'PENDING' || order.status === 'CONFIRMED'}
+                onAssignmentChanged={() => { refetchStaffCosts(); refetch(); }}
             />
 
             {/* P2: Activity Timeline */}

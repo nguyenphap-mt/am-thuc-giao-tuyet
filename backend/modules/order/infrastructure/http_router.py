@@ -223,6 +223,7 @@ async def add_order_expense(
 
 class StaffCostItem(BaseModel):
     """Schema for individual staff cost"""
+    assignment_id: str  # Needed for PUT/DELETE calls
     employee_id: str
     employee_name: str
     role: str
@@ -232,6 +233,9 @@ class StaffCostItem(BaseModel):
     actual_hours: float
     cost: float
     status: str
+    phone: Optional[str] = None
+    start_time: Optional[str] = None  # ISO format
+    end_time: Optional[str] = None    # ISO format
 
 
 class OrderStaffCostsResponse(BaseModel):
@@ -307,6 +311,7 @@ async def get_order_staff_costs(
             # Create a mock assignment object with compatible attributes
             class MockAssignment:
                 def __init__(self, oa):
+                    self.id = oa.id
                     self.start_time = None
                     self.end_time = None
                     self.check_in_time = None
@@ -366,7 +371,16 @@ async def get_order_staff_costs(
         
         cost = hourly_rate * billable_hours
         
+        # Format start/end times for frontend display
+        start_time_str = None
+        end_time_str = None
+        if hasattr(assignment, 'start_time') and assignment.start_time:
+            start_time_str = assignment.start_time.isoformat()
+        if hasattr(assignment, 'end_time') and assignment.end_time:
+            end_time_str = assignment.end_time.isoformat()
+        
         assignments.append(StaffCostItem(
+            assignment_id=str(assignment.id),
             employee_id=str(employee.id),
             employee_name=employee.full_name,
             role=getattr(assignment, 'role', None) or employee.role_type or "STAFF",
@@ -375,7 +389,10 @@ async def get_order_staff_costs(
             planned_hours=round(planned_hours, 2),
             actual_hours=round(actual_hours, 2),
             cost=round(cost, 0),
-            status=getattr(assignment, 'status', 'ASSIGNED')
+            status=getattr(assignment, 'status', 'ASSIGNED'),
+            phone=employee.phone,
+            start_time=start_time_str,
+            end_time=end_time_str
         ))
         
         total_cost += cost

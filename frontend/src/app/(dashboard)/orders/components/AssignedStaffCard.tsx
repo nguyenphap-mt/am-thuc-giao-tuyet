@@ -12,13 +12,22 @@ import {
     IconCircleCheck,
     IconClock2,
     IconX,
-    IconUser
+    IconUser,
+    IconEdit,
+    IconTrash,
+    IconCheck,
+    IconArrowRight
 } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { motion, useReducedMotion } from 'framer-motion';
+import { useMutation } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { EmployeeProfileModal } from './EmployeeProfileModal';
+import { api } from '@/lib/api';
 
 interface StaffAssignment {
+    assignment_id: string;
     employee_id: string;
     employee_name: string;
     role: string;
@@ -29,15 +38,19 @@ interface StaffAssignment {
     cost: number;
     status: string;
     phone?: string;
+    start_time?: string;
+    end_time?: string;
 }
 
 interface AssignedStaffCardProps {
+    orderId: string;
     assignments: StaffAssignment[];
     totalCost: number;
     totalPlannedHours: number;
     totalActualHours: number;
     onSuggestClick: () => void;
     canSuggestStaff: boolean;
+    onAssignmentChanged: () => void;
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -50,6 +63,11 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
         label: 'Đang chờ',
         color: 'text-amber-600 bg-amber-50',
         icon: <IconClock2 className="w-3.5 h-3.5" />
+    },
+    ASSIGNED: {
+        label: 'Đã phân công',
+        color: 'text-blue-600 bg-blue-50',
+        icon: <IconCircleCheck className="w-3.5 h-3.5" />
     },
     CANCELLED: {
         label: 'Đã hủy',
@@ -74,19 +92,48 @@ const roleLabels: Record<string, string> = {
     MANAGER: 'Quản lý'
 };
 
+function formatTime(isoString?: string): string {
+    if (!isoString) return '--:--';
+    try {
+        const d = new Date(isoString);
+        return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    } catch {
+        return '--:--';
+    }
+}
+
+function extractTimeValue(isoString?: string): string {
+    if (!isoString) return '';
+    try {
+        const d = new Date(isoString);
+        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    } catch {
+        return '';
+    }
+}
+
 export function AssignedStaffCard({
+    orderId,
     assignments,
     totalCost,
     totalPlannedHours,
     totalActualHours,
     onSuggestClick,
-    canSuggestStaff
+    canSuggestStaff,
+    onAssignmentChanged
 }: AssignedStaffCardProps) {
-    // State for employee profile modal
     const [selectedEmployee, setSelectedEmployee] = useState<{
         id: string;
         name: string;
     } | null>(null);
+
+    // Edit state
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editStartTime, setEditStartTime] = useState('');
+    const [editEndTime, setEditEndTime] = useState('');
+
+    // Delete state
+    const [deletingStaff, setDeletingStaff] = useState<StaffAssignment | null>(null);
 
     const formatCurrency = (value: number) => {
         return new Intl.NumberFormat('vi-VN').format(value) + 'đ';
@@ -106,11 +153,74 @@ export function AssignedStaffCard({
         ];
         return gradients[index % gradients.length];
     };
+
     const prefersReducedMotion = useReducedMotion();
 
     const handleViewProfile = (employeeId: string, employeeName: string) => {
         setSelectedEmployee({ id: employeeId, name: employeeName });
     };
+
+    const startEdit = (staff: StaffAssignment) => {
+        setEditingId(staff.assignment_id);
+        setEditStartTime(extractTimeValue(staff.start_time) || '08:00');
+        setEditEndTime(extractTimeValue(staff.end_time) || '16:00');
+    };
+
+    const cancelEdit = () => {
+        setEditingId(null);
+        setEditStartTime('');
+        setEditEndTime('');
+    };
+
+    // Build ISO datetime from time string (using today as base date)
+    const buildDatetime = (timeStr: string): string => {
+        const today = new Date().toISOString().split('T')[0];
+        return `${today}T${timeStr}:00`;
+    };
+
+    // Calculate hours between two time strings
+    const calcHours = (start: string, end: string): number => {
+        if (!start || !end) return 0;
+        const [sh, sm] = start.split(':').map(Number);
+        const [eh, em] = end.split(':').map(Number);
+        const diff = (eh * 60 + em) - (sh * 60 + sm);
+        return diff > 0 ? diff / 60 : 0;
+    };
+
+    // PUT /hr/assignments/{id}
+    const updateMutation = useMutation({
+        mutationFn: async ({ assignmentId, startTime, endTime }: { assignmentId: string; startTime: string; endTime: string }) => {
+            return api.put(`/hr/assignments/${assignmentId}`, {
+                start_time: buildDatetime(startTime),
+                end_time: buildDatetime(endTime),
+            });
+        },
+        onSuccess: () => {
+            toast.success('Đã cập nhật giờ phân công');
+            cancelEdit();
+            onAssignmentChanged();
+        },
+        onError: () => {
+            toast.error('Lỗi khi cập nhật giờ phân công');
+        }
+    });
+
+    // DELETE /hr/assignments/{id}
+    const deleteMutation = useMutation({
+        mutationFn: async (assignmentId: string) => {
+            return api.delete(`/hr/assignments/${assignmentId}`);
+        },
+        onSuccess: () => {
+            toast.success('Đã hủy phân công nhân viên');
+            setDeletingStaff(null);
+            onAssignmentChanged();
+        },
+        onError: () => {
+            toast.error('Lỗi khi hủy phân công');
+        }
+    });
+
+    const editHours = calcHours(editStartTime, editEndTime);
 
     return (
         <>
@@ -172,71 +282,158 @@ export function AssignedStaffCard({
                             {/* Staff List */}
                             <div className="space-y-3">
                                 {assignments.map((staff, index) => {
-                                    const status = statusConfig[staff.status] || statusConfig.PENDING;
+                                    const status = statusConfig[staff.status] || statusConfig.ASSIGNED;
+                                    const isEditing = editingId === staff.assignment_id;
+                                    const hasTime = staff.start_time && staff.end_time;
 
                                     return (
-                                        <div
-                                            key={staff.employee_id}
-                                            className="flex items-center gap-4 p-3 rounded-lg border border-gray-100 dark:border-gray-800 hover:border-purple-200 hover:bg-purple-50/30 transition-all group cursor-pointer"
-                                            onClick={() => handleViewProfile(staff.employee_id, staff.employee_name)}
-                                        >
-                                            {/* Avatar */}
-                                            <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${getAvatarGradient(index)} flex items-center justify-center text-white font-bold text-lg shadow-sm`}>
-                                                {getInitials(staff.employee_name)}
-                                            </div>
-
-                                            {/* Info */}
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="font-medium text-gray-800 dark:text-gray-200 truncate">
-                                                        {staff.employee_name}
-                                                    </span>
-                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${status.color}`}>
-                                                        {status.icon}
-                                                        {status.label}
-                                                    </span>
+                                        <div key={staff.assignment_id || staff.employee_id}>
+                                            {/* Staff Row */}
+                                            <div
+                                                className="group relative flex items-center gap-4 p-3 rounded-lg border border-gray-100 dark:border-gray-800 hover:border-purple-200 hover:bg-purple-50/30 transition-all cursor-pointer"
+                                                onClick={() => handleViewProfile(staff.employee_id, staff.employee_name)}
+                                            >
+                                                {/* Avatar */}
+                                                <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${getAvatarGradient(index)} flex items-center justify-center text-white font-bold text-lg shadow-sm flex-shrink-0`}>
+                                                    {getInitials(staff.employee_name)}
                                                 </div>
 
-                                                <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                                                    <span className="flex items-center gap-1">
-                                                        <IconBriefcase className="w-3.5 h-3.5" />
-                                                        {roleLabels[staff.role] || staff.role}
-                                                    </span>
-                                                    <span className="flex items-center gap-1">
-                                                        <IconClock className="w-3.5 h-3.5" />
-                                                        {staff.actual_hours}/{staff.planned_hours}h
-                                                    </span>
-                                                    <span className="flex items-center gap-1">
-                                                        <IconCurrencyDong className="w-3.5 h-3.5" />
-                                                        {formatCurrency(staff.cost)}
-                                                    </span>
-                                                </div>
-                                            </div>
+                                                {/* Info */}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="font-medium text-gray-800 dark:text-gray-200 truncate">
+                                                            {staff.employee_name}
+                                                        </span>
+                                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${status.color}`}>
+                                                            {status.icon}
+                                                            {status.label}
+                                                        </span>
+                                                    </div>
 
-                                            {/* Quick Actions */}
-                                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                {staff.phone && (
-                                                    <a
-                                                        href={`tel:${staff.phone}`}
-                                                        className="p-2 rounded-full hover:bg-green-100 text-green-600 transition-colors"
-                                                        title="Gọi điện"
-                                                        onClick={(e) => e.stopPropagation()}
+                                                    <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                                                        <span className="flex items-center gap-1">
+                                                            <IconBriefcase className="w-3.5 h-3.5" />
+                                                            {roleLabels[staff.role] || staff.role}
+                                                        </span>
+
+                                                        {/* Time Range Display */}
+                                                        {hasTime ? (
+                                                            <span className="flex items-center gap-1 text-purple-600 font-medium">
+                                                                <IconClock className="w-3.5 h-3.5" />
+                                                                {formatTime(staff.start_time)}
+                                                                <IconArrowRight className="w-3 h-3" />
+                                                                {formatTime(staff.end_time)}
+                                                                <span className="text-gray-400 font-normal ml-1">
+                                                                    ({staff.planned_hours}h)
+                                                                </span>
+                                                            </span>
+                                                        ) : (
+                                                            <span className="flex items-center gap-1 text-amber-500">
+                                                                <IconClock className="w-3.5 h-3.5" />
+                                                                Chưa có giờ
+                                                            </span>
+                                                        )}
+
+                                                        <span className="flex items-center gap-1">
+                                                            <IconCurrencyDong className="w-3.5 h-3.5" />
+                                                            {formatCurrency(staff.cost)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Hover Action Overlay (Gmail-style) */}
+                                                <div className="hidden group-hover:flex items-center gap-1 absolute right-3 top-1/2 -translate-y-1/2 bg-white dark:bg-gray-900 shadow-sm border rounded-md px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                                    {staff.phone && (
+                                                        <a
+                                                            href={`tel:${staff.phone}`}
+                                                            className="p-1.5 rounded hover:bg-green-50 text-gray-500 hover:text-green-600 transition-colors"
+                                                            title="Gọi điện"
+                                                        >
+                                                            <IconPhone className="w-3.5 h-3.5" />
+                                                        </a>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        className="p-1.5 rounded hover:bg-purple-50 text-gray-500 hover:text-purple-600 transition-colors"
+                                                        title="Sửa giờ phân công"
+                                                        onClick={() => startEdit(staff)}
                                                     >
-                                                        <IconPhone className="w-4 h-4" />
-                                                    </a>
-                                                )}
-                                                <button
-                                                    type="button"
-                                                    className="p-2 rounded-full hover:bg-blue-100 text-blue-600 transition-colors"
-                                                    title="Xem hồ sơ"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleViewProfile(staff.employee_id, staff.employee_name);
-                                                    }}
-                                                >
-                                                    <IconChevronRight className="w-4 h-4" />
-                                                </button>
+                                                        <IconEdit className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="p-1.5 rounded hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors"
+                                                        title="Hủy phân công"
+                                                        onClick={() => setDeletingStaff(staff)}
+                                                    >
+                                                        <IconTrash className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="p-1.5 rounded hover:bg-blue-50 text-gray-500 hover:text-blue-600 transition-colors"
+                                                        title="Xem hồ sơ"
+                                                        onClick={() => handleViewProfile(staff.employee_id, staff.employee_name)}
+                                                    >
+                                                        <IconChevronRight className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
                                             </div>
+
+                                            {/* Inline Edit Time Picker */}
+                                            {isEditing && (
+                                                <div className="ml-16 mt-2 p-3 bg-purple-50 rounded-lg border border-purple-100 animate-in slide-in-from-top-2 duration-200">
+                                                    <p className="text-xs font-medium text-purple-700 mb-2">Sửa giờ phân công</p>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <label className="text-xs text-gray-500">Từ</label>
+                                                            <input
+                                                                type="time"
+                                                                value={editStartTime}
+                                                                onChange={(e) => setEditStartTime(e.target.value)}
+                                                                className="px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
+                                                            />
+                                                        </div>
+                                                        <IconArrowRight className="w-4 h-4 text-gray-400" />
+                                                        <div className="flex items-center gap-2">
+                                                            <label className="text-xs text-gray-500">Đến</label>
+                                                            <input
+                                                                type="time"
+                                                                value={editEndTime}
+                                                                onChange={(e) => setEditEndTime(e.target.value)}
+                                                                className="px-2 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
+                                                            />
+                                                        </div>
+                                                        {editHours > 0 && (
+                                                            <span className="text-xs text-purple-600 font-medium bg-purple-100 px-2 py-1 rounded-full">
+                                                                {editHours.toFixed(1)}h ≈ {formatCurrency(staff.hourly_rate * editHours)}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-3">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={cancelEdit}
+                                                            className="h-7 text-xs"
+                                                        >
+                                                            Hủy
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() => updateMutation.mutate({
+                                                                assignmentId: staff.assignment_id,
+                                                                startTime: editStartTime,
+                                                                endTime: editEndTime,
+                                                            })}
+                                                            disabled={editHours <= 0 || updateMutation.isPending}
+                                                            className="h-7 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                                                        >
+                                                            <IconCheck className="w-3 h-3 mr-1" />
+                                                            {updateMutation.isPending ? 'Đang lưu...' : 'Lưu'}
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -273,6 +470,35 @@ export function AssignedStaffCard({
                 open={!!selectedEmployee}
                 onClose={() => setSelectedEmployee(null)}
             />
+
+            {/* Delete Confirmation Modal */}
+            {deletingStaff && (
+                <Dialog open={!!deletingStaff} onOpenChange={() => setDeletingStaff(null)}>
+                    <DialogContent className="sm:max-w-sm">
+                        <DialogHeader>
+                            <DialogTitle className="text-red-600 flex items-center gap-2">
+                                <IconTrash className="h-5 w-5" />
+                                Hủy phân công
+                            </DialogTitle>
+                        </DialogHeader>
+                        <p className="text-sm text-gray-600">
+                            Bạn có chắc muốn hủy phân công nhân viên <span className="font-bold">{deletingStaff.employee_name}</span> ({roleLabels[deletingStaff.role] || deletingStaff.role}) không?
+                        </p>
+                        <div className="flex justify-end gap-2 mt-4">
+                            <Button variant="outline" onClick={() => setDeletingStaff(null)}>
+                                Không
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                disabled={deleteMutation.isPending}
+                                onClick={() => deleteMutation.mutate(deletingStaff.assignment_id)}
+                            >
+                                {deleteMutation.isPending ? 'Đang hủy...' : 'Xác nhận hủy'}
+                            </Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
         </>
     );
 }
