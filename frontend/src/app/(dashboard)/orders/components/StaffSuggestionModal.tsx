@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
@@ -92,6 +92,8 @@ export function StaffSuggestionModal({ orderId, orderCode, open, onOpenChange, o
     const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null);
     const [individualStartTime, setIndividualStartTime] = useState('08:00');
     const [individualEndTime, setIndividualEndTime] = useState('16:00');
+    // Date picker state (defaults to order event_date)
+    const [assignDate, setAssignDate] = useState<string>('');
     // Time picker state for bulk assign
     const [bulkStartTime, setBulkStartTime] = useState('08:00');
     const [bulkEndTime, setBulkEndTime] = useState('16:00');
@@ -120,7 +122,25 @@ export function StaffSuggestionModal({ orderId, orderCode, open, onOpenChange, o
         return '16:00';
     }, [data?.event_time]);
 
-    // Format event_date for display
+    // Default date from order event_date (yyyy-MM-dd for input[type=date])
+    const defaultAssignDate = useMemo(() => {
+        if (!data?.event_date) return '';
+        try {
+            const date = new Date(data.event_date);
+            return date.toISOString().split('T')[0]; // yyyy-MM-dd
+        } catch {
+            return '';
+        }
+    }, [data?.event_date]);
+
+    // Initialize assignDate when data loads
+    useEffect(() => {
+        if (defaultAssignDate && !assignDate) {
+            setAssignDate(defaultAssignDate);
+        }
+    }, [defaultAssignDate]);
+
+    // Format event_date for display in header
     const formattedEventDate = useMemo(() => {
         if (!data?.event_date) return null;
         try {
@@ -131,13 +151,25 @@ export function StaffSuggestionModal({ orderId, orderCode, open, onOpenChange, o
         }
     }, [data?.event_date]);
 
+    // Format assignDate for display (dd/MM/yyyy)
+    const formattedAssignDate = useMemo(() => {
+        if (!assignDate) return null;
+        try {
+            const date = new Date(assignDate + 'T00:00:00');
+            return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        } catch {
+            return assignDate;
+        }
+    }, [assignDate]);
+
     /**
-     * Build ISO datetime from event_date + time string
+     * Build ISO datetime from assignDate + time string
      */
     function buildDatetime(time: string): string | undefined {
-        if (!data?.event_date) return undefined;
+        const dateStr = assignDate || defaultAssignDate;
+        if (!dateStr) return undefined;
         try {
-            const date = new Date(data.event_date);
+            const date = new Date(dateStr + 'T00:00:00');
             const [h, m] = time.split(':').map(Number);
             date.setHours(h, m, 0, 0);
             return date.toISOString();
@@ -419,12 +451,16 @@ export function StaffSuggestionModal({ orderId, orderCode, open, onOpenChange, o
                                                     >
                                                         <div className="border border-t-0 border-purple-300 bg-purple-50/50 rounded-b-lg p-4">
                                                             <div className="flex items-center gap-3 flex-wrap">
-                                                                {formattedEventDate && (
-                                                                    <div className="flex items-center gap-1.5 text-sm text-gray-600">
-                                                                        <IconCalendar className="w-4 h-4 text-purple-500" />
-                                                                        <span className="font-medium">{formattedEventDate}</span>
-                                                                    </div>
-                                                                )}
+                                                                <div className="flex items-center gap-1.5 text-sm text-gray-600">
+                                                                    <IconCalendar className="w-4 h-4 text-purple-500" />
+                                                                    <input
+                                                                        type="date"
+                                                                        value={assignDate}
+                                                                        onChange={(e) => setAssignDate(e.target.value)}
+                                                                        className="border border-purple-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:ring-2 focus:ring-purple-400 focus:border-purple-400 outline-none"
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                    />
+                                                                </div>
 
                                                                 <div className="flex items-center gap-2">
                                                                     <IconClock className="w-4 h-4 text-purple-500" />
@@ -510,6 +546,13 @@ export function StaffSuggestionModal({ orderId, orderCode, open, onOpenChange, o
                                             Giờ phân công:
                                         </span>
                                         <div className="flex items-center gap-2">
+                                            <IconCalendar className="w-4 h-4 text-gray-400" />
+                                            <input
+                                                type="date"
+                                                value={assignDate}
+                                                onChange={(e) => setAssignDate(e.target.value)}
+                                                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:ring-2 focus:ring-purple-400 focus:border-purple-400 outline-none"
+                                            />
                                             <input
                                                 type="time"
                                                 value={bulkStartTime}
