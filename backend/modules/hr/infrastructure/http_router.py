@@ -1105,6 +1105,14 @@ class TimesheetTimeEditRequest(BaseModel):
     edit_reason: Optional[str] = None
 
 
+class TimesheetUpdate(BaseModel):
+    """Request schema for full timesheet edit (only PENDING timesheets)"""
+    work_date: Optional[str] = None  # Format: YYYY-MM-DD
+    scheduled_start: Optional[datetime] = None
+    scheduled_end: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
 class TimesheetSummary(BaseModel):
     employee_id: UUID
     employee_name: str
@@ -1525,6 +1533,189 @@ async def approve_timesheet(
     await db.commit()
     
     return {"message": f"Timesheet {'approved' if approved else 'rejected'}", "status": timesheet.status}
+
+
+@router.get("/timesheets/{timesheet_id}", response_model=TimesheetResponse)
+async def get_timesheet_detail(
+    timesheet_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get detailed timesheet by ID with employee and order context"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    query = select(
+        TimesheetModel,
+        EmployeeModel.full_name,
+        EmployeeModel.role_type,
+        OrderModel.code,
+        OrderModel.customer_name,
+        OrderModel.event_address
+    ).outerjoin(
+        EmployeeModel, TimesheetModel.employee_id == EmployeeModel.id
+    ).outerjoin(
+        OrderModel, TimesheetModel.order_id == OrderModel.id
+    ).where(
+        TimesheetModel.id == timesheet_id,
+        TimesheetModel.tenant_id == tenant_id
+    )
+    
+    result = await db.execute(query)
+    row = result.first()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Timesheet not found")
+    
+    return TimesheetResponse(
+        id=row[0].id,
+        tenant_id=row[0].tenant_id,
+        employee_id=row[0].employee_id,
+        employee_name=row[1],
+        employee_role=row[2],
+        assignment_id=row[0].assignment_id,
+        work_date=row[0].work_date.isoformat(),
+        scheduled_start=row[0].scheduled_start,
+        scheduled_end=row[0].scheduled_end,
+        actual_start=row[0].actual_start,
+        actual_end=row[0].actual_end,
+        total_hours=float(row[0].total_hours or 0),
+        overtime_hours=float(row[0].overtime_hours or 0),
+        status=row[0].status or 'PENDING',
+        approved_by=row[0].approved_by,
+        approved_at=row[0].approved_at,
+        source=row[0].source or 'MANUAL',
+        order_id=row[0].order_id,
+        order_code=row[3],
+        customer_name=row[4],
+        event_location=row[5],
+        notes=row[0].notes,
+        created_at=row[0].created_at,
+        updated_at=row[0].updated_at,
+        original_start=row[0].original_start,
+        original_end=row[0].original_end,
+        time_edited_by=row[0].time_edited_by,
+        time_edited_at=row[0].time_edited_at,
+        edit_reason=row[0].edit_reason
+    )
+
+
+@router.put("/timesheets/{timesheet_id}", response_model=TimesheetResponse)
+async def update_timesheet(
+    timesheet_id: UUID,
+    data: TimesheetUpdate,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update a timesheet (only PENDING timesheets can be edited)"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    query = select(
+        TimesheetModel,
+        EmployeeModel.full_name,
+        EmployeeModel.role_type,
+        OrderModel.code,
+        OrderModel.customer_name,
+        OrderModel.event_address
+    ).outerjoin(
+        EmployeeModel, TimesheetModel.employee_id == EmployeeModel.id
+    ).outerjoin(
+        OrderModel, TimesheetModel.order_id == OrderModel.id
+    ).where(
+        TimesheetModel.id == timesheet_id,
+        TimesheetModel.tenant_id == tenant_id
+    )
+    
+    result = await db.execute(query)
+    row = result.first()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Timesheet not found")
+    
+    timesheet = row[0]
+    
+    if timesheet.status not in ('PENDING', None):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot edit timesheet with status '{timesheet.status}'. Only PENDING timesheets can be edited."
+        )
+    
+    # Apply updates
+    if data.work_date is not None:
+        timesheet.work_date = date.fromisoformat(data.work_date)
+    if data.scheduled_start is not None:
+        timesheet.scheduled_start = data.scheduled_start
+    if data.scheduled_end is not None:
+        timesheet.scheduled_end = data.scheduled_end
+    if data.notes is not None:
+        timesheet.notes = data.notes
+    
+    timesheet.updated_at = datetime.now(VN_TIMEZONE)
+    
+    await db.commit()
+    await db.refresh(timesheet)
+    
+    return TimesheetResponse(
+        id=timesheet.id,
+        tenant_id=timesheet.tenant_id,
+        employee_id=timesheet.employee_id,
+        employee_name=row[1],
+        employee_role=row[2],
+        assignment_id=timesheet.assignment_id,
+        work_date=timesheet.work_date.isoformat(),
+        scheduled_start=timesheet.scheduled_start,
+        scheduled_end=timesheet.scheduled_end,
+        actual_start=timesheet.actual_start,
+        actual_end=timesheet.actual_end,
+        total_hours=float(timesheet.total_hours or 0),
+        overtime_hours=float(timesheet.overtime_hours or 0),
+        status=timesheet.status or 'PENDING',
+        approved_by=timesheet.approved_by,
+        approved_at=timesheet.approved_at,
+        source=timesheet.source or 'MANUAL',
+        order_id=timesheet.order_id,
+        order_code=row[3],
+        customer_name=row[4],
+        event_location=row[5],
+        notes=timesheet.notes,
+        created_at=timesheet.created_at,
+        updated_at=timesheet.updated_at,
+        original_start=timesheet.original_start,
+        original_end=timesheet.original_end,
+        time_edited_by=timesheet.time_edited_by,
+        time_edited_at=timesheet.time_edited_at,
+        edit_reason=timesheet.edit_reason
+    )
+
+
+@router.delete("/timesheets/{timesheet_id}")
+async def delete_timesheet(
+    timesheet_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a timesheet (only PENDING timesheets can be deleted)"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    query = select(TimesheetModel).where(
+        TimesheetModel.id == timesheet_id,
+        TimesheetModel.tenant_id == tenant_id
+    )
+    result = await db.execute(query)
+    timesheet = result.scalar_one_or_none()
+    
+    if not timesheet:
+        raise HTTPException(status_code=404, detail="Timesheet not found")
+    
+    if timesheet.status not in ('PENDING', None):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete timesheet with status '{timesheet.status}'. Only PENDING timesheets can be deleted. Reject it first if needed."
+        )
+    
+    await db.delete(timesheet)
+    await db.commit()
+    
+    return {"message": "Timesheet deleted successfully", "id": str(timesheet_id)}
 
 
 @router.get("/timesheets/report/monthly")

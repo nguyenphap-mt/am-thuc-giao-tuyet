@@ -17,7 +17,15 @@ import {
     DialogHeader,
     DialogTitle,
     DialogFooter,
+    DialogDescription,
 } from '@/components/ui/dialog';
+import {
+    Sheet,
+    SheetContent,
+    SheetHeader,
+    SheetTitle,
+} from '@/components/ui/sheet';
+import { Textarea } from '@/components/ui/textarea';
 import {
     Popover,
     PopoverContent,
@@ -46,6 +54,11 @@ import {
     IconMapPin,
     IconClipboard,
     IconPencil,
+    IconTrash,
+    IconEye,
+    IconExternalLink,
+    IconAlertTriangle,
+    IconNotes,
 } from '@tabler/icons-react';
 import { Employee } from '@/types';
 
@@ -116,6 +129,17 @@ export default function TimeSheetTab() {
     const [editField, setEditField] = useState<'start' | 'end' | null>(null);
     const [editValue, setEditValue] = useState<string>('');
     const [isEditingSaving, setIsEditingSaving] = useState(false);
+
+    // Detail drawer state
+    const [selectedTimesheet, setSelectedTimesheet] = useState<TimesheetResponse | null>(null);
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editNotes, setEditNotes] = useState('');
+    const [editWorkDate, setEditWorkDate] = useState('');
+
+    // Delete confirmation state
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [timesheetToDelete, setTimesheetToDelete] = useState<TimesheetResponse | null>(null);
 
     // Helper: Format date to YYYY-MM-DD
     const formatDateISO = (date: Date) => date.toISOString().split('T')[0];
@@ -337,6 +361,40 @@ export default function TimeSheetTab() {
         },
         onError: () => {
             toast.error('Từ chối thất bại');
+        },
+    });
+
+    // Mutation: Update timesheet (full edit)
+    const updateMutation = useMutation({
+        mutationFn: async ({ id, data }: { id: string; data: { work_date?: string; notes?: string } }) => {
+            return await api.put<TimesheetResponse>(`/hr/timesheets/${id}`, data);
+        },
+        onSuccess: (updated) => {
+            toast.success('Cập nhật chấm công thành công!');
+            queryClient.invalidateQueries({ queryKey: ['hr', 'timesheets'] });
+            setSelectedTimesheet(updated);
+            setIsEditing(false);
+        },
+        onError: (error: any) => {
+            toast.error(error?.message || 'Không thể cập nhật chấm công');
+        },
+    });
+
+    // Mutation: Delete timesheet
+    const deleteMutation = useMutation({
+        mutationFn: async (timesheetId: string) => {
+            return await api.delete(`/hr/timesheets/${timesheetId}`);
+        },
+        onSuccess: () => {
+            toast.success('Đã xóa bản chấm công!');
+            queryClient.invalidateQueries({ queryKey: ['hr', 'timesheets'] });
+            setDrawerOpen(false);
+            setSelectedTimesheet(null);
+            setDeleteConfirmOpen(false);
+            setTimesheetToDelete(null);
+        },
+        onError: (error: any) => {
+            toast.error(error?.message || 'Không thể xóa chấm công');
         },
     });
 
@@ -631,7 +689,17 @@ export default function TimeSheetTab() {
                     ) : (
                         <div className="divide-y">
                             {timesheets.map((ts) => (
-                                <div key={ts.id} className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-900">
+                                <div
+                                    key={ts.id}
+                                    className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-900 cursor-pointer transition-colors"
+                                    onClick={() => {
+                                        setSelectedTimesheet(ts);
+                                        setEditNotes(ts.notes || '');
+                                        setEditWorkDate(ts.work_date);
+                                        setIsEditing(false);
+                                        setDrawerOpen(true);
+                                    }}
+                                >
                                     {/* Checkbox for bulk selection (only pending with actual_end) */}
                                     {ts.status === 'PENDING' && ts.actual_end ? (
                                         <Checkbox
@@ -814,7 +882,7 @@ export default function TimeSheetTab() {
                                     </div>
 
                                     {/* Actions */}
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                                         {!ts.actual_start && (
                                             <Button
                                                 variant="outline"
@@ -930,6 +998,264 @@ export default function TimeSheetTab() {
                                 </>
                             ) : (
                                 'Tạo chấm công'
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Detail Drawer */}
+            <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+                <SheetContent className="w-[400px] sm:w-[450px] overflow-y-auto">
+                    <SheetHeader>
+                        <SheetTitle className="flex items-center gap-2">
+                            <IconEye className="h-5 w-5" />
+                            Chi tiết chấm công
+                        </SheetTitle>
+                    </SheetHeader>
+
+                    {selectedTimesheet && (
+                        <div className="mt-6 space-y-6">
+                            {/* Employee Info */}
+                            <div className="flex items-center gap-3">
+                                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center text-white font-medium text-lg">
+                                    {selectedTimesheet.employee_name?.charAt(0) || 'N'}
+                                </div>
+                                <div>
+                                    <p className="font-semibold text-lg">{selectedTimesheet.employee_name || 'Unknown'}</p>
+                                    <p className="text-sm text-gray-500">{selectedTimesheet.employee_role || '--'}</p>
+                                </div>
+                                <div className="ml-auto">
+                                    {getStatusBadge(selectedTimesheet.status)}
+                                </div>
+                            </div>
+
+                            {/* Order Context */}
+                            {selectedTimesheet.order_id && selectedTimesheet.order_code && (
+                                <div className="bg-blue-50 dark:bg-blue-950 rounded-lg p-3 space-y-2">
+                                    <p className="text-sm font-medium text-blue-800 dark:text-blue-200 flex items-center gap-1">
+                                        <IconClipboard className="h-4 w-4" />
+                                        Đơn hàng
+                                    </p>
+                                    <div className="text-sm space-y-1">
+                                        <p className="font-medium text-blue-700 dark:text-blue-300">{selectedTimesheet.order_code}</p>
+                                        {selectedTimesheet.customer_name && (
+                                            <p className="text-blue-600 dark:text-blue-400">KH: {selectedTimesheet.customer_name}</p>
+                                        )}
+                                        {selectedTimesheet.event_location && (
+                                            <p className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                                                <IconMapPin className="h-3 w-3" />
+                                                {selectedTimesheet.event_location}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <a
+                                        href={`/orders/${selectedTimesheet.order_id}`}
+                                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 mt-1"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <IconExternalLink className="h-3 w-3" />
+                                        Xem đơn hàng
+                                    </a>
+                                </div>
+                            )}
+
+                            {/* Time Details */}
+                            <div className="space-y-3">
+                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                                    <IconClock className="h-4 w-4" />
+                                    Thời gian
+                                </p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                                        <p className="text-xs text-gray-500">Ngày làm việc</p>
+                                        {isEditing && selectedTimesheet.status === 'PENDING' ? (
+                                            <Input
+                                                type="date"
+                                                value={editWorkDate}
+                                                onChange={(e) => setEditWorkDate(e.target.value)}
+                                                className="mt-1 h-8 text-sm"
+                                            />
+                                        ) : (
+                                            <p className="font-medium">{formatDate(selectedTimesheet.work_date)}</p>
+                                        )}
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                                        <p className="text-xs text-gray-500">Nguồn</p>
+                                        <Badge variant="outline" className={selectedTimesheet.source === 'AUTO_ORDER' ? 'border-blue-300 text-blue-600 bg-blue-50 mt-1' : 'border-gray-300 text-gray-600 mt-1'}>
+                                            {selectedTimesheet.source === 'AUTO_ORDER' ? 'Từ đơn hàng' : 'Thủ công'}
+                                        </Badge>
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                                        <p className="text-xs text-gray-500">Giờ vào</p>
+                                        <p className="font-medium text-green-600">{formatTime(selectedTimesheet.actual_start)}</p>
+                                        {selectedTimesheet.original_start && selectedTimesheet.actual_start !== selectedTimesheet.original_start && (
+                                            <p className="text-xs text-blue-500">Gốc: {formatTime(selectedTimesheet.original_start)}</p>
+                                        )}
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                                        <p className="text-xs text-gray-500">Giờ ra</p>
+                                        <p className="font-medium text-orange-600">{formatTime(selectedTimesheet.actual_end)}</p>
+                                        {selectedTimesheet.original_end && selectedTimesheet.actual_end !== selectedTimesheet.original_end && (
+                                            <p className="text-xs text-blue-500">Gốc: {formatTime(selectedTimesheet.original_end)}</p>
+                                        )}
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                                        <p className="text-xs text-gray-500">Tổng giờ</p>
+                                        <p className="font-bold text-lg">{selectedTimesheet.total_hours.toFixed(1)}h</p>
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                                        <p className="text-xs text-gray-500">Giờ OT</p>
+                                        <p className="font-bold text-lg text-purple-600">{selectedTimesheet.overtime_hours.toFixed(1)}h</p>
+                                    </div>
+                                </div>
+
+                                {/* Edit audit trail */}
+                                {selectedTimesheet.time_edited_at && (
+                                    <div className="text-xs text-gray-400 bg-gray-50 dark:bg-gray-800 rounded p-2">
+                                        <span>✏️ Sửa lúc: {new Date(selectedTimesheet.time_edited_at).toLocaleString('vi-VN')}</span>
+                                        {selectedTimesheet.edit_reason && (
+                                            <span className="block">Lý do: {selectedTimesheet.edit_reason}</span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Notes */}
+                            <div className="space-y-2">
+                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                                    <IconNotes className="h-4 w-4" />
+                                    Ghi chú
+                                </p>
+                                {isEditing && selectedTimesheet.status === 'PENDING' ? (
+                                    <Textarea
+                                        value={editNotes}
+                                        onChange={(e) => setEditNotes(e.target.value)}
+                                        placeholder="Nhập ghi chú..."
+                                        rows={3}
+                                    />
+                                ) : (
+                                    <p className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                                        {selectedTimesheet.notes || 'Không có ghi chú'}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Metadata */}
+                            <div className="text-xs text-gray-400 space-y-1 border-t pt-3">
+                                <p>Tạo lúc: {new Date(selectedTimesheet.created_at).toLocaleString('vi-VN')}</p>
+                                <p>Cập nhật: {new Date(selectedTimesheet.updated_at).toLocaleString('vi-VN')}</p>
+                                <p>ID: {selectedTimesheet.id}</p>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center gap-2 border-t pt-4">
+                                {isEditing ? (
+                                    <>
+                                        <Button
+                                            onClick={() => {
+                                                updateMutation.mutate({
+                                                    id: selectedTimesheet.id,
+                                                    data: {
+                                                        work_date: editWorkDate !== selectedTimesheet.work_date ? editWorkDate : undefined,
+                                                        notes: editNotes !== (selectedTimesheet.notes || '') ? editNotes : undefined,
+                                                    },
+                                                });
+                                            }}
+                                            disabled={updateMutation.isPending}
+                                            className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500"
+                                        >
+                                            {updateMutation.isPending ? (
+                                                <><IconLoader2 className="mr-2 h-4 w-4 animate-spin" /> Đang lưu...</>
+                                            ) : (
+                                                <><IconCheck className="mr-2 h-4 w-4" /> Lưu</>
+                                            )}
+                                        </Button>
+                                        <Button variant="outline" onClick={() => setIsEditing(false)}>
+                                            Hủy
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <>
+                                        {selectedTimesheet.status === 'PENDING' && (
+                                            <>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        setEditNotes(selectedTimesheet.notes || '');
+                                                        setEditWorkDate(selectedTimesheet.work_date);
+                                                        setIsEditing(true);
+                                                    }}
+                                                >
+                                                    <IconPencil className="h-4 w-4 mr-1" />
+                                                    Sửa
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="text-red-600 border-red-200 hover:bg-red-50"
+                                                    onClick={() => {
+                                                        setTimesheetToDelete(selectedTimesheet);
+                                                        setDeleteConfirmOpen(true);
+                                                    }}
+                                                >
+                                                    <IconTrash className="h-4 w-4 mr-1" />
+                                                    Xóa
+                                                </Button>
+                                            </>
+                                        )}
+                                        {selectedTimesheet.order_id && (
+                                            <a
+                                                href={`/orders/${selectedTimesheet.order_id}`}
+                                                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                            >
+                                                <IconExternalLink className="h-4 w-4" />
+                                                Tới đơn hàng
+                                            </a>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </SheetContent>
+            </Sheet>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+                <DialogContent className="sm:max-w-[400px]">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-red-600">
+                            <IconAlertTriangle className="h-5 w-5" />
+                            Xóa bản chấm công
+                        </DialogTitle>
+                        <DialogDescription>
+                            Bạn có chắc muốn xóa bản chấm công này? Hành động này không thể hoàn tác.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {timesheetToDelete && (
+                        <div className="bg-red-50 dark:bg-red-950 rounded-lg p-3 text-sm space-y-1">
+                            <p><strong>Nhân viên:</strong> {timesheetToDelete.employee_name}</p>
+                            <p><strong>Ngày:</strong> {formatDate(timesheetToDelete.work_date)}</p>
+                            {timesheetToDelete.order_code && (
+                                <p><strong>Đơn hàng:</strong> {timesheetToDelete.order_code}</p>
+                            )}
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => { setDeleteConfirmOpen(false); setTimesheetToDelete(null); }}>
+                            Hủy
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={() => timesheetToDelete && deleteMutation.mutate(timesheetToDelete.id)}
+                            disabled={deleteMutation.isPending}
+                        >
+                            {deleteMutation.isPending ? (
+                                <><IconLoader2 className="mr-2 h-4 w-4 animate-spin" /> Đang xóa...</>
+                            ) : (
+                                <><IconTrash className="mr-2 h-4 w-4" /> Xóa</>
                             )}
                         </Button>
                     </DialogFooter>

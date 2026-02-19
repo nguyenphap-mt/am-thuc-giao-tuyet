@@ -37,7 +37,7 @@
 | **Order** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⬜ |
 | **Calendar** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⬜ | ⬜ |
 | **Procurement** | ✅ | ✅ | ✅ | ✅ | ⬜ | ⬜ | ✅ | ⬜ |
-| **HR** | ✅ | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| **HR** | ✅ | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ✅ | ⬜ |
 | **Finance** | ✅ | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ✅ | ⬜ |
 | **CRM** | ✅ | ✅ | ✅ | ⬜ | ✅ | ⬜ | ⬜ | ⬜ |
 | **Analytics** | ✅ | ✅ | ✅ | ⬜ | ✅ | ⬜ | ✅ | ⬜ |
@@ -118,15 +118,30 @@
 | Record Payment | ✅ | ⬜ | ⬜ | ✅ |
 
 ### 3.7 HR Module
-| Action | admin | manager |
-| :--- | :---: | :---: |
-| View Employees | ✅ | ✅ |
-| View Salary | ✅ | ⬜ |
-| Create Employee | ✅ | ✅ |
-| Edit Employee | ✅ | ✅ |
-| Delete Employee | ✅ | ⬜ |
-| View Attendance | ✅ | ✅ |
-| Process Payroll | ✅ | ⬜ |
+| Action | super_admin | admin | manager | accountant |
+| :--- | :---: | :---: | :---: | :---: |
+| **Nhân viên** | | | | |
+| View Employees | ✅ | ✅ | ✅ | ✅ |
+| Create Employee | ✅ | ✅ | ✅ | ⬜ |
+| Edit Employee | ✅ | ✅ | ✅ | ⬜ |
+| Delete Employee | ✅ | ✅ | ⬜ | ⬜ |
+| View Salary Info | ✅ | ✅ | ⬜ | ✅ |
+| **Chấm công** | | | | |
+| View Timesheets | ✅ | ✅ | ✅ | ✅ |
+| View Timesheet Detail | ✅ | ✅ | ✅ | ✅ |
+| Create Timesheet | ✅ | ✅ | ✅ | ⬜ |
+| Edit Timesheet | ✅ | ✅ | ✅ | ⬜ |
+| Delete Timesheet | ✅ | ✅ | ⬜ | ⬜ |
+| Check-in/Check-out | ✅ | ✅ | ✅ | ⬜ |
+| Approve Timesheet | ✅ | ✅ | ✅ | ⬜ |
+| Reject Timesheet | ✅ | ✅ | ✅ | ⬜ |
+| **Nghỉ phép** | | | | |
+| View Leave Requests | ✅ | ✅ | ✅ | ⬜ |
+| Approve Leave | ✅ | ✅ | ✅ | ⬜ |
+| **Lương** | | | | |
+| View Payroll | ✅ | ✅ | ⬜ | ✅ |
+| Process Payroll | ✅ | ✅ | ⬜ | ⬜ |
+| Approve Payroll | ✅ | ✅ | ⬜ | ⬜ |
 
 ### 3.8 Finance Module
 | Action | admin | manager | accountant |
@@ -205,7 +220,7 @@ MODULE_ACCESS = {
     "order": ["super_admin", "admin", "manager", "chef", "sales", "staff", "accountant"],
     "calendar": ["super_admin", "admin", "manager", "chef", "sales", "staff"],
     "procurement": ["super_admin", "admin", "manager", "chef", "accountant"],
-    "hr": ["super_admin", "admin", "manager"],
+    "hr": ["super_admin", "admin", "manager", "accountant"],
     "finance": ["super_admin", "admin", "manager", "accountant"],
     "crm": ["super_admin", "admin", "manager", "sales"],
     "analytics": ["super_admin", "admin", "manager", "sales", "accountant"],
