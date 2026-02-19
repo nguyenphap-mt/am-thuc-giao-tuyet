@@ -18,6 +18,9 @@ class UserSessionModel(Base):
     # Primary Key
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     
+    # Tenant ID (RLS - MANDATORY)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
+    
     # User reference
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
