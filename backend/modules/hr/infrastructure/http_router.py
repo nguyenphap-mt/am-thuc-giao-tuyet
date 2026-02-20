@@ -1311,9 +1311,9 @@ async def get_unattended_assignments(
             EmployeeModel.full_name,
             EmployeeModel.role_type,
             EmployeeModel.phone,
-            OrderModel.order_code,
+            OrderModel.code,
             OrderModel.customer_name,
-            OrderModel.event_location,
+            OrderModel.event_address,
         )
         .outerjoin(EmployeeModel, StaffAssignmentModel.employee_id == EmployeeModel.id)
         .outerjoin(OrderModel, StaffAssignmentModel.event_id == OrderModel.id)
