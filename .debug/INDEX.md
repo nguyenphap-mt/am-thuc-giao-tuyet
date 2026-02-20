@@ -53,6 +53,7 @@
 | BUG-20260218-005 | Security/Database | High | `missing-rls` | supabase, RLS, security-advisor, tenant_id, extensions, row-level-security, mutable-search-path | `060_fix_supabase_security_warnings.sql`, `061_fix_remaining_supabase_warnings.sql` | ✅ | 2026-02-18 |
 | BUG-20260219-001 | Security/Database | High | `missing-rls` | supabase, RLS, security-advisor, tenant_id, quote_note_presets, user_sessions, extensions-schema, pg_trgm, unaccent, vector | `061_fix_remaining_supabase_warnings.sql`, `models.py`, `session_model.py` | ✅ | 2026-02-19 |
 | BUG-20260219-002 | HR/StaffAssignment | Critical | `stale-fk` | 500, staff_assignments, event_id, foreign-key, events, orders, supabase, phân-công | `064_fix_staff_assignments_event_fk.sql` | ✅ | 2026-02-19 |
+| BUG-20260220-001 | Order/CRM/Loyalty | Critical | `schema-mismatch` | 500, loyalty_points_history, CHECK-constraint, REVERSAL, reopen | `070_add_reversal_type_loyalty.sql` | ✅ | 2026-02-20 |
 
 ---
 
@@ -70,4 +71,4 @@
 
 ---
 
-*Last updated: 2026-02-19 16:25 (BUG-20260219-002 added — Staff Assignment stale FK constraint on event_id)*
+*Last updated: 2026-02-20 06:55 (BUG-20260220-001 added — Loyalty CHECK constraint missing REVERSAL for Order Reopen)*
