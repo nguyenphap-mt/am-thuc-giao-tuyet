@@ -1260,6 +1260,9 @@ class UnattendedAssignment(BaseModel):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     assignment_status: str
+    work_date: Optional[str] = None  # YYYY-MM-DD for the assignment date
+    is_overdue: bool = False  # True if assignment date < today
+    overdue_days: int = 0  # Number of days overdue
 
     class Config:
         from_attributes = True
@@ -1279,15 +1282,29 @@ class BatchTimesheetResponse(BaseModel):
 @router.get("/timesheets/unattended", response_model=list[UnattendedAssignment])
 async def get_unattended_assignments(
     target_date: Optional[str] = Query(default=None, alias="date"),
+    include_overdue: bool = Query(default=False, description="Include past days without timesheets"),
+    lookback_days: int = Query(default=7, ge=1, le=30, description="Days to look back for overdue"),
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get assignments for a date that don't have timesheet records yet"""
+    """Get assignments that don't have timesheet records yet.
+    When include_overdue=True, also returns past assignments without timesheets."""
     await set_tenant_context(db, str(tenant_id))
     
-    check_date = date.fromisoformat(target_date) if target_date else date.today()
+    today = date.today()
+    check_date = date.fromisoformat(target_date) if target_date else today
     
-    # LEFT JOIN: assignments that have no matching timesheet for this date
+    # Determine date range
+    if include_overdue:
+        start_date = today - timedelta(days=lookback_days)
+        date_filter = and_(
+            func.date(StaffAssignmentModel.start_time) >= start_date,
+            func.date(StaffAssignmentModel.start_time) <= today,
+        )
+    else:
+        date_filter = func.date(StaffAssignmentModel.start_time) == check_date
+    
+    # Dynamic outerjoin: match timesheet by employee + assignment date
     query = (
         select(
             StaffAssignmentModel,
@@ -1304,39 +1321,47 @@ async def get_unattended_assignments(
             TimesheetModel,
             and_(
                 TimesheetModel.employee_id == StaffAssignmentModel.employee_id,
-                TimesheetModel.work_date == check_date,
+                TimesheetModel.work_date == func.date(StaffAssignmentModel.start_time),
                 TimesheetModel.tenant_id == tenant_id,
             )
         )
         .where(
             StaffAssignmentModel.tenant_id == tenant_id,
             StaffAssignmentModel.status.in_(['ASSIGNED', 'CONFIRMED']),
-            func.date(StaffAssignmentModel.start_time) == check_date,
+            date_filter,
             TimesheetModel.id == None,  # No existing timesheet
         )
-        .order_by(EmployeeModel.full_name)
+        .order_by(func.date(StaffAssignmentModel.start_time).desc(), EmployeeModel.full_name)
     )
     
     result = await db.execute(query)
     rows = result.all()
     
-    return [
-        UnattendedAssignment(
-            assignment_id=row[0].id,
-            employee_id=row[0].employee_id,
-            employee_name=row[1],
-            employee_role=row[2],
-            employee_phone=row[3],
-            order_id=row[0].event_id,
-            order_code=row[4],
-            customer_name=row[5],
-            event_location=row[6],
-            start_time=row[0].start_time,
-            end_time=row[0].end_time,
-            assignment_status=row[0].status or 'ASSIGNED',
+    assignments_out = []
+    for row in rows:
+        assignment_date = row[0].start_time.date() if row[0].start_time else today
+        days_overdue = (today - assignment_date).days
+        assignments_out.append(
+            UnattendedAssignment(
+                assignment_id=row[0].id,
+                employee_id=row[0].employee_id,
+                employee_name=row[1],
+                employee_role=row[2],
+                employee_phone=row[3],
+                order_id=row[0].event_id,
+                order_code=row[4],
+                customer_name=row[5],
+                event_location=row[6],
+                start_time=row[0].start_time,
+                end_time=row[0].end_time,
+                assignment_status=row[0].status or 'ASSIGNED',
+                work_date=assignment_date.isoformat(),
+                is_overdue=days_overdue > 0,
+                overdue_days=days_overdue,
+            )
         )
-        for row in rows
-    ]
+    
+    return assignments_out
 
 
 @router.post("/timesheets/batch-from-assignments", response_model=BatchTimesheetResponse)
@@ -1727,6 +1752,57 @@ async def approve_timesheet(
     await db.commit()
     
     return {"message": f"Timesheet {'approved' if approved else 'rejected'}", "status": timesheet.status}
+
+
+class BulkTimesheetAction(BaseModel):
+    """Request to bulk approve/reject timesheets"""
+    timesheet_ids: list[UUID]
+    action: str  # APPROVE or REJECT
+
+
+@router.put("/timesheets/bulk-approve")
+async def bulk_approve_timesheets(
+    data: BulkTimesheetAction,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Bulk approve or reject multiple timesheets in a single transaction"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    if data.action not in ('APPROVE', 'REJECT'):
+        raise HTTPException(status_code=400, detail="Action must be APPROVE or REJECT")
+    
+    if not data.timesheet_ids:
+        raise HTTPException(status_code=400, detail="No timesheet IDs provided")
+    
+    new_status = 'APPROVED' if data.action == 'APPROVE' else 'REJECTED'
+    now_vn = datetime.now(VN_TIMEZONE)
+    
+    # Fetch all timesheets
+    query = select(TimesheetModel).where(
+        TimesheetModel.id.in_(data.timesheet_ids),
+        TimesheetModel.tenant_id == tenant_id,
+        TimesheetModel.status == 'PENDING',  # Only process PENDING ones
+    )
+    result = await db.execute(query)
+    timesheets = result.scalars().all()
+    
+    if not timesheets:
+        raise HTTPException(status_code=404, detail="No pending timesheets found")
+    
+    updated_count = 0
+    for ts in timesheets:
+        ts.status = new_status
+        ts.approved_at = now_vn
+        updated_count += 1
+    
+    await db.commit()
+    
+    return {
+        "message": f"{updated_count} timesheets {new_status.lower()}",
+        "updated_count": updated_count,
+        "status": new_status
+    }
 
 
 @router.get("/timesheets/{timesheet_id}", response_model=TimesheetResponse)
@@ -2849,6 +2925,84 @@ async def list_leave_types(tenant_id: UUID = Depends(get_current_tenant), db: As
         for t in types
     ]
 
+
+# --- Leave Calendar Endpoint (G6) ---
+
+class LeaveCalendarDay(BaseModel):
+    date: str  # YYYY-MM-DD
+    employees: list[dict]  # [{employee_id, employee_name, leave_type, total_days}]
+
+@router.get("/leave/calendar", response_model=list[LeaveCalendarDay])
+async def get_leave_calendar(
+    month: str = Query(..., description="Month in YYYY-MM format"),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get approved leave days for a given month for calendar overlay."""
+    await set_tenant_context(db, str(tenant_id))
+    
+    try:
+        year_month = month.split("-")
+        year_val = int(year_month[0])
+        month_val = int(year_month[1])
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=400, detail="Invalid month format. Use YYYY-MM.")
+    
+    from calendar import monthrange
+    _, last_day = monthrange(year_val, month_val)
+    month_start = f"{year_val:04d}-{month_val:02d}-01"
+    month_end = f"{year_val:04d}-{month_val:02d}-{last_day:02d}"
+    
+    # Query approved leave requests that overlap with the given month
+    result = await db.execute(
+        select(
+            LeaveRequestModel,
+            EmployeeModel.full_name
+        ).join(
+            EmployeeModel, LeaveRequestModel.employee_id == EmployeeModel.id
+        ).join(
+            LeaveTypeModel, LeaveRequestModel.leave_type_id == LeaveTypeModel.id
+        ).where(
+            LeaveRequestModel.tenant_id == tenant_id,
+            LeaveRequestModel.status == 'APPROVED',
+            LeaveRequestModel.start_date <= month_end,
+            LeaveRequestModel.end_date >= month_start,
+        )
+    )
+    rows = result.all()
+    
+    # Build a map: date -> list of employees on leave
+    from datetime import date as date_type, timedelta
+    day_map: dict[str, list[dict]] = {}
+    
+    for leave_req, emp_name in rows:
+        # Iterate through each day of the leave request within this month
+        start = max(
+            leave_req.start_date if isinstance(leave_req.start_date, date_type) else date_type.fromisoformat(str(leave_req.start_date)),
+            date_type(year_val, month_val, 1)
+        )
+        end = min(
+            leave_req.end_date if isinstance(leave_req.end_date, date_type) else date_type.fromisoformat(str(leave_req.end_date)),
+            date_type(year_val, month_val, last_day)
+        )
+        
+        current = start
+        while current <= end:
+            date_key = current.isoformat()
+            if date_key not in day_map:
+                day_map[date_key] = []
+            day_map[date_key].append({
+                "employee_id": str(leave_req.employee_id),
+                "employee_name": emp_name,
+                "leave_type": "Nghỉ phép",
+                "total_days": float(leave_req.total_days or 1),
+            })
+            current += timedelta(days=1)
+    
+    return [
+        LeaveCalendarDay(date=d, employees=emps)
+        for d, emps in sorted(day_map.items())
+    ]
 
 
 # --- Leave Balance Endpoints ---

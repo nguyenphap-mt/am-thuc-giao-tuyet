@@ -111,6 +111,9 @@ interface UnattendedAssignment {
     start_time: string | null;
     end_time: string | null;
     assignment_status: string;
+    work_date: string | null;
+    is_overdue: boolean;
+    overdue_days: number;
 }
 
 interface TimesheetSummary {
@@ -427,6 +430,73 @@ export default function TimeSheetTab() {
         },
     });
 
+    // Mutation: Bulk Approve/Reject
+    const bulkApproveMutation = useMutation({
+        mutationFn: async (data: { timesheet_ids: string[]; action: 'APPROVE' | 'REJECT' }) => {
+            return await api.put<{ message: string; updated_count: number; status: string }>('/hr/timesheets/bulk-approve', data);
+        },
+        onSuccess: (result: any) => {
+            toast.success(result.message || `Đã xử lý ${result.updated_count} bản chấm công`);
+            setSelectedIds(new Set());
+            queryClient.invalidateQueries({ queryKey: ['hr', 'timesheets'] });
+        },
+        onError: () => {
+            toast.error('Thao tác hàng loạt thất bại');
+        },
+    });
+
+    // Query: Get overdue unattended assignments (past 7 days)
+    const { data: overdueAssignments } = useQuery({
+        queryKey: ['hr', 'timesheets', 'overdue'],
+        queryFn: async () => {
+            return await api.get<UnattendedAssignment[]>('/hr/timesheets/unattended?include_overdue=true&lookback_days=7');
+        },
+    });
+
+    // Filter only truly overdue (not today)
+    const overdueOnly = overdueAssignments?.filter(a => a.is_overdue) || [];
+
+    // Group overdue by work_date
+    const overdueGrouped = overdueOnly.reduce<Record<string, UnattendedAssignment[]>>((acc, a) => {
+        const key = a.work_date || 'unknown';
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(a);
+        return acc;
+    }, {});
+
+    // Helper: Toggle single timesheet selection
+    const toggleSelect = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    // Helper: Toggle select all pending timesheets
+    const toggleSelectAll = () => {
+        if (!timesheets) return;
+        const pendingIds = timesheets.filter(ts => ts.status === 'PENDING' && ts.actual_end).map(ts => ts.id);
+        if (selectedIds.size === pendingIds.length && pendingIds.length > 0) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(pendingIds));
+        }
+    };
+
+    // Handler: Bulk approve
+    const handleBulkApprove = () => {
+        if (selectedIds.size === 0) return;
+        bulkApproveMutation.mutate({ timesheet_ids: Array.from(selectedIds), action: 'APPROVE' });
+    };
+
+    // Handler: Bulk reject
+    const handleBulkReject = () => {
+        if (selectedIds.size === 0) return;
+        bulkApproveMutation.mutate({ timesheet_ids: Array.from(selectedIds), action: 'REJECT' });
+    };
+
     // Mutation: Update timesheet (full edit)
     const updateMutation = useMutation({
         mutationFn: async ({ id, data }: { id: string; data: { work_date?: string; notes?: string } }) => {
@@ -508,47 +578,6 @@ export default function TimeSheetTab() {
     // Pending timesheets for bulk selection
     const pendingTimesheets = timesheets?.filter(ts => ts.status === 'PENDING' && ts.actual_end) || [];
 
-    // Bulk approve mutation
-    const bulkApproveMutation = useMutation({
-        mutationFn: async (ids: string[]) => {
-            // Approve each timesheet sequentially
-            for (const id of ids) {
-                await api.put(`/hr/timesheets/${id}/approve?approved=true`, {});
-            }
-        },
-        onSuccess: () => {
-            toast.success(`Đã duyệt ${selectedIds.size} bản chấm công`);
-            queryClient.invalidateQueries({ queryKey: ['hr', 'timesheets'] });
-            setSelectedIds(new Set());
-        },
-        onError: () => {
-            toast.error('Duyệt hàng loạt thất bại');
-        },
-    });
-
-    // Selection handlers
-    const toggleSelect = (id: string) => {
-        const newSet = new Set(selectedIds);
-        if (newSet.has(id)) {
-            newSet.delete(id);
-        } else {
-            newSet.add(id);
-        }
-        setSelectedIds(newSet);
-    };
-
-    const toggleSelectAll = () => {
-        if (selectedIds.size === pendingTimesheets.length) {
-            setSelectedIds(new Set());
-        } else {
-            setSelectedIds(new Set(pendingTimesheets.map(ts => ts.id)));
-        }
-    };
-
-    const handleBulkApprove = () => {
-        if (selectedIds.size === 0) return;
-        bulkApproveMutation.mutate(Array.from(selectedIds));
-    };
 
     return (
         <div className="space-y-4">
@@ -673,6 +702,102 @@ export default function TimeSheetTab() {
                 </Card>
             )}
 
+            {/* Overdue Attendance Panel */}
+            {overdueOnly.length > 0 && (
+                <Card className="border-red-200 bg-gradient-to-r from-red-50 to-rose-50">
+                    <CardHeader className="py-3">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-base flex items-center gap-2">
+                                <div className="p-1.5 rounded-lg bg-red-100">
+                                    <IconAlertTriangle className="h-4 w-4 text-red-600" />
+                                </div>
+                                Phân công quá hạn
+                                <Badge className="bg-red-100 text-red-700">
+                                    {overdueOnly.length} chưa chấm
+                                </Badge>
+                            </CardTitle>
+                            <Button
+                                size="sm"
+                                onClick={() => {
+                                    // Batch create for all overdue dates
+                                    const dates = Object.keys(overdueGrouped);
+                                    dates.forEach(d =>
+                                        batchCreateMutation.mutate({
+                                            date: d,
+                                            assignment_ids: overdueGrouped[d].map(a => a.assignment_id),
+                                        })
+                                    );
+                                }}
+                                disabled={batchCreateMutation.isPending}
+                                className="bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 text-white"
+                            >
+                                {batchCreateMutation.isPending ? (
+                                    <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+                                ) : (
+                                    <IconUsers className="h-4 w-4 mr-1" />
+                                )}
+                                Tạo tất cả
+                            </Button>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        {Object.entries(overdueGrouped)
+                            .sort(([a], [b]) => b.localeCompare(a))
+                            .map(([dateKey, assignments]) => (
+                                <div key={dateKey}>
+                                    <div className="flex items-center gap-2 px-4 py-1.5 bg-red-100/50 border-y border-red-100">
+                                        <IconCalendar className="h-3.5 w-3.5 text-red-500" />
+                                        <span className="text-xs font-medium text-red-700">
+                                            {new Date(dateKey).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                                        </span>
+                                        <Badge className="bg-red-200 text-red-800 text-[10px] px-1.5 py-0">
+                                            {assignments[0]?.overdue_days} ngày trước
+                                        </Badge>
+                                        <span className="text-[10px] text-red-500">({assignments.length} NV)</span>
+                                    </div>
+                                    <div className="divide-y divide-red-100">
+                                        {assignments.map((assignment) => (
+                                            <div
+                                                key={assignment.assignment_id}
+                                                className="flex items-center gap-3 px-4 py-2 hover:bg-red-50/50 transition-colors"
+                                            >
+                                                <div className="h-8 w-8 rounded-full bg-gradient-to-br from-red-400 to-rose-500 flex items-center justify-center text-white font-medium shrink-0 text-xs">
+                                                    {assignment.employee_name?.charAt(0) || 'N'}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-medium text-sm">{assignment.employee_name || 'Unknown'}</p>
+                                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                                        <span>{assignment.employee_role || '--'}</span>
+                                                        {assignment.order_code && (
+                                                            <>
+                                                                <span>•</span>
+                                                                <span className="text-purple-600 font-medium">{assignment.order_code}</span>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => batchCreateMutation.mutate({
+                                                        date: dateKey,
+                                                        assignment_ids: [assignment.assignment_id],
+                                                    })}
+                                                    disabled={batchCreateMutation.isPending}
+                                                    className="border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400 shrink-0 text-xs"
+                                                >
+                                                    <IconPlayerPlay className="h-3 w-3 mr-1" />
+                                                    Tạo
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                    </CardContent>
+                </Card>
+            )}
+
             {/* Date Filter */}
             <Card>
                 <CardHeader className="py-3">
@@ -786,14 +911,25 @@ export default function TimeSheetTab() {
                                 <IconRefresh className="h-4 w-4" />
                             </Button>
                             {selectedIds.size > 0 && (
-                                <Button
-                                    onClick={handleBulkApprove}
-                                    disabled={bulkApproveMutation.isPending}
-                                    className="bg-green-600 hover:bg-green-700"
-                                >
-                                    <IconChecks className="h-4 w-4 mr-1" />
-                                    Duyệt {selectedIds.size}
-                                </Button>
+                                <>
+                                    <Button
+                                        onClick={handleBulkApprove}
+                                        disabled={bulkApproveMutation.isPending}
+                                        className="bg-green-600 hover:bg-green-700"
+                                    >
+                                        <IconChecks className="h-4 w-4 mr-1" />
+                                        Duyệt {selectedIds.size}
+                                    </Button>
+                                    <Button
+                                        onClick={handleBulkReject}
+                                        disabled={bulkApproveMutation.isPending}
+                                        variant="outline"
+                                        className="border-red-300 text-red-700 hover:bg-red-50"
+                                    >
+                                        <IconX className="h-4 w-4 mr-1" />
+                                        Từ chối {selectedIds.size}
+                                    </Button>
+                                </>
                             )}
                             <Button
                                 onClick={() => setCreateModalOpen(true)}

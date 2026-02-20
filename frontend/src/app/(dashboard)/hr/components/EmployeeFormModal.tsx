@@ -138,6 +138,13 @@ export default function EmployeeFormModal({
         },
         onSuccess: () => {
             toast.success('Thêm nhân viên thành công!');
+            // P2: Onboarding Quick-Setup guidance
+            setTimeout(() => {
+                toast.info('Bước tiếp: Phân công nhân viên vào đơn hàng hoặc thiết lập lịch làm việc', {
+                    duration: 6000,
+                    description: '→ Vào tab "Phân công" để gán nhân viên vào đơn hàng',
+                });
+            }, 1000);
             queryClient.invalidateQueries({ queryKey: ['employees'] });
             onOpenChange(false);
         },

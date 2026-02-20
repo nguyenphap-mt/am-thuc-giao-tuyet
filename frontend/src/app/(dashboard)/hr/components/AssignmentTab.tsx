@@ -157,6 +157,21 @@ export default function AssignmentTab() {
         },
     });
 
+    // G6: Fetch leave calendar data for current month
+    const { data: leaveDays } = useQuery({
+        queryKey: ['hr-leave-calendar', format(currentMonth, 'yyyy-MM')],
+        queryFn: async () => {
+            try {
+                return await api.get<Array<{ date: string; employees: Array<{ employee_id: string; employee_name: string; leave_type: string; total_days: number }> }>>(
+                    `/hr/leave/calendar?month=${format(currentMonth, 'yyyy-MM')}`
+                );
+            } catch {
+                return [];
+            }
+        },
+        enabled: viewMode === 'calendar',
+    });
+
     // Create assignment mutation
     const createMutation = useMutation({
         mutationFn: async (data: typeof formData) => {
@@ -438,6 +453,7 @@ export default function AssignmentTab() {
                                     event_date: a.start_time || '',
                                 }))}
                                 currentMonth={currentMonth}
+                                leaveDays={leaveDays || []}
                             />
                         </div>
                     ) : !assignments || assignments.length === 0 ? (
@@ -555,11 +571,62 @@ export default function AssignmentTab() {
                     {conflictWarning?.has_conflict && (
                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
                             <IconAlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-                            <div>
+                            <div className="w-full">
                                 <p className="text-sm font-medium text-amber-800">Đã có phân công trùng!</p>
                                 <p className="text-xs text-amber-700 mt-1">
                                     Nhân viên đã được phân công {conflictWarning.conflicts.length} ca khác trong thời gian này.
                                 </p>
+                                {/* G3: Shift Conflict Visual Timeline */}
+                                <div className="mt-3 bg-white rounded-md p-2 border border-amber-100">
+                                    <p className="text-[10px] text-gray-500 mb-1.5 font-medium">Timeline ca làm việc (08:00 – 20:00)</p>
+                                    <div className="relative h-6 bg-gray-50 rounded-full overflow-hidden border">
+                                        {/* Hour markers */}
+                                        {[8, 10, 12, 14, 16, 18, 20].map(h => (
+                                            <div key={h} className="absolute top-0 h-full border-l border-gray-200" style={{ left: `${((h - 8) / 12) * 100}%` }}>
+                                                <span className="absolute -top-0.5 -translate-x-1/2 text-[8px] text-gray-400">{h}:00</span>
+                                            </div>
+                                        ))}
+                                        {/* Existing shifts (red for conflicts) */}
+                                        {conflictWarning.conflicts.map((c, i) => {
+                                            const cStart = c.start_time ? new Date(c.start_time).getHours() + new Date(c.start_time).getMinutes() / 60 : 8;
+                                            const cEnd = c.end_time ? new Date(c.end_time).getHours() + new Date(c.end_time).getMinutes() / 60 : 20;
+                                            const left = Math.max(0, ((cStart - 8) / 12) * 100);
+                                            const width = Math.min(100 - left, ((cEnd - cStart) / 12) * 100);
+                                            return (
+                                                <div
+                                                    key={i}
+                                                    className="absolute top-1 h-4 bg-red-400 rounded-sm opacity-80"
+                                                    style={{ left: `${left}%`, width: `${width}%` }}
+                                                    title={`Ca: ${c.start_time ? format(parseISO(c.start_time), 'HH:mm') : '--'} - ${c.end_time ? format(parseISO(c.end_time), 'HH:mm') : '--'}`}
+                                                />
+                                            );
+                                        })}
+                                        {/* New shift (green) */}
+                                        {formData.start_time && formData.end_time && (() => {
+                                            const newStart = new Date(formData.start_time).getHours() + new Date(formData.start_time).getMinutes() / 60;
+                                            const newEnd = new Date(formData.end_time).getHours() + new Date(formData.end_time).getMinutes() / 60;
+                                            const left = Math.max(0, ((newStart - 8) / 12) * 100);
+                                            const width = Math.min(100 - left, ((newEnd - newStart) / 12) * 100);
+                                            return (
+                                                <div
+                                                    className="absolute top-1 h-4 bg-green-400 rounded-sm opacity-60 border-2 border-green-600 border-dashed"
+                                                    style={{ left: `${left}%`, width: `${width}%` }}
+                                                    title="Ca mới (đang tạo)"
+                                                />
+                                            );
+                                        })()}
+                                    </div>
+                                    <div className="flex items-center gap-3 mt-1.5">
+                                        <div className="flex items-center gap-1">
+                                            <div className="w-2.5 h-2.5 rounded-sm bg-red-400" />
+                                            <span className="text-[9px] text-gray-500">Ca trùng</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <div className="w-2.5 h-2.5 rounded-sm bg-green-400 border border-green-600 border-dashed" />
+                                            <span className="text-[9px] text-gray-500">Ca mới</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}

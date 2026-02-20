@@ -174,6 +174,51 @@ export function EmployeePerformanceCard({ employeeId, employeeName, periodDays =
                     </div>
                 </div>
             </div>
+
+            {/* Visual Performance Summary Bar */}
+            <div className="mt-4 bg-white/70 rounded-lg p-3.5 border border-purple-100/50">
+                <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-gray-600">Tổng quan hiệu suất</span>
+                    <span className="text-xs text-gray-400">{metrics.total_timesheets} bản chấm công</span>
+                </div>
+                {/* Stacked bar */}
+                <div className="flex h-3 rounded-full overflow-hidden bg-gray-100 gap-0.5">
+                    <div
+                        className="bg-green-400 rounded-l-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, metrics.on_time_rate)}%` }}
+                        title={`Đúng giờ: ${metrics.on_time_rate}%`}
+                    />
+                    <div
+                        className="bg-yellow-400 transition-all duration-500"
+                        style={{ width: `${Math.min(100 - metrics.on_time_rate, metrics.completion_rate - metrics.on_time_rate > 0 ? metrics.completion_rate - metrics.on_time_rate : 5)}%` }}
+                        title={`Hoàn thành: ${metrics.completion_rate}%`}
+                    />
+                    {metrics.total_overtime > 0 && (
+                        <div
+                            className="bg-orange-400 rounded-r-full transition-all duration-500"
+                            style={{ width: `${Math.min(15, (metrics.total_overtime / Math.max(1, metrics.total_hours)) * 100)}%` }}
+                            title={`Tăng ca: ${metrics.total_overtime}h`}
+                        />
+                    )}
+                </div>
+                {/* Legend */}
+                <div className="flex items-center gap-3 mt-2">
+                    <div className="flex items-center gap-1">
+                        <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
+                        <span className="text-[10px] text-gray-500">Đúng giờ</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
+                        <span className="text-[10px] text-gray-500">Hoàn thành</span>
+                    </div>
+                    {metrics.total_overtime > 0 && (
+                        <div className="flex items-center gap-1">
+                            <div className="w-2.5 h-2.5 rounded-full bg-orange-400" />
+                            <span className="text-[10px] text-gray-500">Tăng ca</span>
+                        </div>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }
