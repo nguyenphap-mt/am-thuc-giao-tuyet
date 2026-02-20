@@ -772,7 +772,7 @@ export default function OrderDetailPage({ params }: PageProps) {
                 totalPlannedHours={staffCosts?.total_planned_hours || 0}
                 totalActualHours={staffCosts?.total_actual_hours || 0}
                 onSuggestClick={() => setShowStaffSuggestionModal(true)}
-                canSuggestStaff={order.status === 'PENDING' || order.status === 'CONFIRMED'}
+                canSuggestStaff={order.status === 'PENDING' || order.status === 'CONFIRMED' || order.status === 'IN_PROGRESS'}
                 onAssignmentChanged={() => { refetchStaffCosts(); refetch(); }}
             />
 
