@@ -5,7 +5,7 @@ Module: HR - Employee Management
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from uuid import UUID
@@ -1242,6 +1242,200 @@ async def get_today_timesheets(tenant_id: UUID = Depends(get_current_tenant), db
         )
         for row in rows
     ]
+
+
+# --- Quick-Attendance: Unattended assignments ---
+
+class UnattendedAssignment(BaseModel):
+    """Assignment that doesn't have a timesheet record yet"""
+    assignment_id: UUID
+    employee_id: UUID
+    employee_name: Optional[str] = None
+    employee_role: Optional[str] = None
+    employee_phone: Optional[str] = None
+    order_id: Optional[UUID] = None
+    order_code: Optional[str] = None
+    customer_name: Optional[str] = None
+    event_location: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    assignment_status: str
+
+    class Config:
+        from_attributes = True
+
+
+class BatchTimesheetRequest(BaseModel):
+    """Request to batch-create timesheets from assignments"""
+    date: str  # YYYY-MM-DD
+    assignment_ids: Optional[list[UUID]] = None  # If None, create for all unattended
+
+
+class BatchTimesheetResponse(BaseModel):
+    created_count: int
+    timesheets: list[TimesheetResponse]
+
+
+@router.get("/timesheets/unattended", response_model=list[UnattendedAssignment])
+async def get_unattended_assignments(
+    target_date: Optional[str] = Query(default=None, alias="date"),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get assignments for a date that don't have timesheet records yet"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    check_date = date.fromisoformat(target_date) if target_date else date.today()
+    
+    # LEFT JOIN: assignments that have no matching timesheet for this date
+    query = (
+        select(
+            StaffAssignmentModel,
+            EmployeeModel.full_name,
+            EmployeeModel.role_type,
+            EmployeeModel.phone,
+            OrderModel.order_code,
+            OrderModel.customer_name,
+            OrderModel.event_location,
+        )
+        .outerjoin(EmployeeModel, StaffAssignmentModel.employee_id == EmployeeModel.id)
+        .outerjoin(OrderModel, StaffAssignmentModel.event_id == OrderModel.id)
+        .outerjoin(
+            TimesheetModel,
+            and_(
+                TimesheetModel.employee_id == StaffAssignmentModel.employee_id,
+                TimesheetModel.work_date == check_date,
+                TimesheetModel.tenant_id == tenant_id,
+            )
+        )
+        .where(
+            StaffAssignmentModel.tenant_id == tenant_id,
+            StaffAssignmentModel.status.in_(['ASSIGNED', 'CONFIRMED']),
+            func.date(StaffAssignmentModel.start_time) == check_date,
+            TimesheetModel.id == None,  # No existing timesheet
+        )
+        .order_by(EmployeeModel.full_name)
+    )
+    
+    result = await db.execute(query)
+    rows = result.all()
+    
+    return [
+        UnattendedAssignment(
+            assignment_id=row[0].id,
+            employee_id=row[0].employee_id,
+            employee_name=row[1],
+            employee_role=row[2],
+            employee_phone=row[3],
+            order_id=row[0].event_id,
+            order_code=row[4],
+            customer_name=row[5],
+            event_location=row[6],
+            start_time=row[0].start_time,
+            end_time=row[0].end_time,
+            assignment_status=row[0].status or 'ASSIGNED',
+        )
+        for row in rows
+    ]
+
+
+@router.post("/timesheets/batch-from-assignments", response_model=BatchTimesheetResponse)
+async def batch_create_from_assignments(
+    data: BatchTimesheetRequest,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Batch-create timesheet records from assignments that don't have one yet"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    check_date = date.fromisoformat(data.date)
+    
+    # Get unattended assignments
+    base_query = (
+        select(StaffAssignmentModel)
+        .outerjoin(
+            TimesheetModel,
+            and_(
+                TimesheetModel.employee_id == StaffAssignmentModel.employee_id,
+                TimesheetModel.work_date == check_date,
+                TimesheetModel.tenant_id == tenant_id,
+            )
+        )
+        .where(
+            StaffAssignmentModel.tenant_id == tenant_id,
+            StaffAssignmentModel.status.in_(['ASSIGNED', 'CONFIRMED']),
+            func.date(StaffAssignmentModel.start_time) == check_date,
+            TimesheetModel.id == None,
+        )
+    )
+    
+    # Filter by specific assignment IDs if provided
+    if data.assignment_ids:
+        base_query = base_query.where(StaffAssignmentModel.id.in_(data.assignment_ids))
+    
+    result = await db.execute(base_query)
+    assignments = result.scalars().all()
+    
+    if not assignments:
+        return BatchTimesheetResponse(created_count=0, timesheets=[])
+    
+    created_timesheets = []
+    for assignment in assignments:
+        timesheet = TimesheetModel(
+            tenant_id=tenant_id,
+            employee_id=assignment.employee_id,
+            assignment_id=assignment.id,
+            order_id=assignment.event_id,
+            work_date=check_date,
+            scheduled_start=assignment.start_time,
+            scheduled_end=assignment.end_time,
+            source='MANUAL',
+            notes=f'Tạo từ phân công',
+        )
+        db.add(timesheet)
+        created_timesheets.append(timesheet)
+    
+    await db.commit()
+    
+    # Refresh and build response
+    response_timesheets = []
+    for ts in created_timesheets:
+        await db.refresh(ts)
+        # Get employee info
+        emp = await db.execute(
+            select(EmployeeModel.full_name, EmployeeModel.role_type)
+            .where(EmployeeModel.id == ts.employee_id)
+        )
+        emp_row = emp.first()
+        
+        response_timesheets.append(TimesheetResponse(
+            id=ts.id,
+            tenant_id=ts.tenant_id,
+            employee_id=ts.employee_id,
+            employee_name=emp_row[0] if emp_row else None,
+            employee_role=emp_row[1] if emp_row else None,
+            assignment_id=ts.assignment_id,
+            work_date=ts.work_date.isoformat(),
+            scheduled_start=ts.scheduled_start,
+            scheduled_end=ts.scheduled_end,
+            actual_start=ts.actual_start,
+            actual_end=ts.actual_end,
+            total_hours=float(ts.total_hours or 0),
+            overtime_hours=float(ts.overtime_hours or 0),
+            status=ts.status or 'PENDING',
+            approved_by=ts.approved_by,
+            approved_at=ts.approved_at,
+            source=ts.source,
+            order_id=ts.order_id,
+            notes=ts.notes,
+            created_at=ts.created_at,
+            updated_at=ts.updated_at,
+        ))
+    
+    return BatchTimesheetResponse(
+        created_count=len(response_timesheets),
+        timesheets=response_timesheets
+    )
 
 
 @router.post("/timesheets", response_model=TimesheetResponse)

@@ -58,6 +58,9 @@ import {
     IconEye,
     IconExternalLink,
     IconAlertTriangle,
+    IconBolt,
+    IconUsers,
+    IconPlayerPlay,
     IconNotes,
 } from '@tabler/icons-react';
 import { Employee } from '@/types';
@@ -93,6 +96,21 @@ interface TimesheetResponse {
     time_edited_by: string | null;
     time_edited_at: string | null;
     edit_reason: string | null;
+}
+
+interface UnattendedAssignment {
+    assignment_id: string;
+    employee_id: string;
+    employee_name: string | null;
+    employee_role: string | null;
+    employee_phone: string | null;
+    order_id: string | null;
+    order_code: string | null;
+    customer_name: string | null;
+    event_location: string | null;
+    start_time: string | null;
+    end_time: string | null;
+    assignment_status: string;
 }
 
 interface TimesheetSummary {
@@ -288,6 +306,51 @@ export default function TimeSheetTab() {
                 checked_out: number;
                 timesheets: TimesheetResponse[];
             }>('/hr/timesheets/today');
+        },
+    });
+
+    // Query: Get unattended assignments (assigned today but no timesheet yet)
+    const todayStr = new Date().toISOString().split('T')[0];
+    const { data: unattendedAssignments, isLoading: unattendedLoading } = useQuery({
+        queryKey: ['hr', 'timesheets', 'unattended', todayStr],
+        queryFn: async () => {
+            return await api.get<UnattendedAssignment[]>(`/hr/timesheets/unattended?date=${todayStr}`);
+        },
+    });
+
+    // Mutation: Batch create timesheets from assignments
+    const batchCreateMutation = useMutation({
+        mutationFn: async (data: { date: string; assignment_ids?: string[] }) => {
+            return await api.post('/hr/timesheets/batch-from-assignments', data);
+        },
+        onSuccess: (result: any) => {
+            toast.success(`Đã tạo ${result.created_count} bản chấm công!`);
+            queryClient.invalidateQueries({ queryKey: ['hr', 'timesheets'] });
+        },
+        onError: () => {
+            toast.error('Tạo chấm công hàng loạt thất bại');
+        },
+    });
+
+    // Mutation: Single check-in from assignment
+    const checkInFromAssignment = useMutation({
+        mutationFn: async (assignment: UnattendedAssignment) => {
+            const ts = await api.post('/hr/timesheets', {
+                employee_id: assignment.employee_id,
+                assignment_id: assignment.assignment_id,
+                work_date: todayStr,
+                notes: `Tạo từ phân công`,
+            });
+            // Auto check-in
+            await api.put(`/hr/timesheets/${(ts as any).id}/checkin`, {});
+            return ts;
+        },
+        onSuccess: (_: any, assignment: UnattendedAssignment) => {
+            toast.success(`Đã chấm vào cho ${assignment.employee_name}`);
+            queryClient.invalidateQueries({ queryKey: ['hr', 'timesheets'] });
+        },
+        onError: () => {
+            toast.error('Chấm công thất bại');
         },
     });
 
@@ -512,6 +575,103 @@ export default function TimeSheetTab() {
                     </Card>
                 ))}
             </div>
+
+            {/* Quick-Attendance Panel */}
+            {unattendedAssignments && unattendedAssignments.length > 0 && (
+                <Card className="border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50">
+                    <CardHeader className="py-3">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-base flex items-center gap-2">
+                                <div className="p-1.5 rounded-lg bg-amber-100">
+                                    <IconBolt className="h-4 w-4 text-amber-600" />
+                                </div>
+                                Chấm công nhanh
+                                <Badge className="bg-amber-100 text-amber-700">
+                                    {unattendedAssignments.length} chưa chấm
+                                </Badge>
+                            </CardTitle>
+                            <Button
+                                size="sm"
+                                onClick={() => batchCreateMutation.mutate({ date: todayStr })}
+                                disabled={batchCreateMutation.isPending}
+                                className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white"
+                            >
+                                {batchCreateMutation.isPending ? (
+                                    <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+                                ) : (
+                                    <IconUsers className="h-4 w-4 mr-1" />
+                                )}
+                                Tạo tất cả
+                            </Button>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        <div className="divide-y divide-amber-100">
+                            {unattendedAssignments.map((assignment) => (
+                                <div
+                                    key={assignment.assignment_id}
+                                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-amber-50/50 transition-colors"
+                                >
+                                    {/* Avatar */}
+                                    <div className="h-9 w-9 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white font-medium shrink-0 text-sm">
+                                        {assignment.employee_name?.charAt(0) || 'N'}
+                                    </div>
+
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-sm">{assignment.employee_name || 'Unknown'}</p>
+                                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                                            <span>{assignment.employee_role || '--'}</span>
+                                            {assignment.order_code && (
+                                                <>
+                                                    <span>•</span>
+                                                    <span className="text-purple-600 font-medium flex items-center gap-0.5">
+                                                        <IconClipboard className="h-3 w-3" />
+                                                        {assignment.order_code}
+                                                    </span>
+                                                </>
+                                            )}
+                                            {assignment.event_location && (
+                                                <>
+                                                    <span>•</span>
+                                                    <span className="flex items-center gap-0.5 truncate max-w-[120px]" title={assignment.event_location}>
+                                                        <IconMapPin className="h-3 w-3" />
+                                                        {assignment.event_location}
+                                                    </span>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Time */}
+                                    {assignment.start_time && (
+                                        <div className="text-xs text-gray-500 text-right">
+                                            <p>{new Date(assignment.start_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</p>
+                                            {assignment.end_time && (
+                                                <p className="text-gray-400">
+                                                    → {new Date(assignment.end_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Action */}
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => checkInFromAssignment.mutate(assignment)}
+                                        disabled={checkInFromAssignment.isPending}
+                                        className="border-green-300 text-green-700 hover:bg-green-50 hover:border-green-400 shrink-0"
+                                    >
+                                        <IconPlayerPlay className="h-3.5 w-3.5 mr-1" />
+                                        Chấm vào
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Date Filter */}
             <Card>
