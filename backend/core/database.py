@@ -4,6 +4,7 @@ Uses SQLAlchemy 2.0 Async with PostgreSQL
 """
 import os
 import ssl as _ssl
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import create_engine
@@ -16,17 +17,41 @@ DATABASE_URL = os.getenv(
 )
 
 # Detect if running remotely (Render, etc.) — needs SSL for Supabase
-IS_REMOTE = os.getenv("RENDER", "") != "" or "supabase.co" in DATABASE_URL
+IS_REMOTE = os.getenv("RENDER", "") != "" or "supabase.co" in DATABASE_URL or "pooler.supabase.com" in DATABASE_URL
 
-# Convert to async URL for asyncpg (handle both formats)
-if "postgresql+asyncpg://" in DATABASE_URL:
-    ASYNC_DATABASE_URL = DATABASE_URL
-elif "postgresql://" in DATABASE_URL:
-    ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
-else:
-    ASYNC_DATABASE_URL = DATABASE_URL
 
-# Build connect_args with optional SSL for remote deployments
+def _strip_sslmode_from_url(url: str) -> str:
+    """Strip sslmode query param from URL — asyncpg doesn't support it as URL param."""
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    params.pop("sslmode", None)
+    new_query = urlencode(params, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
+
+
+def _ensure_sslmode_in_url(url: str) -> str:
+    """Ensure sslmode=require is in the URL for psycopg2 sync connections."""
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    if "sslmode" not in params:
+        params["sslmode"] = ["require"]
+    new_query = urlencode(params, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
+
+
+# --- Async Engine (asyncpg) ---
+# asyncpg does NOT support sslmode as URL param or connect_arg
+# It requires ssl=SSLContext in connect_args
+_async_url = DATABASE_URL
+if "postgresql+asyncpg://" in _async_url:
+    pass
+elif "postgresql://" in _async_url:
+    _async_url = _async_url.replace("postgresql://", "postgresql+asyncpg://")
+
+# Strip sslmode from URL for asyncpg
+ASYNC_DATABASE_URL = _strip_sslmode_from_url(_async_url)
+
+# Build connect_args for asyncpg
 _connect_args = {
     "statement_cache_size": 0,
     "prepared_statement_cache_size": 0,
@@ -34,7 +59,6 @@ _connect_args = {
 }
 
 if IS_REMOTE:
-    # asyncpg requires an ssl.SSLContext or 'require' string
     _ssl_ctx = _ssl.create_default_context()
     _ssl_ctx.check_hostname = False
     _ssl_ctx.verify_mode = _ssl.CERT_NONE
@@ -43,11 +67,11 @@ if IS_REMOTE:
 # Async Engine for FastAPI routes
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
-    echo=False,  # Set True for SQL debugging
+    echo=False,
     pool_size=5,
     max_overflow=10,
-    pool_pre_ping=True,       # Verify connections before use
-    pool_recycle=300,          # Recycle connections every 5 min
+    pool_pre_ping=True,
+    pool_recycle=300,
     connect_args=_connect_args
 )
 
@@ -60,12 +84,12 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False
 )
 
-# Sync Engine for migrations/scripts
+# --- Sync Engine (psycopg2) ---
+# psycopg2 supports sslmode as URL query param
 SYNC_DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
-_sync_connect_args = {}
 if IS_REMOTE:
-    _sync_connect_args["sslmode"] = "require"
-sync_engine = create_engine(SYNC_DATABASE_URL, echo=False, connect_args=_sync_connect_args)
+    SYNC_DATABASE_URL = _ensure_sslmode_in_url(SYNC_DATABASE_URL)
+sync_engine = create_engine(SYNC_DATABASE_URL, echo=False)
 SyncSessionLocal = sessionmaker(bind=sync_engine)
 
 # Base class for ORM models
