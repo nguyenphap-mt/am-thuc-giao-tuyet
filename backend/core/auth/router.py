@@ -69,72 +69,42 @@ async def login(
         raise HTTPException(status_code=400, detail="Inactive user")
 
     # 3. Create Token
+    _role_str = str(user.role) if user.role else "user"
     access_token = create_access_token(data={
         "sub": str(user.id),
-        "role": user.role,
+        "role": _role_str,
         "tenant_id": str(user.tenant_id)
     })
     
-    # 4. Create session record for "Phiên đăng nhập" tab
-    try:
-        token_hash = hashlib.sha256(access_token.encode()).hexdigest()[:64]
-        ip_address = request.client.host if request.client else None
-        user_agent = request.headers.get("user-agent", "")
-        
-        session_record = UserSessionModel(
-            user_id=user.id,
-            token_hash=token_hash,
-            ip_address=ip_address,
-            device_info=user_agent,
-            is_active=True,
-            expires_at=datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
-        )
-        db.add(session_record)
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        print(f"[WARN] Failed to create login session record: {e}")
+    # NOTE: Session record creation DISABLED on Supabase/Render to prevent
+    # db.commit/rollback interfering with the response stream (BUG-20260226-004)
     
     print(f"User {user.email} logged in successfully")
     
-    # 5. Return Response — use JSONResponse directly to avoid response_model serialization issues
-    try:
-        from fastapi.responses import JSONResponse
-        response_data = {
-            "access_token": access_token,
-            "refresh_token": "not_implemented_yet",
-            "token_type": "bearer",
-            "expires_in": 3600 * 24 * 30,
-            "user": {
+    # 4. Return Response — use JSONResponse directly 
+    from fastapi.responses import JSONResponse
+    return JSONResponse(content={
+        "access_token": access_token,
+        "refresh_token": "not_implemented_yet",
+        "token_type": "bearer",
+        "expires_in": 2592000,
+        "user": {
+            "id": str(user.id),
+            "tenant_id": str(user.tenant_id),
+            "email": str(user.email),
+            "full_name": str(user.full_name) if user.full_name else None,
+            "phone_number": str(user.phone_number) if user.phone_number else None,
+            "is_active": bool(user.is_active),
+            "role": {
                 "id": str(user.id),
-                "tenant_id": str(user.tenant_id),
-                "email": str(user.email),
-                "full_name": str(user.full_name) if user.full_name else None,
-                "phone_number": str(user.phone_number) if user.phone_number else None,
-                "is_active": bool(user.is_active),
-                "role": {
-                    "id": str(user.id),
-                    "code": str(user.role) if user.role else "user",
-                    "name": str(user.role).upper() if user.role else "USER",
-                    "permissions": []
-                },
-                "created_at": user.created_at.isoformat() if user.created_at else None,
-                "updated_at": user.updated_at.isoformat() if user.updated_at else None,
-            }
+                "code": _role_str,
+                "name": _role_str.upper(),
+                "permissions": []
+            },
+            "created_at": user.created_at.isoformat() if hasattr(user, 'created_at') and user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if hasattr(user, 'updated_at') and user.updated_at else None,
         }
-        return JSONResponse(content=response_data)
-    except Exception as e:
-        import traceback
-        print(f"[ERROR] Login response serialization failed: {e}")
-        print(traceback.format_exc())
-        # Minimal fallback response
-        return JSONResponse(content={
-            "access_token": access_token,
-            "refresh_token": "not_implemented_yet",
-            "token_type": "bearer",
-            "expires_in": 2592000,
-            "user": {"id": str(user.id), "email": str(user.email), "role": {"code": str(user.role) if user.role else "user"}}
-        })
+    })
 
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Session = Depends(get_db)):
