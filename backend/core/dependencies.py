@@ -44,37 +44,55 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
     
-    # BUGFIX: BUG-20260226-003 — Bypass RLS for user lookup during token validation
-    # Must bypass RLS before querying users table, because Supabase RLS policies
-    # may block the query if app.current_tenant doesn't match.
-    await db.execute(text("SET app.bypass_rls = 'on'"))
-    
-    # Set RLS context if tenant_id is available in token (for subsequent queries)
-    if tenant_id:
-        await db.execute(text(f"SET app.current_tenant = '{tenant_id}'"))
-    
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    
-    if user is None:
-        raise credentials_exception
-    
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inactive user"
+    # BUGFIX: BUG-20260226-003 — RLS bypass for user lookup
+    # Supabase Session Pooler (PgBouncer) discards SET between execute() calls.
+    # Use set_config() in CTE for atomic bypass + user lookup.
+    _tenant_val = tenant_id if tenant_id else '00000000-0000-0000-0000-000000000000'
+    try:
+        result = await db.execute(
+            text("""
+                WITH rls_setup AS (
+                    SELECT set_config('app.bypass_rls', 'on', false),
+                           set_config('app.current_tenant', :tenant_id, false)
+                )
+                SELECT u.id, u.tenant_id, u.email, u.full_name,
+                       u.is_active, u.role, u.created_at, u.updated_at
+                FROM rls_setup, public.users u WHERE u.id = :user_id
+            """),
+            {"user_id": user_id, "tenant_id": _tenant_val}
+        )
+        user_row = result.fetchone()
+    except Exception:
+        # Fallback: local dev without RLS
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise credentials_exception
+        if not user.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
+        return UserSchema(
+            id=user.id, tenant_id=user.tenant_id, email=user.email,
+            full_name=user.full_name, is_active=user.is_active,
+            role={"id": user.id, "code": user.role, "name": user.role.upper(), "permissions": []},
+            created_at=user.created_at, updated_at=user.updated_at
         )
     
-    # Map to Schema
+    if user_row is None:
+        raise credentials_exception
+    
+    if not user_row[4]:  # is_active
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
+    
+    # Map raw row to Schema
     user_schema = UserSchema(
-        id=user.id,
-        tenant_id=user.tenant_id,
-        email=user.email,
-        full_name=user.full_name,
-        is_active=user.is_active,
-        role={"id": user.id, "code": user.role, "name": user.role.upper(), "permissions": []},
-        created_at=user.created_at,
-        updated_at=user.updated_at
+        id=user_row[0],
+        tenant_id=user_row[1],
+        email=user_row[2],
+        full_name=user_row[3],
+        is_active=user_row[4],
+        role={"id": user_row[0], "code": user_row[5], "name": user_row[5].upper() if user_row[5] else "", "permissions": []},
+        created_at=user_row[6],
+        updated_at=user_row[7]
     )
     return user_schema
 

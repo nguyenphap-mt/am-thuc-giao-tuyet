@@ -23,16 +23,41 @@ async def login(
     db: Session = Depends(get_db)
 ):
     # 0. Bypass RLS for Login Lookup (Since we don't know tenant yet)
-    # This relies on the policy: current_setting('app.bypass_rls', true) = 'on'
-    await db.execute(text("SET app.bypass_rls = 'on'"))
-
-    # 1. Fetch User
-    result = await db.execute(select(User).where(User.email == form_data.username))
-    user = result.scalar_one_or_none()
+    # Use CTE with set_config for PgBouncer/Supabase Session Pooler compatibility
+    try:
+        result = await db.execute(
+            text("""
+                WITH rls_bypass AS (
+                    SELECT set_config('app.bypass_rls', 'on', false)
+                )
+                SELECT u.id, u.tenant_id, u.email, u.full_name, u.phone_number,
+                       u.is_active, u.role, u.created_at, u.updated_at, u.hashed_password
+                FROM rls_bypass, public.users u WHERE u.email = :email
+            """),
+            {"email": form_data.username}
+        )
+        user_row = result.fetchone()
+        if user_row:
+            # Map raw row to a simple object for uniform handling
+            # Columns: id, tenant_id, email, full_name, phone_number, is_active, role, created_at, updated_at, hashed_password
+            from types import SimpleNamespace
+            user = SimpleNamespace(
+                id=user_row[0], tenant_id=user_row[1], email=user_row[2],
+                full_name=user_row[3], phone_number=user_row[4],
+                is_active=user_row[5], role=user_row[6],
+                created_at=user_row[7], updated_at=user_row[8],
+                hashed_password=user_row[9]
+            )
+        else:
+            user = None
+    except Exception:
+        # Fallback for local dev
+        await db.execute(text("SET app.bypass_rls = 'on'"))
+        result = await db.execute(select(User).where(User.email == form_data.username))
+        user = result.scalar_one_or_none()
     
     # 2. Validate
     if not user or not verify_password(form_data.password, user.hashed_password):
-        # Activity logging temporarily disabled - causing PendingRollbackError
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -43,7 +68,6 @@ async def login(
         raise HTTPException(status_code=400, detail="Inactive user")
 
     # 3. Create Token
-    # Minimal payload: sub (id), role, tenant_id
     access_token = create_access_token(data={
         "sub": str(user.id),
         "role": user.role,
@@ -67,16 +91,12 @@ async def login(
         db.add(session_record)
         await db.commit()
     except Exception as e:
-        # Session record creation is non-critical — don't block login
-        # BUGFIX: BUG-20260220-001 — Must rollback to prevent PendingRollbackError
-        # which would poison the session and cause 500 when serializing the user object
         await db.rollback()
         print(f"[WARN] Failed to create login session record: {e}")
     
     print(f"User {user.email} logged in successfully")
     
     # 5. Return Response
-    # Map SQLAlchemy model to Pydantic schema
     user_schema = UserSchema(
         id=user.id,
         tenant_id=user.tenant_id,
@@ -84,7 +104,7 @@ async def login(
         full_name=user.full_name,
         phone_number=user.phone_number,
         is_active=user.is_active,
-        role={"id": user.id, "code": user.role, "name": user.role.upper(), "permissions": []},
+        role={"id": user.id, "code": user.role, "name": user.role.upper() if user.role else "", "permissions": []},
         created_at=user.created_at,
         updated_at=user.updated_at
     )
@@ -112,29 +132,52 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Se
     except JWTError:
         raise credentials_exception
     
-    # BUGFIX: BUG-20260226-003 — Bypass RLS for user lookup during token validation
-    # RLS policies on Supabase block the users table query if app.current_tenant
-    # is not set, causing get_current_user to return None → 401 Unauthorized.
-    # The login endpoint already does this, but get_current_user was missing it.
-    await db.execute(text("SET app.bypass_rls = 'on'"))
+    # BUGFIX: BUG-20260226-003 — RLS bypass for user lookup
+    # Supabase Session Pooler (PgBouncer) in transaction mode discards SET
+    # between separate execute() calls. Use set_config() in CTE to combine
+    # config setting + user lookup in a SINGLE atomic SQL statement.
+    try:
+        result = await db.execute(
+            text("""
+                WITH rls_bypass AS (
+                    SELECT set_config('app.bypass_rls', 'on', false)
+                )
+                SELECT u.id, u.tenant_id, u.email, u.full_name, u.phone_number,
+                       u.is_active, u.role, u.created_at, u.updated_at
+                FROM rls_bypass, public.users u WHERE u.id = :user_id
+            """),
+            {"user_id": user_id}
+        )
+        user_row = result.fetchone()
+    except Exception:
+        # Fallback: try without set_config (for local dev without RLS)
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise credentials_exception
+        user_schema = UserSchema(
+            id=user.id, tenant_id=user.tenant_id, email=user.email,
+            full_name=user.full_name, phone_number=user.phone_number,
+            is_active=user.is_active,
+            role={"id": user.id, "code": user.role, "name": user.role.upper(), "permissions": []},
+            created_at=user.created_at, updated_at=user.updated_at
+        )
+        return user_schema
     
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    
-    if user is None:
+    if user_row is None:
         raise credentials_exception
         
-    # Map to Schema
+    # Map raw row to Schema
     user_schema = UserSchema(
-        id=user.id,
-        tenant_id=user.tenant_id,
-        email=user.email,
-        full_name=user.full_name,
-        phone_number=user.phone_number,
-        is_active=user.is_active,
-        role={"id": user.id, "code": user.role, "name": user.role.upper(), "permissions": []},
-        created_at=user.created_at,
-        updated_at=user.updated_at
+        id=user_row[0],
+        tenant_id=user_row[1],
+        email=user_row[2],
+        full_name=user_row[3],
+        phone_number=user_row[4],
+        is_active=user_row[5],
+        role={"id": user_row[0], "code": user_row[6], "name": user_row[6].upper() if user_row[6] else "", "permissions": []},
+        created_at=user_row[7],
+        updated_at=user_row[8]
     )
     return user_schema
 
