@@ -42,11 +42,12 @@ async def login(
             # Columns: id, tenant_id, email, full_name, phone_number, is_active, role, created_at, updated_at, hashed_password
             from types import SimpleNamespace
             user = SimpleNamespace(
-                id=user_row[0], tenant_id=user_row[1], email=user_row[2],
-                full_name=user_row[3], phone_number=user_row[4],
-                is_active=user_row[5], role=user_row[6],
+                id=user_row[0], tenant_id=user_row[1], email=str(user_row[2]),
+                full_name=str(user_row[3]) if user_row[3] else None,
+                phone_number=str(user_row[4]) if user_row[4] else None,
+                is_active=bool(user_row[5]), role=str(user_row[6]) if user_row[6] else "user",
                 created_at=user_row[7], updated_at=user_row[8],
-                hashed_password=user_row[9]
+                hashed_password=str(user_row[9])
             )
         else:
             user = None
@@ -168,14 +169,15 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Se
         raise credentials_exception
         
     # Map raw row to Schema
+    _role = str(user_row[6]) if user_row[6] else ""
     user_schema = UserSchema(
         id=user_row[0],
         tenant_id=user_row[1],
-        email=user_row[2],
-        full_name=user_row[3],
-        phone_number=user_row[4],
-        is_active=user_row[5],
-        role={"id": user_row[0], "code": user_row[6], "name": user_row[6].upper() if user_row[6] else "", "permissions": []},
+        email=str(user_row[2]),
+        full_name=str(user_row[3]) if user_row[3] else None,
+        phone_number=str(user_row[4]) if user_row[4] else None,
+        is_active=bool(user_row[5]),
+        role={"id": user_row[0], "code": _role, "name": _role.upper(), "permissions": []},
         created_at=user_row[7],
         updated_at=user_row[8]
     )

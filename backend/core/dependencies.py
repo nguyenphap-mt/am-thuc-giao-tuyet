@@ -84,13 +84,14 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
     
     # Map raw row to Schema
+    _role = str(user_row[5]) if user_row[5] else ""
     user_schema = UserSchema(
         id=user_row[0],
         tenant_id=user_row[1],
-        email=user_row[2],
-        full_name=user_row[3],
-        is_active=user_row[4],
-        role={"id": user_row[0], "code": user_row[5], "name": user_row[5].upper() if user_row[5] else "", "permissions": []},
+        email=str(user_row[2]),
+        full_name=str(user_row[3]) if user_row[3] else None,
+        is_active=bool(user_row[4]),
+        role={"id": user_row[0], "code": _role, "name": _role.upper(), "permissions": []},
         created_at=user_row[6],
         updated_at=user_row[7]
     )
