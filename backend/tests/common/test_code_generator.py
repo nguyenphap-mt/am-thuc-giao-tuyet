@@ -1,12 +1,15 @@
 """
 Unit tests for code_generator utility module.
 
-BUGFIX: BUG-20260202-004
-Root Cause: RC-BUG-20260202-004 - No tests for code generation logic
-Solution: Comprehensive pytest test suite for all code generation functions
+Updated: 2026-02-22
+Format: BG-ddmmyy*** and ĐH-ddmmyy***
+Tests use mock AsyncSession to verify date-based sequential code generation.
 """
 import pytest
 import re
+from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
+
 from backend.common.utils.code_generator import (
     generate_entity_code,
     generate_quote_code,
@@ -16,162 +19,196 @@ from backend.common.utils.code_generator import (
 )
 
 
+def _make_mock_db(existing_code=None):
+    """Create a mock AsyncSession that returns an existing code for sequence lookup."""
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    
+    if existing_code:
+        mock_row = MagicMock()
+        mock_row.__getitem__ = lambda self, idx: existing_code
+        mock_result.first.return_value = mock_row
+    else:
+        mock_result.first.return_value = None
+    
+    mock_db.execute.return_value = mock_result
+    return mock_db
+
+
+@pytest.mark.asyncio
 class TestGenerateEntityCode:
     """Test suite for generate_entity_code function"""
     
-    def test_generates_code_with_correct_format(self):
-        """Test that code follows PREFIX-YYYYNNNNNN format"""
-        code = generate_entity_code("BG")
+    async def test_generates_code_with_correct_format(self):
+        """Test that code follows PREFIX-ddmmyy*** format"""
+        mock_db = _make_mock_db()
+        code = await generate_entity_code("BG", mock_db)
         
-        # Should match pattern: BG-2026123456
-        pattern = r'^BG-\d{10}$'
-        assert re.match(pattern, code), f"Code '{code}' does not match expected format"
+        # Should match pattern: BG-ddmmyy001 (12 chars total)
+        pattern = r'^BG-\d{6}\d{3}$'
+        assert re.match(pattern, code), f"Code '{code}' does not match expected format BG-ddmmyy***"
     
-    def test_uses_current_year_by_default(self):
-        """Test that code uses current year when no year specified"""
-        from datetime import datetime
-        current_year = datetime.now().year
+    async def test_uses_current_date(self):
+        """Test that code uses current date"""
+        mock_db = _make_mock_db()
+        code = await generate_entity_code("ĐH", mock_db)
         
-        code = generate_entity_code("DH")
-        
-        assert code.startswith(f"DH-{current_year}"), f"Code should start with DH-{current_year}"
+        # Extract date part (after ĐH-)
+        # ĐH is 2 bytes in Python str but we use string slicing
+        prefix_end = code.index('-') + 1
+        date_part = code[prefix_end:prefix_end + 6]  # ddmmyy
+        today = datetime.now().strftime('%d%m%y')
+        assert date_part == today, f"Date part '{date_part}' should match today '{today}'"
     
-    def test_uses_specified_year(self):
-        """Test that code uses specified year when provided"""
-        code = generate_entity_code("HD", year=2025)
+    async def test_first_code_of_day_is_001(self):
+        """Test that first code of the day starts at 001"""
+        mock_db = _make_mock_db()  # No existing code
+        code = await generate_entity_code("BG", mock_db)
         
-        assert code.startswith("HD-2025"), "Code should start with HD-2025"
+        seq = code[-3:]  # Last 3 chars
+        assert seq == "001", f"First sequence should be 001, got {seq}"
     
-    def test_generates_unique_codes(self):
-        """Test that consecutive calls generate different codes"""
-        code1 = generate_entity_code("BG")
-        code2 = generate_entity_code("BG")
+    async def test_increments_sequence(self):
+        """Test that sequence increments from existing codes"""
+        today = datetime.now().strftime('%d%m%y')
+        existing_code = f"BG-{today}005"
+        mock_db = _make_mock_db(existing_code)
         
-        # While not guaranteed, statistically very unlikely with 6-digit random suffix
-        assert code1 != code2, "Consecutive codes should be different"
+        code = await generate_entity_code("BG", mock_db)
+        
+        seq = code[-3:]
+        assert seq == "006", f"Sequence should be 006 after 005, got {seq}"
     
-    def test_supports_all_entity_types(self):
+    async def test_supports_all_entity_types(self):
         """Test that all entity prefixes work correctly"""
-        prefixes = ["BG", "DH", "HD", "PN"]
+        prefixes = ["BG", "ĐH", "HD", "PN"]
         
         for prefix in prefixes:
-            code = generate_entity_code(prefix)
+            mock_db = _make_mock_db()
+            code = await generate_entity_code(prefix, mock_db)
             assert code.startswith(f"{prefix}-"), f"Code should start with {prefix}-"
-    
-    def test_random_suffix_is_6_digits(self):
-        """Test that random suffix is always 6 digits"""
-        code = generate_entity_code("BG", year=2026)
-        
-        # Extract suffix: "BG-2026123456" -> "123456"
-        suffix = code.split("-")[1][4:]  # Remove year prefix, keep last 6 digits
-        
-        assert len(suffix) == 6, f"Suffix '{suffix}' should be 6 digits"
-        assert suffix.isdigit(), f"Suffix '{suffix}' should be all digits"
-        assert 100000 <= int(suffix) <= 999999, f"Suffix '{suffix}' should be in range 100000-999999"
 
 
+@pytest.mark.asyncio
 class TestGenerateQuoteCode:
     """Test suite for generate_quote_code function"""
     
-    def test_generates_quote_code_with_bg_prefix(self):
+    async def test_generates_quote_code_with_bg_prefix(self):
         """Test that quote code starts with BG prefix"""
-        code = generate_quote_code()
+        mock_db = _make_mock_db()
+        code = await generate_quote_code(mock_db)
         
         assert code.startswith("BG-"), "Quote code should start with 'BG-'"
     
-    def test_quote_code_format(self):
-        """Test that quote code follows BG-YYYYNNNNNN format"""
-        code = generate_quote_code()
+    async def test_quote_code_format(self):
+        """Test that quote code follows BG-ddmmyy*** format"""
+        mock_db = _make_mock_db()
+        code = await generate_quote_code(mock_db)
         
-        pattern = r'^BG-\d{10}$'
+        pattern = r'^BG-\d{6}\d{3}$'
         assert re.match(pattern, code), f"Quote code '{code}' does not match expected format"
     
-    def test_generates_different_quote_codes(self):
-        """Test that multiple calls generate different codes"""
-        codes = [generate_quote_code() for _ in range(5)]
+    async def test_first_quote_of_day(self):
+        """Test first quote of the day is 001"""
+        mock_db = _make_mock_db()
+        code = await generate_quote_code(mock_db)
         
-        assert len(codes) == len(set(codes)), "All generated quote codes should be unique"
+        assert code.endswith("001"), f"First quote should end with 001, got {code}"
 
 
+@pytest.mark.asyncio
 class TestGenerateOrderCode:
     """Test suite for generate_order_code function"""
     
-    def test_generates_order_code_with_dh_prefix(self):
-        """Test that order code starts with DH prefix"""
-        code = generate_order_code()
+    async def test_generates_order_code_with_dh_prefix(self):
+        """Test that order code starts with ĐH prefix"""
+        mock_db = _make_mock_db()
+        code = await generate_order_code(mock_db)
         
-        assert code.startswith("DH-"), "Order code should start with 'DH-'"
+        assert code.startswith("ĐH-"), "Order code should start with 'ĐH-'"
     
-    def test_order_code_format(self):
-        """Test that order code follows DH-YYYYNNNNNN format"""
-        code = generate_order_code()
+    async def test_order_code_format(self):
+        """Test that order code follows ĐH-ddmmyy*** format"""
+        mock_db = _make_mock_db()
+        code = await generate_order_code(mock_db)
         
-        pattern = r'^DH-\d{10}$'
-        assert re.match(pattern, code), f"Order code '{code}' does not match expected format"
+        # ĐH- followed by 6 digits (date) and 3 digits (seq)
+        assert code.startswith("ĐH-")
+        rest = code[3:]  # After ĐH-
+        pattern = r'^\d{6}\d{3}$'
+        assert re.match(pattern, rest), f"Order code '{code}' does not match expected format"
     
-    def test_generates_different_order_codes(self):
-        """Test that multiple calls generate different codes"""
-        codes = [generate_order_code() for _ in range(5)]
+    async def test_sequence_increments(self):
+        """Test that order sequence increments correctly"""
+        today = datetime.now().strftime('%d%m%y')
+        existing_code = f"ĐH-{today}010"
+        mock_db = _make_mock_db(existing_code)
         
-        assert len(codes) == len(set(codes)), "All generated order codes should be unique"
+        code = await generate_order_code(mock_db)
+        assert code.endswith("011"), f"Sequence should be 011 after 010, got {code}"
 
 
+@pytest.mark.asyncio
 class TestGenerateInvoiceCode:
     """Test suite for generate_invoice_code function"""
     
-    def test_generates_invoice_code_with_hd_prefix(self):
+    async def test_generates_invoice_code_with_hd_prefix(self):
         """Test that invoice code starts with HD prefix"""
-        code = generate_invoice_code()
-        
+        code = await generate_invoice_code()
         assert code.startswith("HD-"), "Invoice code should start with 'HD-'"
     
-    def test_invoice_code_format(self):
-        """Test that invoice code follows HD-YYYYNNNNNN format"""
-        code = generate_invoice_code()
+    async def test_invoice_code_format(self):
+        """Test that invoice code follows HD-ddmmyy*** format"""
+        code = await generate_invoice_code()
         
-        pattern = r'^HD-\d{10}$'
+        pattern = r'^HD-\d{6}\d{3}$'
         assert re.match(pattern, code), f"Invoice code '{code}' does not match expected format"
 
 
+@pytest.mark.asyncio
 class TestGenerateReceiptCode:
     """Test suite for generate_receipt_code function"""
     
-    def test_generates_receipt_code_with_pn_prefix(self):
+    async def test_generates_receipt_code_with_pn_prefix(self):
         """Test that receipt code starts with PN prefix"""
-        code = generate_receipt_code()
-        
+        code = await generate_receipt_code()
         assert code.startswith("PN-"), "Receipt code should start with 'PN-'"
     
-    def test_receipt_code_format(self):
-        """Test that receipt code follows PN-YYYYNNNNNN format"""
-        code = generate_receipt_code()
+    async def test_receipt_code_format(self):
+        """Test that receipt code follows PN-ddmmyy*** format"""
+        code = await generate_receipt_code()
         
-        pattern = r'^PN-\d{10}$'
+        pattern = r'^PN-\d{6}\d{3}$'
         assert re.match(pattern, code), f"Receipt code '{code}' does not match expected format"
 
 
+@pytest.mark.asyncio
 class TestCodeGeneratorIntegration:
     """Integration tests for code generator usage"""
     
-    def test_different_entity_types_generate_different_prefixes(self):
+    async def test_different_entity_types_generate_different_prefixes(self):
         """Test that different entity types have different prefixes"""
-        quote_code = generate_quote_code()
-        order_code = generate_order_code()
-        invoice_code = generate_invoice_code()
-        receipt_code = generate_receipt_code()
+        mock_db = _make_mock_db()
+        
+        quote_code = await generate_quote_code(mock_db)
+        order_code = await generate_order_code(mock_db)
+        invoice_code = await generate_invoice_code()
+        receipt_code = await generate_receipt_code()
         
         assert quote_code.startswith("BG-")
-        assert order_code.startswith("DH-")
+        assert order_code.startswith("ĐH-")
         assert invoice_code.startswith("HD-")
         assert receipt_code.startswith("PN-")
     
-    def test_no_collision_between_entity_types(self):
+    async def test_no_collision_between_entity_types(self):
         """Test that different entity types don't collide"""
+        mock_db = _make_mock_db()
+        
         codes = [
-            generate_quote_code(),
-            generate_order_code(),
-            generate_invoice_code(),
-            generate_receipt_code()
+            await generate_quote_code(mock_db),
+            await generate_order_code(mock_db),
+            await generate_invoice_code(),
+            await generate_receipt_code()
         ]
         
         # Should all be unique due to different prefixes

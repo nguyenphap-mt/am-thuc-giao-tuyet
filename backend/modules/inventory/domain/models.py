@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, DECIMAL, ForeignKey, Text, Integer, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, DateTime, DECIMAL, ForeignKey, Text, Integer, UniqueConstraint, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
@@ -27,10 +27,17 @@ class InventoryItemModel(Base):
     name = Column(String(255), nullable=False)
     category = Column(String(100), nullable=True)
     uom = Column(String(50), nullable=False)
+    item_type = Column(String(20), default='MATERIAL', nullable=False)  # MATERIAL | EQUIPMENT
     
     min_stock = Column(DECIMAL(15, 2), default=0)
     cost_price = Column(DECIMAL(15, 2), default=0)
     latest_purchase_price = Column(DECIMAL(15, 2), default=0)
+    
+    # Equipment-specific fields
+    condition_status = Column(String(20), default='GOOD')  # GOOD, FAIR, POOR, DAMAGED
+    purchase_date = Column(Date, nullable=True)
+    warranty_months = Column(Integer, default=0)
+    reusable = Column(Boolean, default=False)
     
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
@@ -118,9 +125,38 @@ class InventoryLotModel(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class EquipmentCheckoutModel(Base):
+    """Track equipment checkout/checkin for orders"""
+    __tablename__ = "equipment_checkouts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), nullable=False)
+
+    item_id = Column(UUID(as_uuid=True), ForeignKey("inventory_items.id"), nullable=False)
+    order_id = Column(UUID(as_uuid=True), nullable=True)
+    warehouse_id = Column(UUID(as_uuid=True), ForeignKey("warehouses.id"), nullable=False)
+
+    checkout_qty = Column(Integer, nullable=False)
+    checkin_qty = Column(Integer, default=0)
+    damaged_qty = Column(Integer, default=0)
+
+    checkout_date = Column(DateTime, default=datetime.utcnow)
+    expected_return_date = Column(DateTime, nullable=True)
+    actual_return_date = Column(DateTime, nullable=True)
+
+    status = Column(String(20), default='CHECKED_OUT', nullable=False)  # CHECKED_OUT, PARTIALLY_RETURNED, RETURNED, OVERDUE
+
+    damage_notes = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    performed_by = Column(UUID(as_uuid=True), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    item = relationship("InventoryItemModel")
+    warehouse = relationship("WarehouseModel")
+
+
 # Note: RecipeModel has been moved to menu/domain/models.py
 # to avoid cross-module SQLAlchemy table conflicts
-
-
-
-

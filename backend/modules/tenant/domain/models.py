@@ -31,7 +31,7 @@ class TenantModel(Base):
     status = Column(String(20), default='active')
     domain = Column(String(255))
     logo_url = Column(Text)
-    logo_data = Column(LargeBinary)  # BYTEA — store logo bytes in DB (Cloud Run filesystem is ephemeral)
+    logo_data = Column(LargeBinary)  # BYTEA — store logo bytes in DB (Render filesystem is ephemeral)
     logo_content_type = Column(String(50))  # e.g. "image/png"
     plan_details = Column(JSONB, default={})
     contact_email = Column(String(255))

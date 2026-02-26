@@ -3,6 +3,10 @@ HR Module HTTP Router
 Database: PostgreSQL (catering_db)
 Module: HR - Employee Management
 """
+import logging
+
+logger = logging.getLogger(__name__)
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_
@@ -23,7 +27,8 @@ from backend.core.auth.router import get_current_user
 from backend.core.auth.schemas import User as CurrentUser
 from backend.core.auth.models import User as UserModel
 from backend.core.auth.security import get_password_hash
-from backend.modules.hr.domain.models import EmployeeModel, StaffAssignmentModel, TimesheetModel, PayrollSettingsModel, PayrollItemModel, PayrollPeriodModel, LeaveTypeModel, LeaveBalanceModel, LeaveRequestModel, LeaveApprovalHistoryModel
+from backend.core.auth.permissions import require_permission
+from backend.modules.hr.domain.models import EmployeeModel, StaffAssignmentModel, TimesheetModel, PayrollSettingsModel, PayrollItemModel, PayrollPeriodModel, LeaveTypeModel, LeaveBalanceModel, LeaveRequestModel, LeaveApprovalHistoryModel, PayrollAuditLogModel, VietnamHolidayModel
 from backend.modules.order.domain.models import OrderModel
 
 router = APIRouter(tags=["HR Management"])
@@ -61,6 +66,8 @@ class EmployeeCreate(BaseModel):
     login_email: Optional[str] = None
     login_password: Optional[str] = None
     login_role: Optional[str] = 'staff'  # Default role for new employees
+    # Link to existing user account (PRD-link-user-employee)
+    link_user_id: Optional[str] = None  # UUID of existing user to link
 
 
 class EmployeeUpdate(BaseModel):
@@ -93,6 +100,8 @@ class EmployeeUpdate(BaseModel):
     login_email: Optional[str] = None
     login_password: Optional[str] = None
     login_role: Optional[str] = None  # Change user role (staff, manager, admin)
+    # Link to existing user account (PRD-link-user-employee)
+    link_user_id: Optional[str] = None  # UUID of existing user to link
 
 
 class EmployeeResponse(BaseModel):
@@ -138,7 +147,8 @@ class EmployeeResponse(BaseModel):
 
 # --- API Endpoints ---
 
-@router.get("/employees", response_model=List[EmployeeResponse])
+@router.get("/employees", response_model=List[EmployeeResponse],
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def list_employees(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     search: Optional[str] = Query(None, description="Search by name or phone"),
@@ -179,7 +189,8 @@ async def list_employees(
     return responses
 
 
-@router.get("/employees/stats")
+@router.get("/employees/stats",
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_employee_stats(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get employee statistics for dashboard"""
     await set_tenant_context(db, str(tenant_id))
@@ -229,7 +240,8 @@ async def get_employee_stats(tenant_id: UUID = Depends(get_current_tenant), db: 
     }
 
 
-@router.get("/employees/{employee_id}", response_model=EmployeeResponse)
+@router.get("/employees/{employee_id}", response_model=EmployeeResponse,
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_employee(employee_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get employee by ID"""
     await set_tenant_context(db, str(tenant_id))
@@ -247,7 +259,8 @@ async def get_employee(employee_id: UUID, tenant_id: UUID = Depends(get_current_
     return await _employee_to_response(employee, db)
 
 
-@router.get("/employees/{employee_id}/performance")
+@router.get("/employees/{employee_id}/performance",
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_employee_performance(
     employee_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -347,7 +360,8 @@ async def get_employee_performance(
         }
     }
 
-@router.post("/employees", response_model=EmployeeResponse)
+@router.post("/employees", response_model=EmployeeResponse,
+              dependencies=[Depends(require_permission("hr", "create"))])
 async def create_employee(data: EmployeeCreate, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Create new employee with optional auto-create User account"""
     await set_tenant_context(db, str(tenant_id))
@@ -362,27 +376,60 @@ async def create_employee(data: EmployeeCreate, tenant_id: UUID = Depends(get_cu
     
     # Auto-create User account if login credentials provided
     user_id = None
-    if data.login_email and data.login_password:
+    
+    # Mode 1: Link to existing user by ID (PRD-link-user-employee)
+    if data.link_user_id:
+        link_uid = UUID(data.link_user_id)
+        existing_user = await db.execute(
+            select(UserModel).where(UserModel.id == link_uid, UserModel.tenant_id == tenant_id)
+        )
+        target_user = existing_user.scalar_one_or_none()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="Tài khoản người dùng không tồn tại")
+        # Check if user already linked to another employee
+        linked_emp = await db.execute(
+            select(EmployeeModel).where(EmployeeModel.user_id == link_uid)
+        )
+        if linked_emp.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail=f"Tài khoản {target_user.email} đã được gán cho nhân viên khác")
+        user_id = link_uid
+        # Update role if specified
+        if data.login_role:
+            target_user.role = data.login_role
+    
+    # Mode 2: Create new account or smart-link existing
+    elif data.login_email and data.login_password:
         # Check if email already exists
         existing_user = await db.execute(
             select(UserModel).where(UserModel.email == data.login_email)
         )
-        if existing_user.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail=f"Email {data.login_email} đã được sử dụng")
-        
-        # Create User account
-        new_user = UserModel(
-            tenant_id=tenant_id,
-            email=data.login_email,
-            hashed_password=get_password_hash(data.login_password),
-            full_name=data.full_name,
-            role=data.login_role or 'staff',
-            is_active=True,
-            phone_number=data.phone
-        )
-        db.add(new_user)
-        await db.flush()  # Get user ID without committing
-        user_id = new_user.id
+        existing = existing_user.scalar_one_or_none()
+        if existing:
+            # Smart link: check if user already linked to another employee
+            linked_emp = await db.execute(
+                select(EmployeeModel).where(EmployeeModel.user_id == existing.id)
+            )
+            if linked_emp.scalar_one_or_none():
+                raise HTTPException(status_code=409, detail=f"Email {data.login_email} đã được gán cho nhân viên khác")
+            # Auto-link existing user
+            user_id = existing.id
+            if data.login_role:
+                existing.role = data.login_role
+            logger.info(f"Smart-linked existing user {existing.email} to new employee")
+        else:
+            # Create new User account
+            new_user = UserModel(
+                tenant_id=tenant_id,
+                email=data.login_email,
+                hashed_password=get_password_hash(data.login_password),
+                full_name=data.full_name,
+                role=data.login_role or 'staff',
+                is_active=True,
+                phone_number=data.phone
+            )
+            db.add(new_user)
+            await db.flush()  # Get user ID without committing
+            user_id = new_user.id
     
     # Use login_email as employee email if not provided separately
     employee_email = data.email or data.login_email
@@ -413,7 +460,8 @@ async def create_employee(data: EmployeeCreate, tenant_id: UUID = Depends(get_cu
     return await _employee_to_response(new_employee, db)
 
 
-@router.put("/employees/{employee_id}", response_model=EmployeeResponse)
+@router.put("/employees/{employee_id}", response_model=EmployeeResponse,
+             dependencies=[Depends(require_permission("hr", "edit"))])
 async def update_employee(
     employee_id: UUID,
     data: EmployeeUpdate,
@@ -435,36 +483,64 @@ async def update_employee(
     # Extract account management fields before updating employee
     update_data = data.model_dump(exclude_unset=True)
     account_fields = {}
-    for key in ['create_account', 'login_email', 'login_password', 'login_role']:
+    for key in ['create_account', 'login_email', 'login_password', 'login_role', 'link_user_id']:
         if key in update_data:
             account_fields[key] = update_data.pop(key)
     
-    # Handle creating new account for employee without one
-    if account_fields.get('create_account') and not employee.user_id:
+    # Mode 1: Link to existing user by ID (PRD-link-user-employee)
+    if account_fields.get('link_user_id') and not employee.user_id:
+        link_uid = UUID(account_fields['link_user_id'])
+        existing_user = await db.execute(
+            select(UserModel).where(UserModel.id == link_uid, UserModel.tenant_id == tenant_id)
+        )
+        target_user = existing_user.scalar_one_or_none()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="Tài khoản người dùng không tồn tại")
+        linked_emp = await db.execute(
+            select(EmployeeModel).where(EmployeeModel.user_id == link_uid)
+        )
+        if linked_emp.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail=f"Tài khoản {target_user.email} đã được gán cho nhân viên khác")
+        employee.user_id = link_uid
+        if account_fields.get('login_role'):
+            target_user.role = account_fields['login_role']
+    
+    # Mode 2: Create new account for employee without one
+    elif account_fields.get('create_account') and not employee.user_id:
         login_email = account_fields.get('login_email')
         login_password = account_fields.get('login_password')
         if not login_email or not login_password:
             raise HTTPException(status_code=400, detail="Email và mật khẩu bắt buộc khi tạo tài khoản")
         
-        # Check if email already exists
+        # Smart link: check if email exists and is unlinked
         existing = await db.execute(select(UserModel).where(UserModel.email == login_email))
-        if existing.scalar_one_or_none():
-            raise HTTPException(status_code=409, detail=f"Email {login_email} đã được sử dụng")
-        
-        new_user = UserModel(
-            tenant_id=tenant_id,
-            email=login_email,
-            hashed_password=get_password_hash(login_password),
-            full_name=employee.full_name,
-            role=account_fields.get('login_role', 'staff'),
-            is_active=True,
-            phone_number=employee.phone
-        )
-        db.add(new_user)
-        await db.flush()
-        employee.user_id = new_user.id
+        existing_user = existing.scalar_one_or_none()
+        if existing_user:
+            linked_emp = await db.execute(
+                select(EmployeeModel).where(EmployeeModel.user_id == existing_user.id)
+            )
+            if linked_emp.scalar_one_or_none():
+                raise HTTPException(status_code=409, detail=f"Email {login_email} đã được gán cho nhân viên khác")
+            # Auto-link existing user
+            employee.user_id = existing_user.id
+            if account_fields.get('login_role'):
+                existing_user.role = account_fields['login_role']
+            logger.info(f"Smart-linked existing user {existing_user.email} to employee {employee.full_name}")
+        else:
+            new_user = UserModel(
+                tenant_id=tenant_id,
+                email=login_email,
+                hashed_password=get_password_hash(login_password),
+                full_name=employee.full_name,
+                role=account_fields.get('login_role', 'staff'),
+                is_active=True,
+                phone_number=employee.phone
+            )
+            db.add(new_user)
+            await db.flush()
+            employee.user_id = new_user.id
     
-    # Handle updating existing account role
+    # Mode 3: Update existing account role
     elif employee.user_id and 'login_role' in account_fields:
         user_result = await db.execute(select(UserModel).where(UserModel.id == employee.user_id))
         user = user_result.scalar_one_or_none()
@@ -491,7 +567,8 @@ async def update_employee(
     return await _employee_to_response(employee, db)
 
 
-@router.post("/employees/{employee_id}/reset-password")
+@router.post("/employees/{employee_id}/reset-password",
+              dependencies=[Depends(require_permission("hr", "edit"))])
 async def reset_employee_password(
     employee_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -521,7 +598,8 @@ async def reset_employee_password(
     return {"message": "Đã đặt lại mật khẩu thành công", "new_password": new_password}
 
 
-@router.patch("/employees/{employee_id}/account")
+@router.patch("/employees/{employee_id}/account",
+               dependencies=[Depends(require_permission("hr", "edit"))])
 async def update_employee_account(
     employee_id: UUID,
     data: dict,
@@ -554,7 +632,8 @@ async def update_employee_account(
     return {"message": "Cập nhật tài khoản thành công"}
 
 
-@router.delete("/employees/{employee_id}")
+@router.delete("/employees/{employee_id}",
+                dependencies=[Depends(require_permission("hr", "delete"))])
 async def delete_employee(employee_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Soft delete employee (set is_active = False)"""
     await set_tenant_context(db, str(tenant_id))
@@ -611,6 +690,7 @@ class AssignmentDetailResponse(BaseModel):
     notes: Optional[str] = None
     order_code: Optional[str] = None          # Order code (e.g., DH-202602-001)
     order_customer_name: Optional[str] = None  # Customer name from order
+    event_address: Optional[str] = None        # Event location/address from order
     created_at: datetime
     updated_at: datetime
     
@@ -623,14 +703,18 @@ class ConflictCheckResponse(BaseModel):
     conflicts: List[dict] = []
 
 
-@router.get("/assignments", response_model=List[AssignmentDetailResponse])
+@router.get("/assignments", response_model=List[AssignmentDetailResponse],
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def list_assignments(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     event_id: Optional[UUID] = Query(None),
     employee_id: Optional[UUID] = Query(None),
-    status: Optional[str] = Query(None)
+    status: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None, description="Filter start_time >= date_from (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Filter start_time <= date_to (YYYY-MM-DD)"),
+    search: Optional[str] = Query(None, description="Search by employee name")
 ):
-    """Get staff assignments with employee details"""
+    """Get staff assignments with employee details, date range and search filters"""
     await set_tenant_context(db, str(tenant_id))
     
     query = select(
@@ -639,7 +723,8 @@ async def list_assignments(
         EmployeeModel.phone,
         EmployeeModel.role_type,
         OrderModel.code,          # Order code
-        OrderModel.customer_name   # Customer name
+        OrderModel.customer_name,  # Customer name
+        OrderModel.event_address   # Event location/address
     ).outerjoin(
         EmployeeModel, StaffAssignmentModel.employee_id == EmployeeModel.id
     ).outerjoin(
@@ -654,6 +739,22 @@ async def list_assignments(
         query = query.where(StaffAssignmentModel.employee_id == employee_id)
     if status:
         query = query.where(StaffAssignmentModel.status == status)
+    if date_from:
+        try:
+            from datetime import datetime as dt_parse
+            df = dt_parse.strptime(date_from, '%Y-%m-%d')
+            query = query.where(StaffAssignmentModel.start_time >= df)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            from datetime import datetime as dt_parse
+            dt = dt_parse.strptime(date_to, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+            query = query.where(StaffAssignmentModel.start_time <= dt)
+        except ValueError:
+            pass
+    if search:
+        query = query.where(EmployeeModel.full_name.ilike(f'%{search}%'))
     
     query = query.order_by(StaffAssignmentModel.start_time.desc())
     
@@ -676,8 +777,9 @@ async def list_assignments(
             check_in_time=row[0].check_in_time,
             check_out_time=row[0].check_out_time,
             notes=row[0].notes,
-            order_code=row[4],           # NEW: Order code
-            order_customer_name=row[5],  # NEW: Customer name
+            order_code=row[4],           # Order code
+            order_customer_name=row[5],  # Customer name
+            event_address=row[6],        # Event location/address
             created_at=row[0].created_at,
             updated_at=row[0].updated_at
         )
@@ -685,7 +787,8 @@ async def list_assignments(
     ]
 
 
-@router.get("/assignments/by-event/{event_id}", response_model=List[AssignmentDetailResponse])
+@router.get("/assignments/by-event/{event_id}", response_model=List[AssignmentDetailResponse],
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_assignments_by_event(event_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get all staff assigned to a specific event/order"""
     await set_tenant_context(db, str(tenant_id))
@@ -728,7 +831,343 @@ async def get_assignments_by_event(event_id: UUID, tenant_id: UUID = Depends(get
     ]
 
 
-@router.post("/assignments/check-conflict", response_model=ConflictCheckResponse)
+# --- Grouped Assignments (Event-Centric View) ---
+
+class AssignmentGroupedOrderInfo(BaseModel):
+    """Order metadata for grouped view"""
+    id: Optional[UUID] = None
+    code: Optional[str] = None
+    customer_name: Optional[str] = None
+    event_date: Optional[datetime] = None
+    event_time: Optional[str] = None
+    event_address: Optional[str] = None
+    status: Optional[str] = None
+
+class AssignmentGroupStats(BaseModel):
+    """Stats per group"""
+    total: int = 0
+    assigned: int = 0
+    confirmed: int = 0
+    checked_in: int = 0
+    completed: int = 0
+    cancelled: int = 0
+
+class AssignmentGroup(BaseModel):
+    """A group of assignments for one order/event"""
+    order: AssignmentGroupedOrderInfo
+    assignments: List[AssignmentDetailResponse]
+    stats: AssignmentGroupStats
+
+class AssignmentGroupedResponse(BaseModel):
+    """Response for grouped assignments"""
+    groups: List[AssignmentGroup]
+    total_groups: int = 0
+    total_assignments: int = 0
+
+
+@router.get("/assignments/grouped", response_model=AssignmentGroupedResponse,
+             dependencies=[Depends(require_permission("hr", "view"))])
+async def get_assignments_grouped(
+    tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
+    status: Optional[str] = Query(None),
+    search: Optional[str] = Query(None, description="Search by employee name or order code"),
+    date_from: Optional[str] = Query(None, description="Filter by event date >= date_from (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Filter by event date <= date_to (YYYY-MM-DD)")
+):
+    """Get assignments grouped by event/order with enriched order metadata"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    query = select(
+        StaffAssignmentModel,
+        EmployeeModel.full_name,
+        EmployeeModel.phone,
+        EmployeeModel.role_type,
+        OrderModel.code,
+        OrderModel.customer_name,
+        OrderModel.event_date,
+        OrderModel.event_time,
+        OrderModel.event_address,
+        OrderModel.status.label('order_status')
+    ).outerjoin(
+        EmployeeModel, StaffAssignmentModel.employee_id == EmployeeModel.id
+    ).outerjoin(
+        OrderModel, StaffAssignmentModel.event_id == OrderModel.id
+    ).where(
+        StaffAssignmentModel.tenant_id == tenant_id
+    )
+    
+    if status:
+        query = query.where(StaffAssignmentModel.status == status)
+    if search:
+        query = query.where(
+            or_(
+                EmployeeModel.full_name.ilike(f'%{search}%'),
+                OrderModel.code.ilike(f'%{search}%'),
+                OrderModel.customer_name.ilike(f'%{search}%')
+            )
+        )
+    if date_from:
+        try:
+            from datetime import datetime as dt_parse
+            df = dt_parse.strptime(date_from, '%Y-%m-%d')
+            query = query.where(OrderModel.event_date >= df)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            from datetime import datetime as dt_parse
+            dt = dt_parse.strptime(date_to, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+            query = query.where(OrderModel.event_date <= dt)
+        except ValueError:
+            pass
+    
+    query = query.order_by(OrderModel.event_date.desc().nullslast(), StaffAssignmentModel.created_at.desc())
+    
+    result = await db.execute(query)
+    rows = result.all()
+    
+    # Group by event_id
+    groups_dict: dict = {}
+    no_order_assignments = []
+    
+    for row in rows:
+        assignment = row[0]
+        event_id = assignment.event_id
+        
+        detail = AssignmentDetailResponse(
+            id=assignment.id,
+            tenant_id=assignment.tenant_id,
+            event_id=assignment.event_id,
+            employee_id=assignment.employee_id,
+            employee_name=row[1],
+            employee_phone=row[2],
+            employee_role_type=row[3],
+            role=assignment.role,
+            start_time=assignment.start_time,
+            end_time=assignment.end_time,
+            status=assignment.status or 'ASSIGNED',
+            check_in_time=assignment.check_in_time,
+            check_out_time=assignment.check_out_time,
+            notes=assignment.notes,
+            order_code=row[4],
+            order_customer_name=row[5],
+            created_at=assignment.created_at,
+            updated_at=assignment.updated_at
+        )
+        
+        if event_id:
+            key = str(event_id)
+            if key not in groups_dict:
+                groups_dict[key] = {
+                    'order': AssignmentGroupedOrderInfo(
+                        id=event_id,
+                        code=row[4],
+                        customer_name=row[5],
+                        event_date=row[6],
+                        event_time=row[7],
+                        event_address=row[8],
+                        status=row[9]
+                    ),
+                    'assignments': [],
+                    'stats': {'total': 0, 'assigned': 0, 'confirmed': 0, 'checked_in': 0, 'completed': 0, 'cancelled': 0}
+                }
+            groups_dict[key]['assignments'].append(detail)
+            groups_dict[key]['stats']['total'] += 1
+            status_key = (assignment.status or 'ASSIGNED').lower()
+            if status_key in groups_dict[key]['stats']:
+                groups_dict[key]['stats'][status_key] += 1
+        else:
+            no_order_assignments.append(detail)
+    
+    # Build response
+    groups = []
+    for key, group_data in groups_dict.items():
+        groups.append(AssignmentGroup(
+            order=group_data['order'],
+            assignments=group_data['assignments'],
+            stats=AssignmentGroupStats(**group_data['stats'])
+        ))
+    
+    # Add unassigned group if any
+    if no_order_assignments:
+        groups.append(AssignmentGroup(
+            order=AssignmentGroupedOrderInfo(),
+            assignments=no_order_assignments,
+            stats=AssignmentGroupStats(
+                total=len(no_order_assignments),
+                assigned=sum(1 for a in no_order_assignments if a.status == 'ASSIGNED'),
+                confirmed=sum(1 for a in no_order_assignments if a.status == 'CONFIRMED'),
+                completed=sum(1 for a in no_order_assignments if a.status == 'COMPLETED'),
+            )
+        ))
+    
+    return AssignmentGroupedResponse(
+        groups=groups,
+        total_groups=len(groups),
+        total_assignments=sum(len(g.assignments) for g in groups)
+    )
+
+
+# --- Batch Assignment Create ---
+
+class BatchAssignmentCreate(BaseModel):
+    """Create multiple assignments for the same event"""
+    event_id: UUID
+    employee_ids: List[UUID]
+    role: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    notes: Optional[str] = None
+
+class BatchAssignmentResult(BaseModel):
+    """Result of batch assignment creation"""
+    created: List[AssignmentDetailResponse] = []
+    conflicts: List[dict] = []
+    total_created: int = 0
+    total_conflicts: int = 0
+
+
+@router.post("/assignments/batch", response_model=BatchAssignmentResult,
+              dependencies=[Depends(require_permission("hr", "create"))])
+async def batch_create_assignments(
+    data: BatchAssignmentCreate,
+    tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)
+):
+    """Create multiple assignments for the same event (batch operation)"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    created_assignments = []
+    conflict_list = []
+    
+    for emp_id in data.employee_ids:
+        # Verify employee exists and is active
+        emp_result = await db.execute(
+            select(EmployeeModel).where(
+                EmployeeModel.id == emp_id,
+                EmployeeModel.tenant_id == tenant_id,
+                EmployeeModel.is_active == True
+            )
+        )
+        employee = emp_result.scalar_one_or_none()
+        if not employee:
+            conflict_list.append({
+                "employee_id": str(emp_id),
+                "reason": "Employee not found or inactive"
+            })
+            continue
+        
+        # Check for conflicts if time range provided
+        if data.start_time and data.end_time:
+            conflict_query = select(StaffAssignmentModel).where(
+                StaffAssignmentModel.tenant_id == tenant_id,
+                StaffAssignmentModel.employee_id == emp_id,
+                StaffAssignmentModel.status.in_(['ASSIGNED', 'CONFIRMED']),
+                StaffAssignmentModel.start_time < data.end_time,
+                StaffAssignmentModel.end_time > data.start_time
+            )
+            conflict_result = await db.execute(conflict_query)
+            if conflict_result.scalars().first():
+                conflict_list.append({
+                    "employee_id": str(emp_id),
+                    "employee_name": employee.full_name,
+                    "reason": "Conflict: employee has overlapping assignment"
+                })
+                continue
+        
+        # Check for duplicate assignment (same employee + same event)
+        dup_query = select(StaffAssignmentModel).where(
+            StaffAssignmentModel.tenant_id == tenant_id,
+            StaffAssignmentModel.event_id == data.event_id,
+            StaffAssignmentModel.employee_id == emp_id,
+            StaffAssignmentModel.status.in_(['ASSIGNED', 'CONFIRMED', 'CHECKED_IN'])
+        )
+        dup_result = await db.execute(dup_query)
+        if dup_result.scalars().first():
+            conflict_list.append({
+                "employee_id": str(emp_id),
+                "employee_name": employee.full_name,
+                "reason": "Duplicate: employee already assigned to this event"
+            })
+            continue
+        
+        # Create assignment
+        assignment = StaffAssignmentModel(
+            tenant_id=tenant_id,
+            event_id=data.event_id,
+            employee_id=emp_id,
+            role=data.role or employee.role_type,
+            start_time=data.start_time,
+            end_time=data.end_time,
+            notes=data.notes
+        )
+        db.add(assignment)
+        
+        # BUGFIX: BUG-20260221-003
+        # Root Cause: OrderStaffAssignmentModel.staff_id has FK to users.id,
+        # but we pass employee_id from hr_employees table → FK violation on commit.
+        # Solution: Skip order_staff_assignment sync for now; the FK is incompatible.
+        # TODO: Fix OrderStaffAssignmentModel.staff_id FK to reference hr_employees.id
+        
+        created_assignments.append((assignment, employee))
+    
+    # Commit all at once
+    if created_assignments:
+        try:
+            await db.commit()
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Batch assignment commit failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to create assignments: {str(e)}")
+    
+    # Build response with employee details
+    created_responses = []
+    for assignment, employee in created_assignments:
+        await db.refresh(assignment)
+        # Get order info
+        order_code = None
+        order_customer_name = None
+        if assignment.event_id:
+            try:
+                order_info = await db.execute(
+                    select(OrderModel.code, OrderModel.customer_name).where(OrderModel.id == assignment.event_id)
+                )
+                order_row = order_info.first()
+                if order_row:
+                    order_code, order_customer_name = order_row
+            except Exception:
+                pass
+        
+        created_responses.append(AssignmentDetailResponse(
+            id=assignment.id,
+            tenant_id=assignment.tenant_id,
+            event_id=assignment.event_id,
+            employee_id=assignment.employee_id,
+            employee_name=employee.full_name,
+            employee_phone=employee.phone,
+            employee_role_type=employee.role_type,
+            role=assignment.role,
+            start_time=assignment.start_time,
+            end_time=assignment.end_time,
+            status=assignment.status or 'ASSIGNED',
+            check_in_time=assignment.check_in_time,
+            check_out_time=assignment.check_out_time,
+            notes=assignment.notes,
+            order_code=order_code,
+            order_customer_name=order_customer_name,
+            created_at=assignment.created_at,
+            updated_at=assignment.updated_at
+        ))
+    
+    return BatchAssignmentResult(
+        created=created_responses,
+        conflicts=conflict_list,
+        total_created=len(created_responses),
+        total_conflicts=len(conflict_list)
+    )
+
+
+@router.post("/assignments/check-conflict", response_model=ConflictCheckResponse,
+              dependencies=[Depends(require_permission("hr", "view"))])
 async def check_assignment_conflict(
     employee_id: UUID,
     start_time: datetime,
@@ -770,7 +1209,8 @@ async def check_assignment_conflict(
     )
 
 
-@router.post("/assignments", response_model=AssignmentDetailResponse)
+@router.post("/assignments", response_model=AssignmentDetailResponse,
+              dependencies=[Depends(require_permission("hr", "create"))])
 async def create_assignment(data: AssignmentCreate, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Create new staff assignment with conflict detection"""
     await set_tenant_context(db, str(tenant_id))
@@ -817,6 +1257,26 @@ async def create_assignment(data: AssignmentCreate, tenant_id: UUID = Depends(ge
     await db.commit()
     await db.refresh(assignment)
     
+    # BUGFIX: BUG-20260221-003
+    # OrderStaffAssignmentModel sync disabled — staff_id FK points to users.id
+    # but we pass employee_id from hr_employees → FK violation.
+    # TODO: Fix OrderStaffAssignmentModel.staff_id FK to reference hr_employees.id
+    
+    # Get order info for response
+    order_code = None
+    order_customer = None
+    if assignment.event_id:
+        try:
+            order_result = await db.execute(
+                select(OrderModel.code, OrderModel.customer_name).where(OrderModel.id == assignment.event_id)
+            )
+            order_row = order_result.first()
+            if order_row:
+                order_code = order_row[0]
+                order_customer = order_row[1]
+        except Exception:
+            pass
+    
     return AssignmentDetailResponse(
         id=assignment.id,
         tenant_id=assignment.tenant_id,
@@ -832,12 +1292,15 @@ async def create_assignment(data: AssignmentCreate, tenant_id: UUID = Depends(ge
         check_in_time=assignment.check_in_time,
         check_out_time=assignment.check_out_time,
         notes=assignment.notes,
+        order_code=order_code,
+        order_customer_name=order_customer,
         created_at=assignment.created_at,
         updated_at=assignment.updated_at
     )
 
 
-@router.put("/assignments/{assignment_id}", response_model=AssignmentDetailResponse)
+@router.put("/assignments/{assignment_id}", response_model=AssignmentDetailResponse,
+             dependencies=[Depends(require_permission("hr", "edit"))])
 async def update_assignment(
     assignment_id: UUID,
     data: AssignmentUpdate,
@@ -868,13 +1331,44 @@ async def update_assignment(
     if data.notes is not None:
         assignment.notes = data.notes
     
+    # Sync role change to order_staff_assignments
+    if data.role is not None and assignment.event_id and assignment.employee_id:
+        try:
+            from backend.modules.order.domain.models import OrderStaffAssignmentModel
+            order_assignments = await db.execute(
+                select(OrderStaffAssignmentModel).where(
+                    OrderStaffAssignmentModel.order_id == assignment.event_id,
+                    OrderStaffAssignmentModel.staff_id == assignment.employee_id,
+                    OrderStaffAssignmentModel.tenant_id == tenant_id
+                )
+            )
+            for oa in order_assignments.scalars().all():
+                oa.role = data.role
+            logger.info(f"Synced: updated role to {data.role} in order_staff_assignment for employee {assignment.employee_id}")
+        except Exception as e:
+            logger.warning(f"Failed to sync order_staff_assignment role update: {e}")
+    
     await db.commit()
     await db.refresh(assignment)
     
-    # Get employee details
+    # Get employee details + order info
     emp_query = select(EmployeeModel).where(EmployeeModel.id == assignment.employee_id)
     emp_result = await db.execute(emp_query)
     employee = emp_result.scalar_one_or_none()
+    
+    order_code = None
+    order_customer = None
+    if assignment.event_id:
+        try:
+            order_result = await db.execute(
+                select(OrderModel.code, OrderModel.customer_name).where(OrderModel.id == assignment.event_id)
+            )
+            order_row = order_result.first()
+            if order_row:
+                order_code = order_row[0]
+                order_customer = order_row[1]
+        except Exception:
+            pass
     
     return AssignmentDetailResponse(
         id=assignment.id,
@@ -891,12 +1385,15 @@ async def update_assignment(
         check_in_time=assignment.check_in_time,
         check_out_time=assignment.check_out_time,
         notes=assignment.notes,
+        order_code=order_code,
+        order_customer_name=order_customer,
         created_at=assignment.created_at,
         updated_at=assignment.updated_at
     )
 
 
-@router.put("/assignments/{assignment_id}/status")
+@router.put("/assignments/{assignment_id}/status",
+             dependencies=[Depends(require_permission("hr", "edit"))])
 async def update_assignment_status(
     assignment_id: UUID,
     status: str,
@@ -932,29 +1429,78 @@ async def update_assignment_status(
     return {"message": f"Status updated to {status}", "id": str(assignment_id)}
 
 
-@router.delete("/assignments/{assignment_id}")
+@router.delete("/assignments/{assignment_id}",
+                dependencies=[Depends(require_permission("hr", "delete"))])
 async def delete_assignment(assignment_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
-    """Delete/cancel an assignment"""
-    await set_tenant_context(db, str(tenant_id))
-    
-    query = select(StaffAssignmentModel).where(
-        StaffAssignmentModel.id == assignment_id,
-        StaffAssignmentModel.tenant_id == tenant_id
-    )
-    result = await db.execute(query)
-    assignment = result.scalar_one_or_none()
-    
-    if not assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found")
-    
-    # Soft delete by setting status to CANCELLED
-    assignment.status = 'CANCELLED'
-    await db.commit()
-    
-    return {"message": "Assignment cancelled", "id": str(assignment_id)}
+    """Delete/cancel an assignment and sync with order_staff_assignments"""
+    try:
+        await set_tenant_context(db, str(tenant_id))
+        
+        query = select(StaffAssignmentModel).where(
+            StaffAssignmentModel.id == assignment_id,
+            StaffAssignmentModel.tenant_id == tenant_id
+        )
+        result = await db.execute(query)
+        assignment = result.scalar_one_or_none()
+        
+        if not assignment:
+            raise HTTPException(status_code=404, detail="Assignment not found")
+        
+        # Soft delete by setting status to CANCELLED
+        assignment.status = 'CANCELLED'
+        
+        # Sync: also remove matching order_staff_assignment
+        if assignment.event_id and assignment.employee_id:
+            try:
+                from backend.modules.order.domain.models import OrderStaffAssignmentModel
+                # Get user_id from employee to match order_staff_assignments.staff_id (FK to users.id)
+                from backend.modules.hr.domain.models import EmployeeModel
+                emp_result = await db.execute(
+                    select(EmployeeModel.user_id).where(EmployeeModel.id == assignment.employee_id)
+                )
+                user_id = emp_result.scalar_one_or_none()
+                
+                staff_id_to_match = user_id if user_id else assignment.employee_id
+                
+                order_assignments = await db.execute(
+                    select(OrderStaffAssignmentModel).where(
+                        OrderStaffAssignmentModel.order_id == assignment.event_id,
+                        OrderStaffAssignmentModel.staff_id == staff_id_to_match,
+                        OrderStaffAssignmentModel.tenant_id == tenant_id
+                    )
+                )
+                for oa in order_assignments.scalars().all():
+                    await db.delete(oa)
+                logger.info(f"Synced: removed order_staff_assignment for employee {assignment.employee_id} from order {assignment.event_id}")
+            except Exception as e:
+                logger.warning(f"Failed to sync order_staff_assignment deletion: {e}")
+                # Rollback the failed sync and re-add the soft delete
+                await db.rollback()
+                await set_tenant_context(db, str(tenant_id))
+                # Re-fetch and re-apply soft delete without sync
+                result2 = await db.execute(
+                    select(StaffAssignmentModel).where(
+                        StaffAssignmentModel.id == assignment_id,
+                        StaffAssignmentModel.tenant_id == tenant_id
+                    )
+                )
+                assignment2 = result2.scalar_one_or_none()
+                if assignment2:
+                    assignment2.status = 'CANCELLED'
+        
+        await db.commit()
+        
+        return {"message": "Assignment cancelled", "id": str(assignment_id)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting assignment {assignment_id}: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to cancel assignment: {str(e)}")
 
 
-@router.get("/assignments/available-employees")
+@router.get("/assignments/available-employees",
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_available_employees(
     start_time: datetime,
     end_time: datetime,
@@ -1125,7 +1671,8 @@ class TimesheetSummary(BaseModel):
 
 # --- Timesheet Endpoints ---
 
-@router.get("/timesheets")
+@router.get("/timesheets",
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def list_timesheets(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     employee_id: Optional[UUID] = Query(None),
@@ -1196,7 +1743,8 @@ async def list_timesheets(
     ]
 
 
-@router.get("/timesheets/today")
+@router.get("/timesheets/today",
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_today_timesheets(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get all timesheets for today"""
     await set_tenant_context(db, str(tenant_id))
@@ -1279,7 +1827,8 @@ class BatchTimesheetResponse(BaseModel):
     timesheets: list[TimesheetResponse]
 
 
-@router.get("/timesheets/unattended", response_model=list[UnattendedAssignment])
+@router.get("/timesheets/unattended", response_model=list[UnattendedAssignment],
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_unattended_assignments(
     target_date: Optional[str] = Query(default=None, alias="date"),
     include_overdue: bool = Query(default=False, description="Include past days without timesheets"),
@@ -1364,7 +1913,8 @@ async def get_unattended_assignments(
     return assignments_out
 
 
-@router.post("/timesheets/batch-from-assignments", response_model=BatchTimesheetResponse)
+@router.post("/timesheets/batch-from-assignments", response_model=BatchTimesheetResponse,
+              dependencies=[Depends(require_permission("hr", "create"))])
 async def batch_create_from_assignments(
     data: BatchTimesheetRequest,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -1463,7 +2013,8 @@ async def batch_create_from_assignments(
     )
 
 
-@router.post("/timesheets", response_model=TimesheetResponse)
+@router.post("/timesheets", response_model=TimesheetResponse,
+              dependencies=[Depends(require_permission("hr", "create"))])
 async def create_timesheet(data: TimesheetCreate, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Create a new timesheet entry"""
     await set_tenant_context(db, str(tenant_id))
@@ -1533,7 +2084,8 @@ async def create_timesheet(data: TimesheetCreate, tenant_id: UUID = Depends(get_
     )
 
 
-@router.patch("/timesheets/{timesheet_id}/time", response_model=TimesheetResponse)
+@router.patch("/timesheets/{timesheet_id}/time", response_model=TimesheetResponse,
+               dependencies=[Depends(require_permission("hr", "edit"))])
 async def edit_timesheet_time(
     timesheet_id: UUID,
     data: TimesheetTimeEditRequest,
@@ -1629,7 +2181,41 @@ async def edit_timesheet_time(
     )
 
 
-@router.post("/timesheets/{timesheet_id}/check-in")
+@router.patch("/timesheets/{timesheet_id}/unlock",
+               dependencies=[Depends(require_permission("hr", "approve"))])
+async def unlock_timesheet(
+    timesheet_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Unlock an APPROVED timesheet back to PENDING for re-editing"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    result = await db.execute(
+        select(TimesheetModel).where(
+            TimesheetModel.id == timesheet_id,
+            TimesheetModel.tenant_id == tenant_id
+        )
+    )
+    timesheet = result.scalar_one_or_none()
+    
+    if not timesheet:
+        raise HTTPException(status_code=404, detail="Timesheet not found")
+    
+    if timesheet.status != 'APPROVED':
+        raise HTTPException(status_code=400, detail="Only approved timesheets can be unlocked")
+    
+    timesheet.status = 'PENDING'
+    timesheet.approved_by = None
+    timesheet.approved_at = None
+    
+    await db.commit()
+    
+    return {"message": "Timesheet unlocked successfully", "id": str(timesheet_id), "status": "PENDING"}
+
+
+@router.post("/timesheets/{timesheet_id}/check-in",
+              dependencies=[Depends(require_permission("hr", "check_in_out"))])
 async def check_in(timesheet_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Record check-in time for a timesheet"""
     await set_tenant_context(db, str(tenant_id))
@@ -1657,7 +2243,8 @@ async def check_in(timesheet_id: UUID, tenant_id: UUID = Depends(get_current_ten
     }
 
 
-@router.post("/timesheets/{timesheet_id}/check-out")
+@router.post("/timesheets/{timesheet_id}/check-out",
+              dependencies=[Depends(require_permission("hr", "check_in_out"))])
 async def check_out(timesheet_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Record check-out time and calculate hours
     
@@ -1725,7 +2312,8 @@ async def check_out(timesheet_id: UUID, tenant_id: UUID = Depends(get_current_te
 
 
 
-@router.put("/timesheets/{timesheet_id}/approve")
+@router.put("/timesheets/{timesheet_id}/approve",
+             dependencies=[Depends(require_permission("hr", "approve"))])
 async def approve_timesheet(
     timesheet_id: UUID,
     approved: bool = True,
@@ -1760,7 +2348,8 @@ class BulkTimesheetAction(BaseModel):
     action: str  # APPROVE or REJECT
 
 
-@router.put("/timesheets/bulk-approve")
+@router.put("/timesheets/bulk-approve",
+             dependencies=[Depends(require_permission("hr", "approve"))])
 async def bulk_approve_timesheets(
     data: BulkTimesheetAction,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -1805,7 +2394,8 @@ async def bulk_approve_timesheets(
     }
 
 
-@router.get("/timesheets/{timesheet_id}", response_model=TimesheetResponse)
+@router.get("/timesheets/{timesheet_id}", response_model=TimesheetResponse,
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_timesheet_detail(
     timesheet_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -1869,7 +2459,8 @@ async def get_timesheet_detail(
     )
 
 
-@router.put("/timesheets/{timesheet_id}", response_model=TimesheetResponse)
+@router.put("/timesheets/{timesheet_id}", response_model=TimesheetResponse,
+             dependencies=[Depends(require_permission("hr", "edit"))])
 async def update_timesheet(
     timesheet_id: UUID,
     data: TimesheetUpdate,
@@ -1957,7 +2548,8 @@ async def update_timesheet(
     )
 
 
-@router.delete("/timesheets/{timesheet_id}")
+@router.delete("/timesheets/{timesheet_id}",
+                dependencies=[Depends(require_permission("hr", "delete"))])
 async def delete_timesheet(
     timesheet_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -1988,7 +2580,8 @@ async def delete_timesheet(
     return {"message": "Timesheet deleted successfully", "id": str(timesheet_id)}
 
 
-@router.get("/timesheets/report/monthly")
+@router.get("/timesheets/report/monthly",
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_monthly_report(
     year: int,
     month: int,
@@ -2056,7 +2649,8 @@ async def get_monthly_report(
     }
 
 
-@router.get("/timesheets/report/daily")
+@router.get("/timesheets/report/daily",
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_daily_report(
     report_date: Optional[str] = None,  # YYYY-MM-DD, defaults to today
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)
@@ -2178,7 +2772,21 @@ class PayrollItemResponse(BaseModel):
     deduction_advance: float
     total_deductions: float
     net_salary: float
+    # Employer contributions
+    employer_social_ins: float = 0
+    employer_health_ins: float = 0
+    employer_unemployment: float = 0
+    employer_union_fee: float = 0
+    employer_total: float = 0
+    # Additional fields
+    deduction_health_ins: float = 0
+    deduction_unemployment: float = 0
+    deduction_other: float = 0
+    allowance_phone: float = 0
+    allowance_other: float = 0
+    notes: Optional[str] = None
     status: str
+    working_days: int = 0  # GAP-P2: Count of distinct working days from timesheets
 
 
 class SalaryAdvanceCreate(BaseModel):
@@ -2204,7 +2812,8 @@ class SalaryAdvanceResponse(BaseModel):
 
 # --- Payroll Period Endpoints ---
 
-@router.post("/payroll/periods", response_model=PayrollPeriodResponse)
+@router.post("/payroll/periods", response_model=PayrollPeriodResponse,
+              dependencies=[Depends(require_permission("hr", "process_payroll"))])
 async def create_payroll_period(
     data: PayrollPeriodCreate,
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)
@@ -2240,7 +2849,8 @@ async def create_payroll_period(
     return _period_to_response(period)
 
 
-@router.get("/payroll/periods", response_model=List[PayrollPeriodResponse])
+@router.get("/payroll/periods", response_model=List[PayrollPeriodResponse],
+             dependencies=[Depends(require_permission("hr", "view_payroll"))])
 async def list_payroll_periods(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     status: Optional[str] = Query(None),
@@ -2264,7 +2874,8 @@ async def list_payroll_periods(
     return [_period_to_response(p) for p in periods]
 
 
-@router.get("/payroll/periods/{period_id}", response_model=PayrollPeriodResponse)
+@router.get("/payroll/periods/{period_id}", response_model=PayrollPeriodResponse,
+             dependencies=[Depends(require_permission("hr", "view_payroll"))])
 async def get_payroll_period(period_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get payroll period by ID"""
     await set_tenant_context(db, str(tenant_id))
@@ -2282,7 +2893,8 @@ async def get_payroll_period(period_id: UUID, tenant_id: UUID = Depends(get_curr
     return _period_to_response(period)
 
 
-@router.post("/payroll/periods/{period_id}/calculate")
+@router.post("/payroll/periods/{period_id}/calculate",
+              dependencies=[Depends(require_permission("hr", "process_payroll"))])
 async def calculate_payroll(period_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """
     Calculate payroll for all employees in the period.
@@ -2338,14 +2950,17 @@ async def calculate_payroll(period_id: UUID, tenant_id: UUID = Depends(get_curre
         holiday_result = await db.execute(holiday_query)
         holidays = set(row[0] for row in holiday_result.all())
         
-        # Get pending salary advances
+        # Get pending salary advances — BUG-1 FIX: use list to support multiple advances per employee
+        from collections import defaultdict
         advance_query = select(SalaryAdvanceModel).where(
             SalaryAdvanceModel.tenant_id == tenant_id,
             SalaryAdvanceModel.status == 'PAID',
             SalaryAdvanceModel.deducted_in_period == None
         )
         advance_result = await db.execute(advance_query)
-        advances = {a.employee_id: a for a in advance_result.scalars().all()}
+        advances_map = defaultdict(list)
+        for a in advance_result.scalars().all():
+            advances_map[a.employee_id].append(a)
         
         # Delete existing items for recalculation
         from sqlalchemy import delete
@@ -2356,6 +2971,7 @@ async def calculate_payroll(period_id: UUID, tenant_id: UUID = Depends(get_curre
         total_gross = Decimal(0)
         total_deductions = Decimal(0)
         total_net = Decimal(0)
+        total_employer = Decimal(0)
         items_created = 0
         
         for emp in employees:
@@ -2376,24 +2992,45 @@ async def calculate_payroll(period_id: UUID, tenant_id: UUID = Depends(get_curre
             weekend_hours = Decimal(0)
             holiday_hours = Decimal(0)
             night_hours = Decimal(0)
+            work_dates_set = set()  # GAP-P2: Count distinct working days
             
             for ts in timesheets:
                 hours = Decimal(str(ts.total_hours or 0))
+                ts_ot = Decimal(str(ts.overtime_hours or 0))  # GAP-P4: Use timesheet's own OT
                 work_date = ts.work_date
+                work_dates_set.add(work_date)
                 
                 if work_date in holidays:
                     holiday_hours += hours
                 elif work_date.weekday() >= 5:  # Saturday=5, Sunday=6
                     weekend_hours += hours
                 else:
-                    if hours <= 8:
-                        regular_hours += hours
-                    else:
-                        regular_hours += 8
-                        overtime_hours += hours - 8
+                    # GAP-P4: Use timesheet's overtime_hours directly
+                    # This preserves manager-approved OT from timesheet editing
+                    regular = hours - ts_ot if hours > ts_ot else hours
+                    regular_hours += regular
+                    overtime_hours += ts_ot
                 
-                # Night hours (simplified - assume from total_hours)
-                night_hours += Decimal(str(ts.overtime_hours or 0)) * Decimal('0.1')
+                # GAP-P1: Calculate actual night hours from check-in/check-out
+                # Night shift window: 22:00 - 06:00 (+30% bonus per Vietnam Labor Law)
+                if ts.actual_start and ts.actual_end:
+                    from datetime import time as dt_time, timedelta
+                    start_dt = ts.actual_start
+                    end_dt = ts.actual_end
+                    
+                    # Night window for this work_date: 22:00 same day to 06:00 next day
+                    night_start_22 = datetime.combine(work_date, dt_time(22, 0))
+                    night_end_06 = datetime.combine(work_date + timedelta(days=1), dt_time(6, 0))
+                    
+                    # Calculate overlap with night window
+                    overlap_start = max(start_dt.replace(tzinfo=None), night_start_22)
+                    overlap_end = min(end_dt.replace(tzinfo=None), night_end_06)
+                    
+                    if overlap_end > overlap_start:
+                        night_delta = (overlap_end - overlap_start).total_seconds() / 3600
+                        night_hours += Decimal(str(round(night_delta, 2)))
+            
+            working_days = len(work_dates_set)  # GAP-P2: Distinct working days
             
             # Get hourly rate - use employee's custom or calculate from salary
             hourly_rate = emp.hourly_rate or Decimal(0)
@@ -2444,17 +3081,36 @@ async def calculate_payroll(period_id: UUID, tenant_id: UUID = Depends(get_curre
                 health_ins = Decimal(0)
                 unemployment = Decimal(0)
             
-            # Check for advance to deduct
+            # Check for advance to deduct — BUG-1 FIX: deduct ALL advances, not just one
             advance_deduction = Decimal(0)
-            if emp.id in advances:
-                adv = advances[emp.id]
-                advance_deduction = Decimal(str(adv.amount))
-                adv.deducted_in_period = period_id
-                adv.deducted_at = datetime.now()
-                adv.status = 'DEDUCTED'
+            if emp.id in advances_map:
+                for adv in advances_map[emp.id]:
+                    advance_deduction += Decimal(str(adv.amount))
+                    adv.deducted_in_period = period_id
+                    adv.deducted_at = datetime.now()
+                    adv.status = 'DEDUCTED'
             
             total_ded = social_ins + health_ins + unemployment + advance_deduction
             net = gross - total_ded
+            
+            # Employer contributions (Vietnam Labor Law)
+            if emp.is_fulltime:
+                emp_social_rate = Decimal(str(settings.rate_employer_social or 0.175))
+                emp_health_rate = Decimal(str(settings.rate_employer_health or 0.03))
+                emp_unemp_rate = Decimal(str(settings.rate_employer_unemployment or 0.01))
+                emp_union_rate = Decimal(str(settings.rate_union_fee or 0.02))
+                
+                employer_social = insurance_base * emp_social_rate
+                employer_health = insurance_base * emp_health_rate
+                employer_unemp = insurance_base * emp_unemp_rate
+                employer_union = insurance_base * emp_union_rate
+            else:
+                employer_social = Decimal(0)
+                employer_health = Decimal(0)
+                employer_unemp = Decimal(0)
+                employer_union = Decimal(0)
+            
+            employer_total_cost = employer_social + employer_health + employer_unemp + employer_union
             
             # Create payroll item
             # NOTE: gross_salary and total_deductions are GENERATED columns in DB,
@@ -2480,6 +3136,12 @@ async def calculate_payroll(period_id: UUID, tenant_id: UUID = Depends(get_curre
                 # gross_salary - GENERATED column, calculated by DB
                 deduction_social_ins=social_ins,
                 deduction_advance=advance_deduction,
+                # Employer contributions
+                employer_social_ins=employer_social,
+                employer_health_ins=employer_health,
+                employer_unemployment=employer_unemp,
+                employer_union_fee=employer_union,
+                employer_total=employer_total_cost,
                 # total_deductions - GENERATED column, calculated by DB
                 net_salary=net
             )
@@ -2490,6 +3152,7 @@ async def calculate_payroll(period_id: UUID, tenant_id: UUID = Depends(get_curre
             total_gross += gross
             total_deductions += total_ded
             total_net += net
+            total_employer += employer_total_cost
         
         # Update period
         period.status = 'CALCULATED'
@@ -2498,8 +3161,25 @@ async def calculate_payroll(period_id: UUID, tenant_id: UUID = Depends(get_curre
         period.total_gross = total_gross
         period.total_deductions = total_deductions
         period.total_net = total_net
+        period.total_employer_cost = total_employer
         
         await db.commit()
+        
+        # Audit log - after successful commit
+        try:
+            audit = PayrollAuditLogModel(
+                tenant_id=tenant_id,
+                period_id=period_id,
+                action='CALCULATE',
+                period_name=period.period_name,
+                previous_status='DRAFT',
+                new_status='CALCULATED',
+                details=f'Calculated for {items_created} employees. Gross: {float(total_gross):.0f}, Net: {float(total_net):.0f}, Employer: {float(total_employer):.0f}',
+            )
+            db.add(audit)
+            await db.commit()
+        except Exception:
+            pass
         
         return {
             "message": f"Payroll calculated for {items_created} employees",
@@ -2524,7 +3204,8 @@ async def calculate_payroll(period_id: UUID, tenant_id: UUID = Depends(get_curre
         )
 
 
-@router.get("/payroll/periods/{period_id}/items", response_model=List[PayrollItemResponse])
+@router.get("/payroll/periods/{period_id}/items", response_model=List[PayrollItemResponse],
+             dependencies=[Depends(require_permission("hr", "view_payroll"))])
 async def get_payroll_items(period_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get all payroll items for a period"""
     await set_tenant_context(db, str(tenant_id))
@@ -2543,6 +3224,30 @@ async def get_payroll_items(period_id: UUID, tenant_id: UUID = Depends(get_curre
     
     result = await db.execute(query)
     rows = result.all()
+    
+    # GAP-P2: Get period date range for working_days calculation
+    period_query = select(PayrollPeriodModel).where(
+        PayrollPeriodModel.id == period_id,
+        PayrollPeriodModel.tenant_id == tenant_id
+    )
+    period_result = await db.execute(period_query)
+    period = period_result.scalar_one_or_none()
+    
+    # GAP-P2: Count distinct working days from approved timesheets per employee
+    working_days_map = {}
+    if period:
+        from sqlalchemy import distinct
+        for row in rows:
+            emp_id = row[0].employee_id
+            wd_query = select(func.count(distinct(TimesheetModel.work_date))).where(
+                TimesheetModel.tenant_id == tenant_id,
+                TimesheetModel.employee_id == emp_id,
+                TimesheetModel.work_date >= period.start_date,
+                TimesheetModel.work_date <= period.end_date,
+                TimesheetModel.status == 'APPROVED'
+            )
+            wd_result = await db.execute(wd_query)
+            working_days_map[emp_id] = wd_result.scalar() or 0
     
     return [
         PayrollItemResponse(
@@ -2571,13 +3276,26 @@ async def get_payroll_items(period_id: UUID, tenant_id: UUID = Depends(get_curre
             deduction_advance=float(row[0].deduction_advance or 0),
             total_deductions=float(row[0].total_deductions or 0),
             net_salary=float(row[0].net_salary or 0),
-            status=row[0].status or 'PENDING'
+            employer_social_ins=float(row[0].employer_social_ins or 0),
+            employer_health_ins=float(row[0].employer_health_ins or 0),
+            employer_unemployment=float(row[0].employer_unemployment or 0),
+            employer_union_fee=float(row[0].employer_union_fee or 0),
+            employer_total=float(row[0].employer_total or 0),
+            deduction_health_ins=float(row[0].deduction_health_ins or 0),
+            deduction_unemployment=float(row[0].deduction_unemployment or 0),
+            deduction_other=float(row[0].deduction_other or 0),
+            allowance_phone=float(row[0].allowance_phone or 0),
+            allowance_other=float(row[0].allowance_other or 0),
+            notes=row[0].notes,
+            status=row[0].status or 'PENDING',
+            working_days=working_days_map.get(row[0].employee_id, 0)
         )
         for row in rows
     ]
 
 
-@router.post("/payroll/periods/{period_id}/approve")
+@router.post("/payroll/periods/{period_id}/approve",
+              dependencies=[Depends(require_permission("hr", "approve_payroll"))])
 async def approve_payroll(period_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Approve calculated payroll"""
     await set_tenant_context(db, str(tenant_id))
@@ -2598,26 +3316,27 @@ async def approve_payroll(period_id: UUID, tenant_id: UUID = Depends(get_current
     period.status = 'APPROVED'
     period.approved_at = datetime.now()
     
+    # Audit log
+    audit = PayrollAuditLogModel(
+        tenant_id=tenant_id,
+        period_id=period_id,
+        action='APPROVE',
+        period_name=period.period_name,
+        previous_status='CALCULATED',
+        new_status='APPROVED',
+    )
+    db.add(audit)
+    
     await db.commit()
     
-    # Sprint 17.2: Auto-create Journal Entry for payroll
-    try:
-        from backend.modules.finance.services.journal_service import JournalService
-        journal_service = JournalService(db, tenant_id=tenant_id)
-        await journal_service.create_journal_from_payroll(
-            payroll_period_id=period_id,
-            total_amount=period.total_net or Decimal(0),
-            payment_method="TRANSFER",
-            description=f"Chi lương kỳ {period.period_name}"
-        )
-    except Exception as e:
-        # Log error but don't fail the approval
-        print(f"Warning: Failed to create payroll journal entry: {e}")
+    # Note: Finance transaction + journal entry are created when user triggers PAY
+    # via POST /finance/auto-entries/from-payroll/{period_id}
     
     return {"message": "Payroll approved", "period_id": str(period_id)}
 
 
-@router.post("/payroll/periods/{period_id}/pay")
+@router.post("/payroll/periods/{period_id}/pay",
+              dependencies=[Depends(require_permission("hr", "approve_payroll"))])
 async def pay_payroll(period_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Mark payroll as paid"""
     await set_tenant_context(db, str(tenant_id))
@@ -2638,19 +3357,212 @@ async def pay_payroll(period_id: UUID, tenant_id: UUID = Depends(get_current_ten
     period.status = 'PAID'
     # Note: paid_at column may not exist yet, but we log the time
     
+    # Audit log
+    audit = PayrollAuditLogModel(
+        tenant_id=tenant_id,
+        period_id=period_id,
+        action='PAY',
+        period_name=period.period_name,
+        previous_status='APPROVED',
+        new_status='PAID',
+        details=f'Total net paid: {float(period.total_net or 0)}',
+    )
+    db.add(audit)
+    
     await db.commit()
     
     return {"message": "Payroll paid successfully", "period_id": str(period_id), "total_net": float(period.total_net or 0)}
 
 
+@router.delete("/payroll/periods/{period_id}",
+                dependencies=[Depends(require_permission("hr", "process_payroll"))])
+async def delete_payroll_period(period_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
+    """Delete a DRAFT payroll period"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    query = select(PayrollPeriodModel).where(
+        PayrollPeriodModel.id == period_id,
+        PayrollPeriodModel.tenant_id == tenant_id
+    )
+    result = await db.execute(query)
+    period = result.scalar_one_or_none()
+    
+    if not period:
+        raise HTTPException(status_code=404, detail="Payroll period not found")
+    
+    if period.status != 'DRAFT':
+        raise HTTPException(status_code=400, detail="Can only delete DRAFT periods")
+    
+    # Audit log before delete (period will be gone)
+    audit = PayrollAuditLogModel(
+        tenant_id=tenant_id,
+        period_id=None,  # Period will be deleted
+        action='DELETE',
+        period_name=period.period_name,
+        previous_status='DRAFT',
+        new_status=None,
+        details=f'Deleted DRAFT period {period.period_name}',
+    )
+    db.add(audit)
+    
+    await db.delete(period)
+    await db.commit()
+    
+    return {"message": "Period deleted", "period_id": str(period_id)}
+
+
+class ReopenPeriodRequest(BaseModel):
+    reason: str = ""
+
+@router.post("/payroll/periods/{period_id}/reopen",
+              dependencies=[Depends(require_permission("hr", "reopen_payroll"))])
+async def reopen_payroll_period(
+    period_id: UUID,
+    data: ReopenPeriodRequest = ReopenPeriodRequest(),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Reopen a CALCULATED, APPROVED, or PAID period back to DRAFT"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    query = select(PayrollPeriodModel).where(
+        PayrollPeriodModel.id == period_id,
+        PayrollPeriodModel.tenant_id == tenant_id
+    )
+    result = await db.execute(query)
+    period = result.scalar_one_or_none()
+    
+    if not period:
+        raise HTTPException(status_code=404, detail="Payroll period not found")
+    
+    if period.status not in ('CALCULATED', 'APPROVED', 'PAID'):
+        raise HTTPException(status_code=400, detail="Can only reopen CALCULATED, APPROVED, or PAID periods")
+    
+    # PAID periods require a reason
+    reason = data.reason.strip() if data.reason else ''
+    if period.status == 'PAID' and not reason:
+        raise HTTPException(status_code=400, detail="Reason is required to reopen a PAID period")
+    
+    old_status = period.status
+    
+    # GAP-5 FIX: Cleanup Finance data when reopening a PAID period
+    if old_status == 'PAID':
+        from sqlalchemy import text as sql_text
+        
+        # Find FinanceTransaction(s) linked to this payroll period
+        txn_result = await db.execute(sql_text(
+            "SELECT id, journal_id FROM finance_transactions "
+            "WHERE reference_id = :period_id AND reference_type = 'PAYROLL' AND tenant_id = :tenant_id"
+        ), {"period_id": str(period_id), "tenant_id": str(tenant_id)})
+        salary_txns = txn_result.fetchall()
+        
+        for txn in salary_txns:
+            txn_id = txn[0]
+            journal_id = txn[1]
+            
+            # 1. Delete FinanceTransaction first (has FK → journal)
+            await db.execute(sql_text(
+                "DELETE FROM finance_transactions WHERE id = :txn_id"
+            ), {"txn_id": str(txn_id)})
+            
+            # 2. Delete JournalLines + Journal
+            if journal_id:
+                await db.execute(sql_text(
+                    "DELETE FROM journal_lines WHERE journal_id = :jid"
+                ), {"jid": str(journal_id)})
+                await db.execute(sql_text(
+                    "DELETE FROM journals WHERE id = :jid"
+                ), {"jid": str(journal_id)})
+        
+        print(f"GAP-5: Cleaned up {len(salary_txns)} finance transactions for period {period_id}")
+    
+    # BUGFIX: BUG-20260221-001 - delete was only imported locally in calculate_payroll
+    from sqlalchemy import delete
+    # Delete all payroll items for this period
+    await db.execute(
+        delete(PayrollItemModel).where(PayrollItemModel.period_id == period_id)
+    )
+    
+    # Reset period to DRAFT
+    period.status = 'DRAFT'
+    period.total_employees = 0
+    period.total_gross = Decimal(0)
+    period.total_deductions = Decimal(0)
+    period.total_net = Decimal(0)
+    period.calculated_at = None
+    period.approved_at = None
+    
+    # Audit log with reason
+    details = f'Reopened period from {old_status} to DRAFT'
+    if reason:
+        details += f'. Reason: {reason}'
+    
+    audit = PayrollAuditLogModel(
+        tenant_id=tenant_id,
+        period_id=period_id,
+        action='REOPEN',
+        period_name=period.period_name,
+        previous_status=old_status,
+        new_status='DRAFT',
+        details=details,
+    )
+    db.add(audit)
+    
+    await db.commit()
+    
+    return {"message": "Period reopened", "period_id": str(period_id)}
+
+
+# --- Payroll Audit Log Endpoint ---
+
+@router.get("/payroll/audit-logs",
+             dependencies=[Depends(require_permission("hr", "view_payroll"))])
+async def get_payroll_audit_logs(
+    period_id: Optional[UUID] = None,
+    limit: int = 50,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get payroll audit trail with optional period filter"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    query = select(PayrollAuditLogModel).where(
+        PayrollAuditLogModel.tenant_id == tenant_id
+    ).order_by(PayrollAuditLogModel.action_at.desc()).limit(limit)
+    
+    if period_id:
+        query = query.where(PayrollAuditLogModel.period_id == period_id)
+    
+    result = await db.execute(query)
+    logs = result.scalars().all()
+    
+    return [
+        {
+            "id": str(log.id),
+            "period_id": str(log.period_id) if log.period_id else None,
+            "item_id": str(log.item_id) if log.item_id else None,
+            "action": log.action,
+            "action_by_name": log.action_by_name,
+            "action_at": log.action_at.isoformat() if log.action_at else None,
+            "period_name": log.period_name,
+            "employee_name": log.employee_name,
+            "details": log.details,
+            "previous_status": log.previous_status,
+            "new_status": log.new_status,
+        }
+        for log in logs
+    ]
+
+
 # --- Salary Advance Endpoints ---
 
-@router.post("/payroll/advances", response_model=SalaryAdvanceResponse)
+@router.post("/payroll/advances", response_model=SalaryAdvanceResponse,
+              dependencies=[Depends(require_permission("hr", "process_payroll"))])
 async def create_salary_advance(
     data: SalaryAdvanceCreate,
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)
 ):
-    """Create salary advance request"""
+    """Create salary advance request with max amount validation"""
     await set_tenant_context(db, str(tenant_id))
     
     # Verify employee
@@ -2664,10 +3576,26 @@ async def create_salary_advance(
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
     
+    # BUG-2 FIX: Validate total advances don't exceed base salary
+    max_advance = employee.base_salary if employee.base_salary else Decimal('8000000')
+    existing_query = select(func.coalesce(func.sum(SalaryAdvanceModel.amount), 0)).where(
+        SalaryAdvanceModel.employee_id == data.employee_id,
+        SalaryAdvanceModel.tenant_id == tenant_id,
+        SalaryAdvanceModel.status.in_(['PENDING', 'APPROVED', 'PAID'])
+    )
+    existing_total = Decimal(str((await db.execute(existing_query)).scalar() or 0))
+    new_amount = Decimal(str(data.amount))
+    
+    if existing_total + new_amount > max_advance:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tổng ứng lương ({float(existing_total + new_amount):,.0f}đ) vượt lương cơ bản ({float(max_advance):,.0f}đ)"
+        )
+    
     advance = SalaryAdvanceModel(
         tenant_id=tenant_id,
         employee_id=data.employee_id,
-        amount=Decimal(str(data.amount)),
+        amount=new_amount,
         reason=data.reason
     )
     
@@ -2688,7 +3616,8 @@ async def create_salary_advance(
     )
 
 
-@router.get("/payroll/advances", response_model=List[SalaryAdvanceResponse])
+@router.get("/payroll/advances", response_model=List[SalaryAdvanceResponse],
+             dependencies=[Depends(require_permission("hr", "view_payroll"))])
 async def list_salary_advances(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     employee_id: Optional[UUID] = Query(None),
@@ -2732,7 +3661,8 @@ async def list_salary_advances(
     ]
 
 
-@router.put("/payroll/advances/{advance_id}/approve")
+@router.put("/payroll/advances/{advance_id}/approve",
+             dependencies=[Depends(require_permission("hr", "approve_payroll"))])
 async def approve_salary_advance(advance_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Approve salary advance request"""
     await set_tenant_context(db, str(tenant_id))
@@ -2758,7 +3688,8 @@ async def approve_salary_advance(advance_id: UUID, tenant_id: UUID = Depends(get
     return {"message": "Advance approved", "id": str(advance_id)}
 
 
-@router.put("/payroll/advances/{advance_id}/pay")
+@router.put("/payroll/advances/{advance_id}/pay",
+             dependencies=[Depends(require_permission("hr", "approve_payroll"))])
 async def mark_advance_paid(advance_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Mark salary advance as paid"""
     await set_tenant_context(db, str(tenant_id))
@@ -2786,7 +3717,8 @@ async def mark_advance_paid(advance_id: UUID, tenant_id: UUID = Depends(get_curr
 
 # --- Payroll Stats ---
 
-@router.get("/payroll/stats")
+@router.get("/payroll/stats",
+             dependencies=[Depends(require_permission("hr", "view_payroll"))])
 async def get_payroll_stats(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get payroll statistics"""
     await set_tenant_context(db, str(tenant_id))
@@ -2820,6 +3752,174 @@ async def get_payroll_stats(tenant_id: UUID = Depends(get_current_tenant), db: A
         ],
         "pending_advances": pending_advances
     }
+
+
+# --- Employee Portal: My Payslips ---
+
+@router.get("/payroll/my-payslips")
+async def get_my_payslips(
+    current_user: CurrentUser = Depends(get_current_user),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(12, le=50)
+):
+    """Employee self-service: view own payslips across all periods"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    # Find employee linked to the current user
+    emp_query = select(EmployeeModel).where(
+        EmployeeModel.user_id == current_user.id,
+        EmployeeModel.tenant_id == tenant_id
+    )
+    emp_result = await db.execute(emp_query)
+    employee = emp_result.scalar_one_or_none()
+    
+    if not employee:
+        return {"employee": None, "payslips": [], "message": "No employee record linked to your account"}
+    
+    # Get payroll items for this employee, joined with period info
+    items_query = (
+        select(PayrollItemModel, PayrollPeriodModel)
+        .join(PayrollPeriodModel, PayrollItemModel.period_id == PayrollPeriodModel.id)
+        .where(
+            PayrollItemModel.employee_id == employee.id,
+            PayrollItemModel.tenant_id == tenant_id,
+            PayrollPeriodModel.status.in_(['CALCULATED', 'APPROVED', 'PAID'])
+        )
+        .order_by(PayrollPeriodModel.start_date.desc())
+        .limit(limit)
+    )
+    
+    items_result = await db.execute(items_query)
+    rows = items_result.all()
+    
+    payslips = []
+    for item, period in rows:
+        # GAP-P2: Count distinct working days for this employee in this period
+        from sqlalchemy import distinct
+        wd_query = select(func.count(distinct(TimesheetModel.work_date))).where(
+            TimesheetModel.tenant_id == tenant_id,
+            TimesheetModel.employee_id == employee.id,
+            TimesheetModel.work_date >= period.start_date,
+            TimesheetModel.work_date <= period.end_date,
+            TimesheetModel.status == 'APPROVED'
+        )
+        wd_result = await db.execute(wd_query)
+        working_days = wd_result.scalar() or 0
+        
+        payslips.append({
+            "period_id": str(period.id),
+            "period_name": period.period_name,
+            "period_status": period.status,
+            "start_date": period.start_date.isoformat(),
+            "end_date": period.end_date.isoformat(),
+            "working_days": working_days,
+            "regular_hours": float(item.regular_hours or 0),
+            "overtime_hours": float(item.overtime_hours or 0),
+            "weekend_hours": float(item.weekend_hours or 0),
+            "holiday_hours": float(item.holiday_hours or 0),
+            "base_amount": float(item.regular_pay or 0),
+            "ot_amount": float(item.overtime_pay or 0),
+            "allowance_total": float((item.allowance_meal or 0) + (item.allowance_transport or 0)),
+            "gross_salary": float(item.gross_salary or 0),
+            "deduction_social_ins": float(item.deduction_social_ins or 0),
+            "deduction_health_ins": float(item.deduction_health_ins or 0) if hasattr(item, 'deduction_health_ins') else 0,
+            "deduction_unemployment": float(item.deduction_unemployment or 0) if hasattr(item, 'deduction_unemployment') else 0,
+            "deduction_pit": float(item.deduction_pit or 0) if hasattr(item, 'deduction_pit') else 0,
+            "deduction_advance": float(item.deduction_advance or 0),
+            "total_deductions": float(item.total_deductions or 0),
+            "net_salary": float(item.net_salary or 0),
+        })
+    
+    return {
+        "employee": {
+            "id": str(employee.id),
+            "full_name": employee.full_name,
+            "role_type": employee.role_type,
+        },
+        "payslips": payslips
+    }
+
+
+# --- Auto-Generate Payroll Period ---
+
+class AutoGeneratePeriodRequest(BaseModel):
+    """Optional: specify which month to generate. Defaults to next month."""
+    year: Optional[int] = None
+    month: Optional[int] = None
+
+@router.post("/payroll/periods/auto-generate",
+              dependencies=[Depends(require_permission("hr", "process_payroll"))])
+async def auto_generate_payroll_period(
+    data: AutoGeneratePeriodRequest = AutoGeneratePeriodRequest(),
+    tenant_id: UUID = Depends(get_current_tenant),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Auto-generate a payroll period for the next month (or specified month)"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    import calendar as cal_mod
+    now = datetime.now(VN_TIMEZONE)
+    
+    # Determine target month
+    if data.year and data.month:
+        target_year, target_month = data.year, data.month
+    else:
+        # Default: next month from today
+        if now.month == 12:
+            target_year, target_month = now.year + 1, 1
+        else:
+            target_year, target_month = now.year, now.month + 1
+    
+    # Validate month
+    if target_month < 1 or target_month > 12:
+        raise HTTPException(status_code=400, detail="Invalid month")
+    
+    start_date = date(target_year, target_month, 1)
+    last_day = cal_mod.monthrange(target_year, target_month)[1]
+    end_date = date(target_year, target_month, last_day)
+    
+    period_name = f"Tháng {target_month:02d}/{target_year}"
+    
+    # Check if period already exists
+    existing = await db.execute(
+        select(PayrollPeriodModel).where(
+            PayrollPeriodModel.tenant_id == tenant_id,
+            PayrollPeriodModel.start_date == start_date,
+            PayrollPeriodModel.end_date == end_date,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"Payroll period '{period_name}' already exists")
+    
+    period = PayrollPeriodModel(
+        tenant_id=tenant_id,
+        period_name=period_name,
+        start_date=start_date,
+        end_date=end_date,
+        status='DRAFT',
+        total_employees=0,
+        total_gross=Decimal(0),
+        total_deductions=Decimal(0),
+        total_net=Decimal(0),
+    )
+    db.add(period)
+    
+    # Audit log
+    audit = PayrollAuditLogModel(
+        tenant_id=tenant_id,
+        period_id=period.id,
+        action='AUTO_GENERATE',
+        period_name=period_name,
+        details=f'Auto-generated payroll period {period_name}',
+    )
+    db.add(audit)
+    
+    await db.commit()
+    await db.refresh(period)
+    
+    return _period_to_response(period)
 
 
 # --- Helper Functions ---
@@ -2872,6 +3972,8 @@ class LeaveRequestCreate(BaseModel):
     start_date: str       # YYYY-MM-DD
     end_date: str         # YYYY-MM-DD
     reason: Optional[str] = None
+    is_half_day: bool = False
+    half_day_period: Optional[str] = None  # 'MORNING' | 'AFTERNOON'
 
 
 class LeaveRequestResponse(BaseModel):
@@ -2886,6 +3988,9 @@ class LeaveRequestResponse(BaseModel):
     status: str
     approved_at: Optional[datetime] = None
     created_at: datetime
+    is_half_day: bool = False
+    half_day_period: Optional[str] = None
+    rejection_reason: Optional[str] = None
 
 
 class LeaveBalanceResponse(BaseModel):
@@ -2899,7 +4004,8 @@ class LeaveBalanceResponse(BaseModel):
 
 # --- Leave Type Endpoints ---
 
-@router.get("/leave/types", response_model=List[LeaveTypeResponse])
+@router.get("/leave/types", response_model=List[LeaveTypeResponse],
+             dependencies=[Depends(require_permission("hr", "view_leave"))])
 async def list_leave_types(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get all leave types"""
     await set_tenant_context(db, str(tenant_id))
@@ -2932,7 +4038,8 @@ class LeaveCalendarDay(BaseModel):
     date: str  # YYYY-MM-DD
     employees: list[dict]  # [{employee_id, employee_name, leave_type, total_days}]
 
-@router.get("/leave/calendar", response_model=list[LeaveCalendarDay])
+@router.get("/leave/calendar", response_model=list[LeaveCalendarDay],
+             dependencies=[Depends(require_permission("hr", "view_leave"))])
 async def get_leave_calendar(
     month: str = Query(..., description="Month in YYYY-MM format"),
     tenant_id: UUID = Depends(get_current_tenant),
@@ -3075,7 +4182,18 @@ async def get_my_leave_balances(
                 remaining_days=float((b.entitled_days or 0) + (b.carry_over_days or 0) - (b.used_days or 0) - (b.pending_days or 0))
             ))
         else:
-            # Default balance from leave type
+            # GAP-L4: Auto-init balance record for this employee/year/leave_type
+            new_balance = LeaveBalanceModel(
+                tenant_id=tenant_id,
+                employee_id=employee.id,
+                leave_type_id=lt_id,
+                year=year,
+                entitled_days=lt.days_per_year or 0,
+                used_days=0,
+                pending_days=0,
+                carry_over_days=0
+            )
+            db.add(new_balance)
             result.append(LeaveBalanceResponse(
                 leave_type_code=lt.code,
                 leave_type_name=lt.name,
@@ -3084,6 +4202,9 @@ async def get_my_leave_balances(
                 pending_days=0,
                 remaining_days=float(lt.days_per_year or 0)
             ))
+    
+    # Commit auto-init balances if any were created
+    await db.commit()
     
     return result
 
@@ -3152,7 +4273,10 @@ async def get_my_leave_requests(
             reason=row[0].reason,
             status=row[0].status,
             approved_at=row[0].approved_at,
-            created_at=row[0].created_at
+            created_at=row[0].created_at,
+            is_half_day=row[0].is_half_day or False,
+            half_day_period=row[0].half_day_period,
+            rejection_reason=row[0].rejection_reason
         )
         for row in rows
     ]
@@ -3176,7 +4300,8 @@ class AllEmployeeLeaveBalanceResponse(BaseModel):
     remaining_days: float
 
 
-@router.get("/leave/balances", response_model=List[AllEmployeeLeaveBalanceResponse])
+@router.get("/leave/balances", response_model=List[AllEmployeeLeaveBalanceResponse],
+             dependencies=[Depends(require_permission("hr", "view_leave"))])
 async def list_all_leave_balances(
     year: int = Query(None),
     tenant_id: UUID = Depends(get_current_tenant),
@@ -3228,7 +4353,8 @@ async def list_all_leave_balances(
     ]
 
 
-@router.get("/leave/balances/{employee_id}", response_model=List[LeaveBalanceResponse])
+@router.get("/leave/balances/{employee_id}", response_model=List[LeaveBalanceResponse],
+             dependencies=[Depends(require_permission("hr", "view_leave"))])
 async def get_employee_leave_balance(
     employee_id: UUID,
     year: int = Query(None),
@@ -3286,20 +4412,21 @@ async def get_employee_leave_balance(
     return result
 
 
-@router.post("/leave/balances/initialize/{year}")
+@router.post("/leave/balances/initialize/{year}",
+              dependencies=[Depends(require_permission("hr", "view_leave"))])
 async def initialize_leave_balances(
     year: int,
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)
 ):
-    """Initialize leave balances for all fulltime employees for a year"""
+    """Initialize leave balances for all active employees for a year"""
     await set_tenant_context(db, str(tenant_id))
     
-    # Get all fulltime employees
+    # BUGFIX: BUG-20260226-005 — include ALL active employees (not just fulltime)
+    # All employees need leave balances for self-service and admin tracking
     emp_result = await db.execute(
         select(EmployeeModel).where(
             EmployeeModel.tenant_id == tenant_id,
-            EmployeeModel.is_active == True,
-            EmployeeModel.is_fulltime == True
+            EmployeeModel.is_active == True
         )
     )
     employees = emp_result.scalars().all()
@@ -3344,7 +4471,8 @@ async def initialize_leave_balances(
 
 # --- Leave Request Endpoints ---
 
-@router.get("/leave/requests", response_model=List[LeaveRequestResponse])
+@router.get("/leave/requests", response_model=List[LeaveRequestResponse],
+             dependencies=[Depends(require_permission("hr", "view_leave"))])
 async def list_leave_requests(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     employee_id: Optional[UUID] = Query(None),
@@ -3388,13 +4516,17 @@ async def list_leave_requests(
             reason=row[0].reason,
             status=row[0].status,
             approved_at=row[0].approved_at,
-            created_at=row[0].created_at
+            created_at=row[0].created_at,
+            is_half_day=row[0].is_half_day or False,
+            half_day_period=row[0].half_day_period,
+            rejection_reason=row[0].rejection_reason
         )
         for row in rows
     ]
 
 
-@router.post("/leave/requests", response_model=LeaveRequestResponse)
+@router.post("/leave/requests", response_model=LeaveRequestResponse,
+              dependencies=[Depends(require_permission("hr", "view_leave"))])
 async def create_leave_request(
     data: LeaveRequestCreate,
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)
@@ -3431,13 +4563,32 @@ async def create_leave_request(
     if end < start:
         raise HTTPException(status_code=400, detail="End date must be after start date")
     
-    # Calculate total days (excluding weekends)
-    total_days = 0
-    current = start
-    while current <= end:
-        if current.weekday() < 5:  # Mon-Fri
-            total_days += 1
-        current += timedelta(days=1)
+    # Calculate total days
+    if data.is_half_day:
+        # Half-day leave: 0.5 days, single day only
+        if start != end:
+            raise HTTPException(status_code=400, detail="Half-day leave must be for a single day")
+        if not data.half_day_period or data.half_day_period not in ('MORNING', 'AFTERNOON'):
+            raise HTTPException(status_code=400, detail="Half-day period must be MORNING or AFTERNOON")
+        total_days = 0.5
+    else:
+        # Full-day leave (excluding weekends + public holidays)
+        # Fetch holidays in date range
+        holiday_result = await db.execute(
+            select(VietnamHolidayModel.holiday_date).where(
+                VietnamHolidayModel.tenant_id == tenant_id,
+                VietnamHolidayModel.holiday_date >= start,
+                VietnamHolidayModel.holiday_date <= end
+            )
+        )
+        holiday_dates = set(row[0] for row in holiday_result.all())
+        
+        total_days = 0
+        current = start
+        while current <= end:
+            if current.weekday() < 5 and current not in holiday_dates:  # Mon-Fri, not holiday
+                total_days += 1
+            current += timedelta(days=1)
     
     # Check balance
     year = start.year
@@ -3468,6 +4619,8 @@ async def create_leave_request(
         end_date=end,
         total_days=total_days,
         reason=data.reason,
+        is_half_day=data.is_half_day,
+        half_day_period=data.half_day_period if data.is_half_day else None,
         status='APPROVED' if not leave_type.requires_approval else 'PENDING'
     )
     
@@ -3491,11 +4644,14 @@ async def create_leave_request(
         reason=request.reason,
         status=request.status,
         approved_at=request.approved_at,
-        created_at=request.created_at
+        created_at=request.created_at,
+        is_half_day=request.is_half_day or False,
+        half_day_period=request.half_day_period
     )
 
 
-@router.put("/leave/requests/{request_id}/approve")
+@router.put("/leave/requests/{request_id}/approve",
+             dependencies=[Depends(require_permission("hr", "approve_leave"))])
 async def approve_leave_request(
     request_id: UUID,
     comment: Optional[str] = Query(None, description="Approval comment"),
@@ -3596,7 +4752,8 @@ async def approve_leave_request(
     }
 
 
-@router.put("/leave/requests/{request_id}/reject")
+@router.put("/leave/requests/{request_id}/reject",
+             dependencies=[Depends(require_permission("hr", "approve_leave"))])
 async def reject_leave_request(
     request_id: UUID,
     reason: str = Query(..., description="Rejection reason"),
@@ -3694,6 +4851,93 @@ async def reject_leave_request(
     }
 
 
+# --- GAP-L1: Cancel Leave Request (Employee Self-Service) ---
+
+@router.put("/leave/requests/{request_id}/cancel")
+async def cancel_leave_request(
+    request_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    [EMPLOYEE SELF-SERVICE]
+    Cancel a pending leave request. Only the requesting employee can cancel.
+    Restores pending_days to balance.
+    """
+    await set_tenant_context(db, str(tenant_id))
+    
+    # Get the request
+    result = await db.execute(
+        select(LeaveRequestModel).where(
+            LeaveRequestModel.id == request_id,
+            LeaveRequestModel.tenant_id == tenant_id
+        )
+    )
+    request = result.scalar_one_or_none()
+    
+    if not request:
+        raise HTTPException(status_code=404, detail="Leave request not found")
+    
+    if request.status != 'PENDING':
+        raise HTTPException(status_code=400, detail="Chỉ có thể hủy đơn đang chờ duyệt")
+    
+    # Verify the current user owns this request
+    emp_result = await db.execute(
+        select(EmployeeModel).where(
+            EmployeeModel.tenant_id == tenant_id,
+            or_(
+                EmployeeModel.email == current_user.email,
+                EmployeeModel.phone == current_user.email
+            )
+        )
+    )
+    employee = emp_result.scalar_one_or_none()
+    
+    # Allow cancel if: owner of request OR admin/hr_manager
+    is_owner = employee and employee.id == request.employee_id
+    is_admin = current_user.role in ('super_admin', 'admin', 'hr_manager')
+    
+    if not is_owner and not is_admin:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền hủy đơn này")
+    
+    previous_status = request.status
+    request.status = 'CANCELLED'
+    
+    # Restore pending days in balance
+    balance_result = await db.execute(
+        select(LeaveBalanceModel).where(
+            LeaveBalanceModel.employee_id == request.employee_id,
+            LeaveBalanceModel.leave_type_id == request.leave_type_id,
+            LeaveBalanceModel.year == request.start_date.year
+        )
+    )
+    balance = balance_result.scalar_one_or_none()
+    
+    if balance:
+        balance.pending_days = max(0, (balance.pending_days or 0) - request.total_days)
+    
+    # Log to approval history
+    history = LeaveApprovalHistoryModel(
+        tenant_id=tenant_id,
+        leave_request_id=request_id,
+        action='CANCELLED',
+        action_by=current_user.id,
+        action_by_name=current_user.full_name or current_user.email,
+        comment='Nhân viên tự hủy đơn',
+        previous_status=previous_status,
+        new_status='CANCELLED'
+    )
+    db.add(history)
+    
+    await db.commit()
+    
+    return {
+        "message": "Đơn nghỉ phép đã được hủy",
+        "id": str(request_id)
+    }
+
+
 
 # --- Approval History Endpoint ---
 
@@ -3707,7 +4951,8 @@ class ApprovalHistoryResponse(BaseModel):
     new_status: str
 
 
-@router.get("/leave/requests/{request_id}/history", response_model=List[ApprovalHistoryResponse])
+@router.get("/leave/requests/{request_id}/history", response_model=List[ApprovalHistoryResponse],
+             dependencies=[Depends(require_permission("hr", "view_leave"))])
 async def get_leave_request_history(
     request_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -3740,7 +4985,8 @@ async def get_leave_request_history(
 
 # --- Leave Stats ---
 
-@router.get("/leave/stats")
+@router.get("/leave/stats",
+             dependencies=[Depends(require_permission("hr", "view_leave"))])
 async def get_leave_stats(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get leave statistics for dashboard"""
     await set_tenant_context(db, str(tenant_id))
@@ -3786,9 +5032,173 @@ async def get_leave_stats(tenant_id: UUID = Depends(get_current_tenant), db: Asy
     }
 
 
+# --- Phase 2: Team Calendar, Overlap Detection, Holidays ---
+
+@router.get("/leave/team-calendar",
+             dependencies=[Depends(require_permission("hr", "view_leave"))])
+async def get_leave_team_calendar(
+    year: int = Query(..., description="Year"),
+    month: int = Query(..., description="Month (1-12)"),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get team leave calendar for a specific month.
+    Returns approved + pending leave events grouped by employee.
+    """
+    import calendar as cal
+    await set_tenant_context(db, str(tenant_id))
+    
+    _, last_day = cal.monthrange(year, month)
+    month_start = date(year, month, 1)
+    month_end = date(year, month, last_day)
+    
+    # Get all leave requests overlapping this month
+    result = await db.execute(
+        select(LeaveRequestModel, EmployeeModel, LeaveTypeModel)
+        .join(EmployeeModel, LeaveRequestModel.employee_id == EmployeeModel.id)
+        .join(LeaveTypeModel, LeaveRequestModel.leave_type_id == LeaveTypeModel.id)
+        .where(
+            LeaveRequestModel.tenant_id == tenant_id,
+            LeaveRequestModel.status.in_(['PENDING', 'APPROVED']),
+            LeaveRequestModel.start_date <= month_end,
+            LeaveRequestModel.end_date >= month_start
+        )
+        .order_by(LeaveRequestModel.start_date)
+    )
+    
+    events = []
+    for row in result.all():
+        leave, emp, leave_type = row
+        events.append({
+            "id": str(leave.id),
+            "employee_id": str(emp.id),
+            "employee_name": emp.full_name,
+            "leave_type": leave_type.name,
+            "leave_type_code": leave_type.code,
+            "start_date": str(leave.start_date),
+            "end_date": str(leave.end_date),
+            "total_days": float(leave.total_days),
+            "status": leave.status,
+            "is_half_day": leave.is_half_day or False,
+            "half_day_period": leave.half_day_period,
+            "reason": leave.reason,
+        })
+    
+    # Get holidays in this month
+    holiday_result = await db.execute(
+        select(VietnamHolidayModel).where(
+            VietnamHolidayModel.tenant_id == tenant_id,
+            VietnamHolidayModel.holiday_date >= month_start,
+            VietnamHolidayModel.holiday_date <= month_end
+        )
+    )
+    holidays = [
+        {
+            "date": str(h.holiday_date),
+            "name": h.holiday_name,
+            "is_lunar": h.is_lunar or False
+        }
+        for h in holiday_result.scalars().all()
+    ]
+    
+    return {
+        "year": year,
+        "month": month,
+        "events": events,
+        "holidays": holidays
+    }
+
+
+@router.get("/leave/check-overlap",
+             dependencies=[Depends(require_permission("hr", "view_leave"))])
+async def check_leave_overlap(
+    employee_id: UUID = Query(..., description="Employee ID"),
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    exclude_request_id: Optional[UUID] = Query(None, description="Exclude this request (for edits)"),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Check if an employee has overlapping leave requests.
+    Returns overlapping requests for advisory warning.
+    """
+    await set_tenant_context(db, str(tenant_id))
+    
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    
+    query = (
+        select(LeaveRequestModel, LeaveTypeModel)
+        .join(LeaveTypeModel, LeaveRequestModel.leave_type_id == LeaveTypeModel.id)
+        .where(
+            LeaveRequestModel.tenant_id == tenant_id,
+            LeaveRequestModel.employee_id == employee_id,
+            LeaveRequestModel.status.in_(['PENDING', 'APPROVED']),
+            LeaveRequestModel.start_date <= end,
+            LeaveRequestModel.end_date >= start
+        )
+    )
+    
+    if exclude_request_id:
+        query = query.where(LeaveRequestModel.id != exclude_request_id)
+    
+    result = await db.execute(query)
+    overlapping = []
+    for row in result.all():
+        req, lt = row
+        overlapping.append({
+            "id": str(req.id),
+            "leave_type": lt.name,
+            "start_date": str(req.start_date),
+            "end_date": str(req.end_date),
+            "total_days": float(req.total_days),
+            "status": req.status,
+        })
+    
+    return {
+        "has_overlap": len(overlapping) > 0,
+        "overlapping_requests": overlapping
+    }
+
+
+@router.get("/holidays",
+             dependencies=[Depends(require_permission("hr", "view"))])
+async def get_holidays(
+    year: int = Query(..., description="Year"),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get public holidays for a year"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    result = await db.execute(
+        select(VietnamHolidayModel).where(
+            VietnamHolidayModel.tenant_id == tenant_id,
+            VietnamHolidayModel.year == year
+        ).order_by(VietnamHolidayModel.holiday_date)
+    )
+    holidays = result.scalars().all()
+    
+    return [
+        {
+            "id": str(h.id),
+            "date": str(h.holiday_date),
+            "name": h.holiday_name,
+            "is_lunar": h.is_lunar or False
+        }
+        for h in holidays
+    ]
+
+
 # ============ CALENDAR INTEGRATION ============
 
-@router.get("/calendar/events")
+@router.get("/calendar/events",
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_calendar_events(
     from_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
     to_date: str = Query(..., description="End date (YYYY-MM-DD)"),
@@ -3950,7 +5360,8 @@ async def get_calendar_events(
     }
 
 
-@router.get("/calendar/employee-availability")
+@router.get("/calendar/employee-availability",
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_employee_availability(
     date: str = Query(..., description="Date to check (YYYY-MM-DD)"),
     tenant_id: UUID = Depends(get_current_tenant),
@@ -4053,7 +5464,8 @@ async def get_employee_availability(
 # SPRINT 18.1: UNIFIED STAFF ASSIGNMENTS
 # ============================================
 
-@router.get("/unified-assignments")
+@router.get("/unified-assignments",
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def get_unified_staff_assignments(
     staff_id: Optional[UUID] = Query(None, description="Filter by staff_id (users table)"),
     employee_id: Optional[UUID] = Query(None, description="Filter by employee_id (employees table)"),
@@ -4099,7 +5511,8 @@ async def get_unified_staff_assignments(
     }
 
 
-@router.get("/unified-conflicts/{staff_id}")
+@router.get("/unified-conflicts/{staff_id}",
+             dependencies=[Depends(require_permission("hr", "view"))])
 async def check_unified_conflicts(
     staff_id: UUID,
     check_date: str = Query(..., description="Date to check (YYYY-MM-DD)"),
@@ -4161,6 +5574,8 @@ class PayrollSettingsResponse(BaseModel):
     # Hours config
     standard_working_days_per_month: int
     standard_hours_per_day: int
+    # Finance integration
+    default_labor_cost_ratio: float  # 0.15 = 15% labor cost fallback for P&L
     
     class Config:
         from_attributes = True
@@ -4186,9 +5601,12 @@ class PayrollSettingsUpdate(BaseModel):
     # Hours config
     standard_working_days_per_month: Optional[int] = None
     standard_hours_per_day: Optional[int] = None
+    # Finance integration
+    default_labor_cost_ratio: Optional[float] = None  # 0.15 = 15%
 
 
-@router.get("/payroll/settings", response_model=PayrollSettingsResponse)
+@router.get("/payroll/settings", response_model=PayrollSettingsResponse,
+             dependencies=[Depends(require_permission("hr", "view_payroll"))])
 async def get_payroll_settings(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db)
@@ -4226,11 +5644,13 @@ async def get_payroll_settings(
         multiplier_holiday=float(settings.multiplier_holiday or 0),
         multiplier_night=float(settings.multiplier_night or 0),
         standard_working_days_per_month=int(settings.standard_working_days_per_month or 26),
-        standard_hours_per_day=int(settings.standard_hours_per_day or 8)
+        standard_hours_per_day=int(settings.standard_hours_per_day or 8),
+        default_labor_cost_ratio=float(settings.default_labor_cost_ratio or 0.15)
     )
 
 
-@router.put("/payroll/settings", response_model=PayrollSettingsResponse)
+@router.put("/payroll/settings", response_model=PayrollSettingsResponse,
+             dependencies=[Depends(require_permission("hr", "process_payroll"))])
 async def update_payroll_settings(
     payload: PayrollSettingsUpdate,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -4275,7 +5695,8 @@ async def update_payroll_settings(
         multiplier_holiday=float(settings.multiplier_holiday or 0),
         multiplier_night=float(settings.multiplier_night or 0),
         standard_working_days_per_month=int(settings.standard_working_days_per_month or 26),
-        standard_hours_per_day=int(settings.standard_hours_per_day or 8)
+        standard_hours_per_day=int(settings.standard_hours_per_day or 8),
+        default_labor_cost_ratio=float(settings.default_labor_cost_ratio or 0.15)
     )
 
 
@@ -4284,8 +5705,10 @@ async def update_payroll_settings(
 # ============================================
 
 class PayrollItemUpdate(BaseModel):
-    """For updating bonus and notes on payroll items"""
+    """For updating bonus, deductions and notes on payroll items"""
     bonus: Optional[float] = None
+    deduction_advance: Optional[float] = None
+    deduction_other: Optional[float] = None
     notes: Optional[str] = None
 
 
@@ -4300,7 +5723,8 @@ class PayrollItemUpdateResponse(BaseModel):
     net_salary: float
 
 
-@router.patch("/payroll-item/{item_id}", response_model=PayrollItemUpdateResponse)
+@router.patch("/payroll-item/{item_id}", response_model=PayrollItemUpdateResponse,
+               dependencies=[Depends(require_permission("hr", "process_payroll"))])
 async def update_payroll_item(
     item_id: UUID,
     payload: PayrollItemUpdate,
@@ -4335,13 +5759,31 @@ async def update_payroll_item(
     # Update fields
     if payload.bonus is not None:
         item.bonus = Decimal(str(payload.bonus))
+    if payload.deduction_advance is not None:
+        item.deduction_advance = Decimal(str(payload.deduction_advance))
+    if payload.deduction_other is not None:
+        item.deduction_other = Decimal(str(payload.deduction_other))
     if payload.notes is not None:
         item.notes = payload.notes
     
-    # Recalculate net_salary (gross_salary is GENERATED column, will auto-update)
-    # For now, we calculate it manually since we update bonus
+    # Commit to recalculate generated columns (gross_salary, total_deductions)
     await db.commit()
     await db.refresh(item)
+    
+    # Recalculate net_salary = gross_salary - total_deductions
+    item.net_salary = (item.gross_salary or Decimal(0)) - (item.total_deductions or Decimal(0))
+    await db.commit()
+    await db.refresh(item)
+    
+    # Update period totals
+    if period:
+        items_query = select(PayrollItemModel).where(PayrollItemModel.period_id == period.id)
+        items_result = await db.execute(items_query)
+        all_items = items_result.scalars().all()
+        period.total_gross = sum(i.gross_salary or Decimal(0) for i in all_items)
+        period.total_deductions = sum(i.total_deductions or Decimal(0) for i in all_items)
+        period.total_net = sum(i.net_salary or Decimal(0) for i in all_items)
+        await db.commit()
     
     # Get employee name
     emp_query = select(EmployeeModel).where(EmployeeModel.id == item.employee_id)

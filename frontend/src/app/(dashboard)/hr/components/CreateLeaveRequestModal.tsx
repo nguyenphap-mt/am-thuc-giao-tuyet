@@ -22,7 +22,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { IconCalendar, IconLoader2, IconBeach } from '@tabler/icons-react';
+import { IconCalendar, IconLoader2, IconBeach, IconAlertTriangle } from '@tabler/icons-react';
 
 interface Employee {
     id: string;
@@ -48,6 +48,8 @@ interface LeaveRequestPayload {
     start_date: string;
     end_date: string;
     reason: string;
+    is_half_day?: boolean;
+    half_day_period?: 'MORNING' | 'AFTERNOON';
 }
 
 export default function CreateLeaveRequestModal({
@@ -63,28 +65,48 @@ export default function CreateLeaveRequestModal({
         start_date: '',
         end_date: '',
         reason: '',
+        is_half_day: false,
+        half_day_period: undefined,
     });
 
-    // [SELF-SERVICE] Fetch current user's employee record
-    const { data: currentEmployee } = useQuery({
-        queryKey: ['current-employee', user?.email],
+    // Overlap detection: fetch approved requests
+    interface ApprovedRequest { start_date: string; end_date: string; leave_type_name: string; }
+    const { data: approvedRequests } = useQuery({
+        queryKey: ['leave-approved', isEmployeeSelfService],
         queryFn: async () => {
-            const result = await api.get<{ items: Employee[] } | Employee[]>(`/hr/employees?is_active=true&limit=100`);
-            const employees = Array.isArray(result) ? result : result.items || [];
-            // Find employee matching current user's email
-            return employees.find(e =>
-                e.full_name?.toLowerCase().includes(user?.full_name?.split(' ').pop()?.toLowerCase() || '')
-            ) || employees[0]; // Fallback to first employee if not found
+            const endpoint = isEmployeeSelfService ? '/hr/leave/self/my-requests' : '/hr/leave/my-requests';
+            const all = await api.get<any[]>(endpoint);
+            return (all || []).filter((r: any) => r.status === 'APPROVED') as ApprovedRequest[];
         },
-        enabled: open && isEmployeeSelfService,
+        enabled: open,
     });
+
+    // Compute overlap warnings
+    const overlapWarnings = (() => {
+        if (!formData.start_date || !approvedRequests?.length) return [];
+        const reqStart = new Date(formData.start_date);
+        const reqEnd = formData.end_date ? new Date(formData.end_date) : reqStart;
+        return approvedRequests.filter(r => {
+            const aStart = new Date(r.start_date);
+            const aEnd = new Date(r.end_date);
+            return reqStart <= aEnd && reqEnd >= aStart;
+        });
+    })();
+
+    // [SELF-SERVICE] Use current user info from auth store (no HR-only API call needed)
+    // BUGFIX: BUG-20260226-004 — was calling /hr/employees which returns 403 for non-HR users
+    const currentEmployeeId = isEmployeeSelfService ? String(user?.id || '') : '';
+    const currentEmployeeName = isEmployeeSelfService ? (user?.full_name || user?.email || '') : '';
 
     // Auto-fill employee_id when in self-service mode
     useEffect(() => {
-        if (isEmployeeSelfService && currentEmployee) {
-            setFormData(prev => ({ ...prev, employee_id: currentEmployee.id }));
+        if (isEmployeeSelfService && currentEmployeeId) {
+            setFormData(prev => {
+                if (prev.employee_id === currentEmployeeId) return prev; // Prevent re-render
+                return { ...prev, employee_id: currentEmployeeId };
+            });
         }
-    }, [isEmployeeSelfService, currentEmployee]);
+    }, [isEmployeeSelfService, currentEmployeeId]);
 
     // Fetch employees for dropdown (HR mode only)
     const { data: employees } = useQuery({
@@ -96,17 +118,23 @@ export default function CreateLeaveRequestModal({
         enabled: open && !isEmployeeSelfService,
     });
 
-    // Fetch leave types
+    // Fetch leave types — use self-service for non-HR users
     const { data: leaveTypes } = useQuery({
-        queryKey: ['leave-types'],
+        queryKey: ['leave-types', isEmployeeSelfService],
         queryFn: async () => {
-            return await api.get<LeaveType[]>('/hr/leave/types');
+            const endpoint = isEmployeeSelfService ? '/hr/leave/self/types' : '/hr/leave/types';
+            return await api.get<LeaveType[]>(endpoint);
         },
         enabled: open,
     });
 
     const createMutation = useMutation({
         mutationFn: async (data: LeaveRequestPayload) => {
+            if (isEmployeeSelfService) {
+                // Self-service: POST without employee_id
+                const { employee_id, ...selfPayload } = data;
+                return api.post('/hr/leave/self/my-requests', selfPayload);
+            }
             return api.post('/hr/leave/requests', data);
         },
         onSuccess: () => {
@@ -127,6 +155,8 @@ export default function CreateLeaveRequestModal({
             start_date: '',
             end_date: '',
             reason: '',
+            is_half_day: false,
+            half_day_period: undefined,
         });
     };
 
@@ -175,11 +205,11 @@ export default function CreateLeaveRequestModal({
                             /* Self-Service Mode: Show current user's info (read-only) */
                             <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-md border">
                                 <div className="flex items-center gap-3">
-                                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center text-white font-medium">
+                                    <div className="h-10 w-10 rounded-full bg-accent-gradient-br to-purple-500 flex items-center justify-center text-white font-medium">
                                         {user?.full_name?.charAt(0) || 'N'}
                                     </div>
                                     <div>
-                                        <p className="font-medium">{user?.full_name || currentEmployee?.full_name || 'Nhân viên'}</p>
+                                        <p className="font-medium">{user?.full_name || currentEmployeeName || 'Nhân viên'}</p>
                                         <p className="text-sm text-gray-500 dark:text-gray-400">{user?.email}</p>
                                     </div>
                                 </div>
@@ -234,8 +264,11 @@ export default function CreateLeaveRequestModal({
                             <input
                                 type="date"
                                 value={formData.start_date}
-                                onChange={(e) => handleChange('start_date', e.target.value)}
-                                className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                onChange={(e) => {
+                                    handleChange('start_date', e.target.value);
+                                    if (formData.is_half_day) handleChange('end_date', e.target.value);
+                                }}
+                                className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-accent"
                             />
                         </div>
                         <div className="space-y-2">
@@ -247,10 +280,82 @@ export default function CreateLeaveRequestModal({
                                 type="date"
                                 value={formData.end_date}
                                 onChange={(e) => handleChange('end_date', e.target.value)}
-                                className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                disabled={formData.is_half_day}
+                                className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
                             />
                         </div>
                     </div>
+
+                    {/* Half-day Toggle */}
+                    <div className="flex items-center gap-3 p-3 rounded-lg border bg-gray-50/50">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={formData.is_half_day || false}
+                                onChange={(e) => {
+                                    const halfDay = e.target.checked;
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        is_half_day: halfDay,
+                                        half_day_period: halfDay ? 'MORNING' : undefined,
+                                        end_date: halfDay ? prev.start_date : prev.end_date,
+                                    }));
+                                }}
+                                className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:bg-blue-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
+                        </label>
+                        <span className="text-sm font-medium text-gray-700">
+                            Nghỉ nửa ngày (0.5 ngày)
+                        </span>
+                        {formData.is_half_day && (
+                            <div className="flex gap-2 ml-auto">
+                                <label className={`px-3 py-1 rounded-full text-xs font-medium cursor-pointer transition-colors ${formData.half_day_period === 'MORNING'
+                                    ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
+                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                    }`}>
+                                    <input
+                                        type="radio"
+                                        name="half_day_period"
+                                        value="MORNING"
+                                        checked={formData.half_day_period === 'MORNING'}
+                                        onChange={() => setFormData(prev => ({ ...prev, half_day_period: 'MORNING' }))}
+                                        className="sr-only"
+                                    />
+                                    Buổi sáng
+                                </label>
+                                <label className={`px-3 py-1 rounded-full text-xs font-medium cursor-pointer transition-colors ${formData.half_day_period === 'AFTERNOON'
+                                    ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
+                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                    }`}>
+                                    <input
+                                        type="radio"
+                                        name="half_day_period"
+                                        value="AFTERNOON"
+                                        checked={formData.half_day_period === 'AFTERNOON'}
+                                        onChange={() => setFormData(prev => ({ ...prev, half_day_period: 'AFTERNOON' }))}
+                                        className="sr-only"
+                                    />
+                                    Buổi chiều
+                                </label>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Overlap Warning */}
+                    {overlapWarnings.length > 0 && (
+                        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                            <IconAlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                            <div className="text-sm text-amber-700">
+                                <p className="font-medium">⚠️ Trùng lịch nghỉ phép!</p>
+                                {overlapWarnings.map((r, i) => (
+                                    <p key={i} className="text-xs mt-0.5">
+                                        Bạn đã có đơn nghỉ &quot;{r.leave_type_name}&quot; từ {new Date(r.start_date).toLocaleDateString('vi-VN')} đến {new Date(r.end_date).toLocaleDateString('vi-VN')}
+                                    </p>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Reason */}
                     <div className="space-y-2">
@@ -275,7 +380,7 @@ export default function CreateLeaveRequestModal({
                         <Button
                             type="submit"
                             disabled={createMutation.isPending}
-                            className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500"
+                            className="bg-accent-gradient"
                         >
                             {createMutation.isPending ? (
                                 <>

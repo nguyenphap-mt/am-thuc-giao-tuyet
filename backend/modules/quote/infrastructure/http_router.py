@@ -22,8 +22,36 @@ from backend.modules.order.domain.models import OrderModel, OrderItemModel, Orde
 from backend.modules.crm.application.services import CrmIntegrationService
 from backend.common.utils.code_generator import generate_quote_code, generate_order_code
 
+import logging
+import json
 
 router = APIRouter(tags=["Quote Management"])
+
+# GAP-Q5: Structured audit logging for quote module
+logger = logging.getLogger("quote.audit")
+
+def _log_quote_audit(
+    action: str,
+    entity_id: str = None,
+    entity_code: str = None,
+    details: str = None,
+    extra: dict = None,
+):
+    """Non-blocking structured audit log for quote actions.
+    Uses Python logging (JSON) — no separate DB table needed."""
+    try:
+        log_data = {
+            "module": "quote",
+            "action": action,
+            "entity_id": entity_id,
+            "entity_code": entity_code,
+            "details": details,
+        }
+        if extra:
+            log_data.update(extra)
+        logger.info(f"AUDIT: {action} | {json.dumps(log_data, ensure_ascii=False, default=str)}")
+    except Exception:
+        pass  # Non-blocking — never fail the user operation
 
 
 
@@ -33,7 +61,8 @@ async def list_quotes(
     db: AsyncSession = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    status: Optional[str] = None
+    status: Optional[str] = None,
+    _rbac: None = Depends(require_permission("quote:read"))  # ISS-003: RBAC
 ):
     """Get all quotes from PostgreSQL"""
     query = select(QuoteModel).where(QuoteModel.tenant_id == tenant_id)
@@ -54,7 +83,8 @@ async def list_quotes(
 async def get_expiring_quotes(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db), 
-    days: int = 3
+    days: int = 3,
+    _rbac: None = Depends(require_permission("quote:read"))  # ISS-003: RBAC
 ):
     """
     Get quotes expiring within N days.
@@ -92,7 +122,8 @@ async def list_templates_early(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
     event_type: Optional[str] = None,
-    active_only: bool = True
+    active_only: bool = True,
+    _rbac: None = Depends(require_permission("quote:read"))  # ISS-003: RBAC
 ):
     """List all quote templates - EARLY ROUTE to avoid /{quote_id} conflict"""
     query = select(QuoteTemplateModel).where(QuoteTemplateModel.tenant_id == tenant_id)
@@ -111,7 +142,8 @@ async def list_templates_early(
 async def get_template_early(
     template_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _rbac: None = Depends(require_permission("quote:read"))  # ISS-003: RBAC
 ):
     """Get a single template by ID - EARLY ROUTE"""
     result = await db.execute(
@@ -126,7 +158,7 @@ async def get_template_early(
     return template
 
 @router.get("/{quote_id}", response_model=Quote)
-async def get_quote(quote_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
+async def get_quote(quote_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db), _rbac: None = Depends(require_permission("quote:read"))):
     """Get specific quote by ID"""
     query = select(QuoteModel).where(
         QuoteModel.id == quote_id,
@@ -144,7 +176,7 @@ async def get_quote(quote_id: UUID, tenant_id: UUID = Depends(get_current_tenant
     return quote
 
 @router.post("", response_model=Quote)
-async def create_quote(data: QuoteBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
+async def create_quote(data: QuoteBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db), _rbac: None = Depends(require_permission("quote:create"))):
     """Create new quote in PostgreSQL"""
     
     # Note: BR002 removed - allow draft quotes without items (items added in Step 2)
@@ -161,8 +193,8 @@ async def create_quote(data: QuoteBase, tenant_id: UUID = Depends(get_current_te
         )
         
         # BUGFIX: BUG-20260202-004 - Use centralized code generator
-        # Generate unique quote code: BG-YYYYNNNNNNN
-        quote_code = generate_quote_code()
+        # Generate unique quote code: BG-ddmmyy***
+        quote_code = await generate_quote_code(db)
         
         new_quote = QuoteModel(
             tenant_id=tenant_id,
@@ -241,6 +273,9 @@ async def create_quote(data: QuoteBase, tenant_id: UUID = Depends(get_current_te
         result = await db.execute(query)
         created_quote = result.scalar_one()
         
+        # GAP-Q5: Audit log
+        _log_quote_audit("QUOTE_CREATE", str(created_quote.id), created_quote.code, f"Created with {len(data.items)} items")
+        
         return created_quote
     except Exception as e:
         await db.rollback()
@@ -278,6 +313,9 @@ async def delete_quote(
     try:
         await db.delete(quote)
         await db.commit()
+        
+        # GAP-Q5: Audit log
+        _log_quote_audit("QUOTE_DELETE", str(quote_id), quote.code, "Deleted")
     except Exception as e:
         await db.rollback()
         # Check for Foreign Key violation (Quote referenced by Order)
@@ -293,7 +331,7 @@ async def delete_quote(
         raise HTTPException(status_code=500, detail="Lỗi hệ thống khi xóa báo giá")
 
 @router.put("/{quote_id}", response_model=Quote)
-async def update_quote(quote_id: UUID, data: QuoteBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
+async def update_quote(quote_id: UUID, data: QuoteBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db), _rbac: None = Depends(require_permission("quote:update"))):
     """Update existing quote (Full Update)"""
     # 1. Get Quote
     query = select(QuoteModel).where(
@@ -356,6 +394,9 @@ async def update_quote(quote_id: UUID, data: QuoteBase, tenant_id: UUID = Depend
     await db.commit()
     await db.refresh(quote)
     
+    # GAP-Q5: Audit log
+    _log_quote_audit("QUOTE_UPDATE", str(quote.id), quote.code, f"Updated status={quote.status}")
+    
     # CRM Hook: Recalculate Stats (For Potential/Lost logic based on quotes)
     if quote.customer_id:
         await CrmIntegrationService.recalculate_stats(db, tenant_id, quote.customer_id)
@@ -375,7 +416,8 @@ async def mark_quote_as_lost(
     quote_id: UUID,
     data: MarkLostRequest,
     tenant_id: UUID = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _rbac: None = Depends(require_permission("quote:update"))  # ISS-003: RBAC
 ):
     """
     Mark a quote as LOST (declined by customer).
@@ -419,6 +461,9 @@ async def mark_quote_as_lost(
         )
         await CrmIntegrationService.recalculate_stats(db, tenant_id, quote.customer_id)
     
+    # GAP-Q5: Audit log
+    _log_quote_audit("QUOTE_MARK_LOST", str(quote.id), quote.code, f"Marked LOST. Reason: {data.reason or 'N/A'}")
+    
     return {
         "success": True,
         "message": f"Đã đánh dấu báo giá {quote.code} là 'Không chốt'",
@@ -434,7 +479,7 @@ async def mark_quote_as_lost(
 # ============ CLONE QUOTE (Phase 14.2) ============
 
 @router.post("/{quote_id}/clone")
-async def clone_quote(quote_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
+async def clone_quote(quote_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db), _rbac: None = Depends(require_permission("quote:clone"))):
     """
     Clone an existing quote.
     - Copies all items and services
@@ -459,7 +504,7 @@ async def clone_quote(quote_id: UUID, tenant_id: UUID = Depends(get_current_tena
     try:
         # BUGFIX: BUG-20260202-004 - Use centralized code generator
         # 2. Generate new quote code
-        new_code = generate_quote_code()
+        new_code = await generate_quote_code(db)
         
         # 3. Create cloned quote - clear customer info, reset status
         cloned_quote = QuoteModel(
@@ -534,6 +579,9 @@ async def clone_quote(quote_id: UUID, tenant_id: UUID = Depends(get_current_tena
         ).options(selectinload(QuoteModel.items), selectinload(QuoteModel.services))
         result = await db.execute(query)
         final_quote = result.scalar_one()
+        
+        # GAP-Q5: Audit log
+        _log_quote_audit("QUOTE_CLONE", str(final_quote.id), new_code, f"Cloned from {source_quote.code}")
         
         return {
             "success": True,
@@ -613,8 +661,8 @@ async def convert_quote_to_order(
     
     try:
         # BUGFIX: BUG-20260202-004 - Use centralized code generator
-        # 5. Generate order code: DH-YYYYNNNNNN
-        order_code = generate_order_code()
+        # 5. Generate order code: ĐH-ddmmyy***
+        order_code = await generate_order_code(db)
         
         # BUGFIX: BUG-20260203-002 - Lookup cost_price from menu_items
         # Batch fetch cost prices for all quote items that have menu_item_id
@@ -767,11 +815,15 @@ async def convert_quote_to_order(
             "quote_code": quote.code
         }
         
+        
         # Add deposit transfer info if applicable
         if old_order and deposit_amount > 0:
             response["deposit_transferred"] = float(deposit_amount)
             response["old_order_code"] = old_order.code
             response["old_order_cancelled"] = True
+        
+        # GAP-Q5: Audit log
+        _log_quote_audit("QUOTE_CONVERT", str(quote.id), quote.code, f"Converted to order {order_code}")
         
         return response
         
@@ -785,14 +837,14 @@ async def convert_quote_to_order(
 # --- Note Presets Endpoints ---
 
 @router.get("/notes/presets", response_model=List[QuoteNotePreset])
-async def list_note_presets(db: AsyncSession = Depends(get_db)):
+async def list_note_presets(db: AsyncSession = Depends(get_db), _rbac: None = Depends(require_permission("quote:read"))):
     """Get all note presets"""
     query = select(QuoteNotePresetModel).order_by(desc(QuoteNotePresetModel.created_at))
     result = await db.execute(query)
     return result.scalars().all()
 
 @router.post("/notes/presets", response_model=QuoteNotePreset)
-async def create_note_preset(data: QuoteNotePresetCreate, db: AsyncSession = Depends(get_db)):
+async def create_note_preset(data: QuoteNotePresetCreate, db: AsyncSession = Depends(get_db), _rbac: None = Depends(require_permission("quote:create"))):
     """Create a new note preset"""
     # Check if exists
     query = select(QuoteNotePresetModel).where(QuoteNotePresetModel.content == data.content)
@@ -810,7 +862,8 @@ async def create_note_preset(data: QuoteNotePresetCreate, db: AsyncSession = Dep
 @router.delete("/notes/presets/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_note_preset(
     note_id: UUID,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _rbac: None = Depends(require_permission("quote:delete"))  # ISS-003: RBAC
 ):
     """
     Delete a note preset (super_admin only in production).
@@ -838,7 +891,8 @@ async def delete_note_preset(
 async def create_template(
     data: QuoteTemplateCreate,
     tenant_id: UUID = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _rbac: None = Depends(require_permission("quote:create"))  # ISS-003: RBAC
 ):
     """Create a new quote template"""
     # Convert items/services to dict for JSONB storage
@@ -860,6 +914,10 @@ async def create_template(
     db.add(template)
     await db.commit()
     await db.refresh(template)
+    
+    # GAP-Q5: Audit log
+    _log_quote_audit("TEMPLATE_CREATE", str(template.id), template.name, "Template created")
+    
     return template
 
 
@@ -868,7 +926,8 @@ async def update_template(
     template_id: UUID,
     data: QuoteTemplateUpdate,
     tenant_id: UUID = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _rbac: None = Depends(require_permission("quote:update"))  # ISS-003: RBAC
 ):
     """Update an existing template"""
     result = await db.execute(
@@ -903,6 +962,10 @@ async def update_template(
     
     await db.commit()
     await db.refresh(template)
+    
+    # GAP-Q5: Audit log
+    _log_quote_audit("TEMPLATE_UPDATE", str(template.id), template.name, "Template updated")
+    
     return template
 
 
@@ -910,7 +973,8 @@ async def update_template(
 async def delete_template(
     template_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _rbac: None = Depends(require_permission("quote:delete"))  # ISS-003: RBAC
 ):
     """Delete a template (soft delete - set inactive)"""
     result = await db.execute(
@@ -927,6 +991,9 @@ async def delete_template(
     template.is_active = False
     await db.commit()
     
+    # GAP-Q5: Audit log
+    _log_quote_audit("TEMPLATE_DELETE", str(template.id), template.name, "Template soft-deleted")
+    
     return {"message": "Template deleted successfully"}
 
 
@@ -934,7 +1001,8 @@ async def delete_template(
 async def apply_template(
     template_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _rbac: None = Depends(require_permission("quote:create"))  # ISS-003: RBAC - applying template creates a new quote
 ):
     """Apply a template to create a new draft quote"""
     # Get template
@@ -949,9 +1017,8 @@ async def apply_template(
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
     
-    # Generate quote code
-    from datetime import datetime
-    code = f"BG-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    # Generate quote code: BG-ddmmyy***
+    code = await generate_quote_code(db)
     
     # Create quote from template
     new_quote = QuoteModel(

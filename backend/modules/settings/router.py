@@ -12,8 +12,12 @@ from pydantic import BaseModel
 
 from backend.core.database import get_db
 from backend.core.dependencies import get_current_tenant
+from backend.core.auth.permissions import require_permission
 from backend.modules.settings.domain.models import TenantSettingModel
 from backend.modules.settings.services.settings_service import SettingsService
+
+# System-level setting key prefixes that require settings:edit_system permission
+SYSTEM_SETTING_PREFIXES = ('order.', 'crm.', 'finance.', 'hr.', 'inventory.', 'quote.')
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
@@ -94,9 +98,14 @@ async def update_setting(
     key: str,
     data: SettingUpdate,
     tenant_id: UUID = Depends(get_current_tenant),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _perm_edit: None = Depends(require_permission("settings", "edit")),
 ):
-    """Update a setting value"""
+    """Update a setting value.
+    
+    System-level keys (order.*, crm.*, finance.*, hr.*, inventory.*, quote.*)
+    additionally require settings:edit_system permission.
+    """
     result = await db.execute(
         select(TenantSettingModel).where(
             TenantSettingModel.tenant_id == tenant_id,
@@ -171,7 +180,8 @@ async def get_auto_import_setting(
     return {"enabled": enabled, "key": "inventory.auto_import_from_po"}
 
 
-@router.put("/inventory/auto-import")
+@router.put("/inventory/auto-import",
+            dependencies=[Depends(require_permission("settings", "edit_system"))])
 async def set_auto_import_setting(
     enabled: bool,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -198,7 +208,8 @@ async def get_hr_sync_setting(
     return {"enabled": enabled, "key": "hr.sync_order_assignments"}
 
 
-@router.put("/hr/sync-assignments")
+@router.put("/hr/sync-assignments",
+            dependencies=[Depends(require_permission("settings", "edit_system"))])
 async def set_hr_sync_setting(
     enabled: bool,
     tenant_id: UUID = Depends(get_current_tenant),

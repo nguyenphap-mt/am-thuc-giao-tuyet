@@ -12,11 +12,13 @@ from sqlalchemy import select, cast, Date, and_
 
 from backend.core.database import get_db
 from backend.core.dependencies import get_current_tenant
+from backend.core.auth.permissions import require_permission
 
 router = APIRouter(tags=["Calendar Operations"])
 
 
-@router.get("/events")
+@router.get("/events",
+            dependencies=[Depends(require_permission("calendar", "view"))])
 async def get_calendar_events(
     from_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
     to_date: str = Query(..., description="End date (YYYY-MM-DD)"),
@@ -189,7 +191,8 @@ async def get_calendar_events(
     }
 
 
-@router.get("/stats")
+@router.get("/stats",
+            dependencies=[Depends(require_permission("calendar", "view"))])
 async def get_calendar_stats(
     month: int = Query(..., ge=1, le=12),
     year: int = Query(..., ge=2020, le=2100),

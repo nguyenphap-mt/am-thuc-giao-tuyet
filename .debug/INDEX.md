@@ -25,6 +25,8 @@
 | `missing-employee-link` | User account không liên kết Employee record → endpoint 404 | BUG-20260217-004 |
 | `fastapi-route-conflict` | Duplicate route definitions gây schema validation 500 (last-handler-wins) | BUG-20260217-004 |
 | `missing-rls` | Table thiếu RLS policy hoặc tenant_id, extensions trong public schema | BUG-20260219-001 |
+| `infra-config` | Infrastructure/env config sai (DATABASE_URL, Cloud Run env vars, DNS) | BUG-20260220-002 |
+| `missing-import` | Module sử dụng biến/function nhưng chưa import | BUG-20260221-001 |
 
 ---
 
@@ -54,6 +56,24 @@
 | BUG-20260219-001 | Security/Database | High | `missing-rls` | supabase, RLS, security-advisor, tenant_id, quote_note_presets, user_sessions, extensions-schema, pg_trgm, unaccent, vector | `061_fix_remaining_supabase_warnings.sql`, `models.py`, `session_model.py` | ✅ | 2026-02-19 |
 | BUG-20260219-002 | HR/StaffAssignment | Critical | `stale-fk` | 500, staff_assignments, event_id, foreign-key, events, orders, supabase, phân-công | `064_fix_staff_assignments_event_fk.sql` | ✅ | 2026-02-19 |
 | BUG-20260220-001 | Order/CRM/Loyalty | Critical | `schema-mismatch` | 500, loyalty_points_history, CHECK-constraint, REVERSAL, reopen | `070_add_reversal_type_loyalty.sql` | ✅ | 2026-02-20 |
+| BUG-20260220-002 | Auth/Login | Critical | `infra-config` | 500, socket.gaierror, DNS, DATABASE_URL, Supabase, Cloud-Run, login | Cloud Run env var, `backend/.env` | ✅ | 2026-02-20 |
+| BUG-20260220-003 | Auth/Login | Critical | `schema-mismatch` | 500, NoReferencedTableError, ForeignKey, UserSessionModel, CORS, login, tenant_id, PendingRollbackError | `session_model.py`, `router.py` | ✅ | 2026-02-20 |
+| BUG-20260221-001 | HR/Assignment | High | `missing-import` | 500, NameError, logger, delete, cancel, assignment, phân-công, hủy | `hr/http_router.py` | ✅ | 2026-02-21 |
+| BUG-20260221-002 | HR/Assignment | High | `api-mismatch` | orders.find, TypeError, OrderSearchCombobox, array, API response | `OrderSearchCombobox.tsx`, `AssignmentBatchModal.tsx` | ✅ | 2026-02-21 |
+| BUG-20260221-003 | HR/Assignment | Medium | `stale-fk` | 500, CORS, batch-assignment, OrderStaffAssignmentModel, FK-violation, staff_id, users.id, employee_id | `hr/http_router.py` | ✅ | 2026-02-21 |
+| BUG-20260221-004 | HR/Payroll | High | `missing-import` | 500, CORS, NameError, delete, sqlalchemy, reopen, PAID, payroll | `hr/http_router.py` | ✅ | 2026-02-21 |
+| BUG-20260221-005 | Finance/Reports | High | `api-mismatch` | 500, pnl, supplier_name, PurchaseOrderModel, SupplierModel, CORS, missing-import | `finance/http_router.py` | ✅ | 2026-02-21 |
+| BUG-20260222-001 | HR/Payroll→Finance | High | `api-mismatch` | payroll, salary-expense, idempotent, 400-error, from-payroll | `finance/http_router.py` | ✅ | 2026-02-22 |
+| BUG-20260222-002 | HR/Payroll→Finance | High | `api-mismatch` | payroll, finance, amount-mismatch, stale-data, P&L, journal | `finance/http_router.py` | ✅ | 2026-02-22 |
+| BUG-20260223-001 | Settings/Permissions | Medium | `api-mismatch` | trailing-slash, 404, roles, redirect_slashes, FastAPI | `permission-matrix-tab.tsx` | ✅ | 2026-02-23 |
+| BUG-20260223-002 | Settings/Users | Medium | `api-mismatch` | trailing-slash, 404, users, roles, redirect_slashes, react-query | `use-users.ts`, `user-modal.tsx` | ✅ | 2026-02-23 |
+| BUG-20260225-001 | Settings/Permissions | Medium | `api-mismatch` | trailing-slash, 404, roles, redirect_slashes, permissions-tab | `permission-matrix-tab.tsx` | ✅ | 2026-02-25 |
+| BUG-20260225-002 | Settings/Overview | Medium | `api-mismatch` | logo, 503, relative-url, next-js-proxy, cloud-run, img-tag | `settings/page.tsx` | ✅ | 2026-02-25 |
+| BUG-20260226-001 | Settings/System Tab | Medium | `api-mismatch` | tab-redirect, VALID_TABS, system-settings, useTabPersistence, fallback | `settings/page.tsx` | ✅ | 2026-02-26 |
+| BUG-20260226-002 | Settings/Users | High | `api-mismatch` | trailing-slash, 404, create-user, POST, FastAPI | `user-modal.tsx` | ✅ | 2026-02-26 |
+| BUG-20260226-003 | HR/Leave Tab | Medium | L2 | `api-mismatch` | 403, forbidden, chef, leave, isHrAdmin, query-guard | `LeaveTab.tsx`, `page.tsx` | ✅ | 2026-02-26 |
+| BUG-20260226-004 | HR/Leave Modal | Medium | L1 | `api-mismatch` | 403, chef, create-leave, modal, self-service, employees, infinite-loop | `CreateLeaveRequestModal.tsx` | ✅ | 2026-02-26 |
+| BUG-20260226-005 | HR/Leave Tab | Medium | L1 | `data-missing` | leave-balances, admin, only-one-employee, initialize, is_fulltime | `http_router.py` | ✅ | 2026-02-26 |
 
 ---
 
@@ -71,4 +91,4 @@
 
 ---
 
-*Last updated: 2026-02-20 06:55 (BUG-20260220-001 added — Loyalty CHECK constraint missing REVERSAL for Order Reopen)*
+*Last updated: 2026-02-26 14:50 (BUG-20260226-003 added — Chef 403 errors on HR Leave Tab: missing isHrAdmin guards)*

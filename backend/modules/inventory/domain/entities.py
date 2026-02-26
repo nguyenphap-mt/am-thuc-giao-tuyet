@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 
 # --- Warehouse ---
@@ -25,8 +25,14 @@ class InventoryItemBase(BaseModel):
     name: str
     category: Optional[str] = None
     uom: str
+    item_type: str = 'MATERIAL'  # MATERIAL | EQUIPMENT
     min_stock: float = 0
     cost_price: float = 0
+    # Equipment-specific
+    condition_status: Optional[str] = 'GOOD'  # GOOD, FAIR, POOR, DAMAGED
+    purchase_date: Optional[date] = None
+    warranty_months: int = 0
+    reusable: bool = False
     notes: Optional[str] = None
     is_active: bool = True
 
@@ -159,3 +165,52 @@ class MaterialPreparationResult(BaseModel):
     total_cogs: float
     message: str
 
+
+# --- Equipment Checkout (CCDC) ---
+class CheckoutItemRequest(BaseModel):
+    """Single item in a checkout request"""
+    item_id: UUID
+    quantity: int
+
+class EquipmentCheckoutCreate(BaseModel):
+    """Create a batch checkout for an order"""
+    order_id: Optional[UUID] = None
+    warehouse_id: UUID
+    items: List[CheckoutItemRequest]
+    expected_return_date: Optional[datetime] = None
+    notes: Optional[str] = None
+
+class CheckinItemRequest(BaseModel):
+    """Single item return in a checkin"""
+    item_id: UUID
+    returned_qty: int
+    damaged_qty: int = 0
+    damage_notes: Optional[str] = None
+
+class EquipmentCheckinRequest(BaseModel):
+    """Process returns for a checkout"""
+    returns: List[CheckinItemRequest]
+
+class EquipmentCheckoutResponse(BaseModel):
+    """Checkout record response"""
+    id: UUID
+    tenant_id: UUID
+    item_id: UUID
+    item_name: Optional[str] = None
+    item_sku: Optional[str] = None
+    order_id: Optional[UUID] = None
+    warehouse_id: UUID
+    warehouse_name: Optional[str] = None
+    checkout_qty: int
+    checkin_qty: int
+    damaged_qty: int
+    checkout_date: datetime
+    expected_return_date: Optional[datetime] = None
+    actual_return_date: Optional[datetime] = None
+    status: str
+    damage_notes: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

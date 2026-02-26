@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from backend.core.auth.permissions import require_permission
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
@@ -26,7 +27,7 @@ DEFAULT_TENANT_ID = UUID("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
 
 # --- SUPPLIERS ---
 
-@router.get("/suppliers/stats")
+@router.get("/suppliers/stats", dependencies=[Depends(require_permission("procurement", "view"))])
 async def get_supplier_stats(
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = DEFAULT_TENANT_ID
@@ -69,7 +70,7 @@ async def get_supplier_stats(
         raise HTTPException(status_code=500, detail=f"Supplier Stats Error: {str(e)}")
 
 
-@router.get("/suppliers")
+@router.get("/suppliers", dependencies=[Depends(require_permission("procurement", "view"))])
 async def list_suppliers(
     search: Optional[str] = None,
     category: Optional[str] = None,
@@ -132,7 +133,7 @@ async def list_suppliers(
         raise HTTPException(status_code=500, detail=f"List Suppliers Error: {str(e)}")
 
 
-@router.get("/suppliers/{id}")
+@router.get("/suppliers/{id}", dependencies=[Depends(require_permission("procurement", "view"))])
 async def get_supplier_detail(
     id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -222,7 +223,7 @@ async def get_supplier_detail(
         raise HTTPException(status_code=500, detail=f"Supplier Detail Error: {str(e)}")
 
 
-@router.post("/suppliers", response_model=Supplier)
+@router.post("/suppliers", response_model=Supplier, dependencies=[Depends(require_permission("procurement", "create"))])
 async def create_supplier(
     data: SupplierBase,
     db: AsyncSession = Depends(get_db),
@@ -243,7 +244,7 @@ async def create_supplier(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Supplier Error: {str(e)}")
 
-@router.put("/suppliers/{id}", response_model=Supplier)
+@router.put("/suppliers/{id}", response_model=Supplier, dependencies=[Depends(require_permission("procurement", "edit"))])
 async def update_supplier(
     id: UUID,
     data: SupplierBase,
@@ -276,7 +277,7 @@ async def update_supplier(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Update Supplier Error: {str(e)}")
 
-@router.delete("/suppliers/{id}")
+@router.delete("/suppliers/{id}", dependencies=[Depends(require_permission("procurement", "delete"))])
 async def delete_supplier(
     id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -310,7 +311,7 @@ async def delete_supplier(
 # --- PURCHASE ORDERS ---
 
 
-@router.get("/orders", response_model=List[PurchaseOrder])
+@router.get("/orders", response_model=List[PurchaseOrder], dependencies=[Depends(require_permission("procurement", "view"))])
 async def list_orders(
     status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
@@ -334,7 +335,7 @@ async def list_orders(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"List Orders Error: {str(e)}")
 
-@router.get("/orders/{id}", response_model=PurchaseOrder)
+@router.get("/orders/{id}", response_model=PurchaseOrder, dependencies=[Depends(require_permission("procurement", "view"))])
 async def get_order(
     id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -361,7 +362,7 @@ async def get_order(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Get Order Error: {str(e)}")
 
-@router.post("/orders", response_model=PurchaseOrder)
+@router.post("/orders", response_model=PurchaseOrder, dependencies=[Depends(require_permission("procurement", "create"))])
 async def create_order(
     data: PurchaseOrderCreate,
     db: AsyncSession = Depends(get_db),
@@ -411,7 +412,7 @@ async def create_order(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
-@router.put("/orders/{id}/status", response_model=PurchaseOrder)
+@router.put("/orders/{id}/status", response_model=PurchaseOrder, dependencies=[Depends(require_permission("procurement", "approve_po"))])
 async def update_order_status(
     id: UUID,
     status: str,
@@ -567,7 +568,7 @@ async def update_order_status(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Update Status Error: {str(e)}")
 
-@router.post("/orders/{id}/receive")
+@router.post("/orders/{id}/receive", dependencies=[Depends(require_permission("procurement", "receive_goods"))])
 async def receive_order(
     id: UUID,
     data: ReceiveOrderRequest,
@@ -671,7 +672,7 @@ async def receive_order(
         raise HTTPException(status_code=500, detail=f"Receive Order Error: {str(e)}")
 
 
-@router.delete("/orders/{id}")
+@router.delete("/orders/{id}", dependencies=[Depends(require_permission("procurement", "delete"))])
 async def delete_order(
     id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -752,7 +753,7 @@ class PurchaseRequisitionOut(BaseModel):
         from_attributes = True
 
 
-@router.get("/requisitions", response_model=List[PurchaseRequisitionOut])
+@router.get("/requisitions", response_model=List[PurchaseRequisitionOut], dependencies=[Depends(require_permission("procurement", "view"))])
 async def list_requisitions(
     status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
@@ -810,7 +811,7 @@ async def list_requisitions(
         raise HTTPException(status_code=500, detail=f"List Requisitions Error: {str(e)}")
 
 
-@router.put("/requisitions/{id}/approve")
+@router.put("/requisitions/{id}/approve", dependencies=[Depends(require_permission("procurement", "approve_pr"))])
 async def approve_requisition(
     id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -845,7 +846,7 @@ async def approve_requisition(
         raise HTTPException(status_code=500, detail=f"Approve PR Error: {str(e)}")
 
 
-@router.post("/requisitions/{id}/convert-to-po", response_model=PurchaseOrder)
+@router.post("/requisitions/{id}/convert-to-po", response_model=PurchaseOrder, dependencies=[Depends(require_permission("procurement", "convert_pr"))])
 async def convert_pr_to_po(
     id: UUID,
     supplier_id: Optional[UUID] = None,
@@ -931,7 +932,7 @@ async def convert_pr_to_po(
         raise HTTPException(status_code=500, detail=f"Convert PR to PO Error: {str(e)}")
 
 
-@router.get("/stats")
+@router.get("/stats", dependencies=[Depends(require_permission("procurement", "view_stats"))])
 async def get_procurement_stats(
     db: AsyncSession = Depends(get_db),
     tenant_id: UUID = DEFAULT_TENANT_ID
@@ -1006,7 +1007,7 @@ class PurchaseRequisitionCreate(BaseModel):
     lines: ListType[PurchaseRequisitionLineCreate] = []
 
 
-@router.post("/requisitions", response_model=PurchaseRequisitionOut)
+@router.post("/requisitions", response_model=PurchaseRequisitionOut, dependencies=[Depends(require_permission("procurement", "create"))])
 async def create_requisition(
     data: PurchaseRequisitionCreate,
     db: AsyncSession = Depends(get_db),
@@ -1080,7 +1081,7 @@ async def create_requisition(
         raise HTTPException(status_code=500, detail=f"Create PR Error: {str(e)}")
 
 
-@router.put("/requisitions/{id}", response_model=PurchaseRequisitionOut)
+@router.put("/requisitions/{id}", response_model=PurchaseRequisitionOut, dependencies=[Depends(require_permission("procurement", "edit"))])
 async def update_requisition(
     id: UUID,
     data: PurchaseRequisitionCreate,
@@ -1163,7 +1164,7 @@ async def update_requisition(
         raise HTTPException(status_code=500, detail=f"Update PR Error: {str(e)}")
 
 
-@router.put("/requisitions/{id}/reject")
+@router.put("/requisitions/{id}/reject", dependencies=[Depends(require_permission("procurement", "reject_pr"))])
 async def reject_requisition(
     id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -1195,7 +1196,7 @@ async def reject_requisition(
         raise HTTPException(status_code=500, detail=f"Reject PR Error: {str(e)}")
 
 
-@router.delete("/requisitions/{id}")
+@router.delete("/requisitions/{id}", dependencies=[Depends(require_permission("procurement", "delete"))])
 async def delete_requisition(
     id: UUID,
     db: AsyncSession = Depends(get_db),

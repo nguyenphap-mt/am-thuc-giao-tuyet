@@ -1,5 +1,5 @@
 ---
-description: Deploy Frontend (Vercel) và Backend (Cloud Run) lên production
+description: Deploy Frontend (Vercel) và Backend (Render.com) lên production
 ---
 
 # /deploy — Production Deployment Workflow
@@ -34,26 +34,27 @@ cd backend && python -c "import main; print('Backend OK')"
 
 ---
 
-## PHASE 2: DEPLOY BACKEND (Google Cloud Run)
+## PHASE 2: DEPLOY BACKEND (Render.com)
 
-### Step 2.1: Deploy lên Cloud Run
+### Step 2.1: Push code lên GitHub
 ```bash
-gcloud run deploy am-thuc-api --source . --region asia-southeast1 --allow-unauthenticated --port 8080
+git push origin main
 ```
-- Chờ build + deploy hoàn tất (~2-3 phút)
-- Verify output: `Service URL: https://am-thuc-api-321822391174.asia-southeast1.run.app`
+- Render auto-deploy khi push lên `main` branch
+- Chờ build + deploy hoàn tất (~3-5 phút, xem trên Render Dashboard)
+- Dashboard: https://dashboard.render.com/
 
 ### Step 2.2: Health check backend
 ```bash
-curl -s https://am-thuc-api-321822391174.asia-southeast1.run.app/health
+curl -s https://am-thuc-api.onrender.com/health
 ```
 - Expected: `{"status": "healthy"}`
+- ⚠️ Nếu backend đang cold start, chờ ~50s rồi thử lại
 - Nếu fail → kiểm tra logs (Step 2.3)
 
 ### Step 2.3: Kiểm tra logs (chỉ khi lỗi)
-```bash
-gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=am-thuc-api AND severity>=ERROR" --limit 5 --format="value(textPayload)" --freshness=10m
-```
+- Mở Render Dashboard → Service `am-thuc-api` → Logs tab
+- URL: https://dashboard.render.com/
 
 ---
 
@@ -84,7 +85,7 @@ git push vercel main
 ```bash
 curl -s https://amthucgiaotuyet.vercel.app/api/v1/health
 ```
-- Expected: `{"status": "healthy"}` (proxy từ Vercel → Cloud Run)
+- Expected: `{"status": "healthy"}` (proxy từ Vercel → Render)
 
 ### Step 4.3: Report kết quả
 ```
@@ -102,11 +103,11 @@ Khi chỉ thay đổi backend code:
 # 1. Commit
 git add backend/ && git commit -m "fix(backend): <mô tả>"
 
-# 2. Deploy
-gcloud run deploy am-thuc-api --source . --region asia-southeast1 --allow-unauthenticated --port 8080
+# 2. Push (Render auto-deploy từ GitHub)
+git push origin main
 
-# 3. Health check
-curl -s https://am-thuc-api-321822391174.asia-southeast1.run.app/health
+# 3. Health check (chờ ~3-5 phút cho build hoàn tất)
+curl -s https://am-thuc-api.onrender.com/health
 ```
 
 ## QUICK DEPLOY (Frontend only)
@@ -124,12 +125,16 @@ git push origin main && git push vercel main
 
 ## ENV VARS UPDATE (khi cần)
 
-```bash
-# ⚠️ PHẢI dùng --update-env-vars (KHÔNG dùng --set-env-vars vì sẽ xóa hết env vars khác!)
-gcloud run services update am-thuc-api \
-  --region asia-southeast1 \
-  --update-env-vars "KEY=VALUE"
-```
+### Render Backend
+1. Mở https://dashboard.render.com/
+2. Chọn service `am-thuc-api`
+3. Environment tab → Add/Edit variable
+4. Save → Service tự động redeploy
+
+### Vercel Frontend
+1. Mở https://vercel.com/dashboard
+2. Chọn project → Settings → Environment Variables
+3. Add/Edit variable → Redeploy
 
 ---
 
@@ -137,8 +142,9 @@ gcloud run services update am-thuc-api \
 
 | Triệu chứng | Kiểm tra | Fix |
 |---|---|---|
-| Backend 500 | Cloud Run logs | Xem error trong logs |
+| Backend 500 | Render Logs tab | Xem error trong logs |
 | Frontend 405 | Vercel deploy status | Verify `vercel` remote đúng |
 | Login fail | Backend logs + DB | Check search_path, RLS |
-| CORS error | Cloud Run env vars | Update `CORS_ORIGINS` |
-| Slow cold start | Cloud Run config | Thêm `--min-instances 1` |
+| CORS error | Render env vars | Update `CORS_ORIGINS` trong Render Dashboard |
+| Slow cold start (~50s) | Render Free tier | Upgrade plan hoặc dùng cron keep-alive |
+| Backend 502 | Render đang cold start | Chờ ~50s rồi thử lại |

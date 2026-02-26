@@ -125,3 +125,30 @@ class SetMenuItemModel(Base):
     
     set_menu = relationship("SetMenuModel", back_populates="items")
     menu_item = relationship("MenuItemModel")
+
+
+# Audit Logging
+class MenuAuditLogModel(Base):
+    """Audit trail for critical menu actions (price changes, recipe mods, deletions)"""
+    __tablename__ = "menu_audit_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(UUID(as_uuid=True), nullable=False)
+
+    # What happened
+    action = Column(String(30), nullable=False)  # PRICE_CHANGE, RECIPE_ADD, RECIPE_DELETE, RECIPE_UPDATE, ITEM_DELETE, CATEGORY_DELETE, SET_MENU_DELETE
+    entity_type = Column(String(30), nullable=False)  # MENU_ITEM, RECIPE, CATEGORY, SET_MENU
+    entity_id = Column(UUID(as_uuid=True))
+    entity_name = Column(String(255))
+
+    # Who did it
+    action_by = Column(UUID(as_uuid=True))
+    action_by_name = Column(String(255))
+
+    # Change details
+    old_value = Column(Text)  # JSON string of previous state
+    new_value = Column(Text)  # JSON string of new state
+    details = Column(Text)    # Human-readable description
+
+    action_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

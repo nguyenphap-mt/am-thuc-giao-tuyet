@@ -43,7 +43,7 @@ export default function NotificationBell() {
     const { data: countData } = useQuery({
         queryKey: ['notifications-count'],
         queryFn: async () => {
-            return await api.get<{ unread_count: number }>('/hr/notifications/count');
+            return await api.get<{ unread_count: number }>('/notifications/count');
         },
         refetchInterval: 30000, // Refetch every 30 seconds
     });
@@ -52,7 +52,7 @@ export default function NotificationBell() {
     const { data: notifications, isLoading } = useQuery({
         queryKey: ['notifications'],
         queryFn: async () => {
-            return await api.get<Notification[]>('/hr/notifications?limit=10');
+            return await api.get<Notification[]>('/notifications?limit=10');
         },
         enabled: isOpen,
     });
@@ -60,7 +60,7 @@ export default function NotificationBell() {
     // Mark as read mutation
     const markReadMutation = useMutation({
         mutationFn: async (notificationId: string) => {
-            return await api.put(`/hr/notifications/${notificationId}/read`, {});
+            return await api.put(`/notifications/${notificationId}/read`, {});
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -71,7 +71,7 @@ export default function NotificationBell() {
     // Mark all as read mutation
     const markAllReadMutation = useMutation({
         mutationFn: async () => {
-            return await api.put('/hr/notifications/read-all', {});
+            return await api.put('/notifications/read-all', {});
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -135,14 +135,14 @@ export default function NotificationBell() {
                     aria-label="Thông báo"
                 >
                     {unreadCount > 0 ? (
-                        <IconBellFilled className="h-5 w-5 text-purple-600" />
+                        <IconBellFilled className="h-5 w-5 text-accent-icon" />
                     ) : (
                         <IconBell className="h-5 w-5 text-gray-600 dark:text-gray-400" />
                     )}
 
                     {/* Unread badge */}
                     {unreadCount > 0 && (
-                        <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-gradient-to-r from-pink-500 to-purple-500 px-1 text-[10px] font-bold text-white">
+                        <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-gradient px-1 text-[10px] font-bold">
                             {unreadCount > 99 ? '99+' : unreadCount}
                         </span>
                     )}
@@ -157,7 +157,7 @@ export default function NotificationBell() {
                         <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 text-xs text-purple-600 hover:text-purple-700"
+                            className="h-7 text-xs text-accent-active"
                             onClick={() => markAllReadMutation.mutate()}
                             disabled={markAllReadMutation.isPending}
                         >
@@ -190,7 +190,7 @@ export default function NotificationBell() {
                         notifications.map((notification) => (
                             <DropdownMenuItem
                                 key={notification.id}
-                                className={`flex items-start gap-3 p-3 cursor-pointer ${!notification.is_read ? 'bg-purple-50/50 dark:bg-purple-900/20' : ''
+                                className={`flex items-start gap-3 p-3 cursor-pointer ${!notification.is_read ? 'bg-accent-gradient-subtle' : ''
                                     }`}
                                 onClick={() => handleNotificationClick(notification)}
                             >
@@ -210,7 +210,7 @@ export default function NotificationBell() {
                                             {notification.title}
                                         </p>
                                         {!notification.is_read && (
-                                            <span className="flex-shrink-0 w-2 h-2 rounded-full bg-purple-500 mt-1" />
+                                            <span className="flex-shrink-0 w-2 h-2 rounded-full mt-1" style={{ backgroundColor: 'var(--app-accent)' }} />
                                         )}
                                     </div>
                                     {notification.message && (
@@ -235,7 +235,7 @@ export default function NotificationBell() {
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="w-full text-xs text-purple-600 hover:text-purple-700"
+                                className="w-full text-xs text-accent-active"
                                 onClick={() => {
                                     router.push('/hr?tab=leave');
                                     setIsOpen(false);

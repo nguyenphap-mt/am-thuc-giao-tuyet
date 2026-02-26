@@ -2,6 +2,7 @@
 
 import { PermissionGate } from '@/components/shared/PermissionGate';
 import { useTabPersistence } from '@/hooks/useTabPersistence';
+import { useAuthStore } from '@/stores/auth-store';
 
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
@@ -66,7 +67,16 @@ import { toast } from 'sonner';
 const HR_TABS = ['employees', 'assignments', 'timesheets', 'payroll', 'leave'] as const;
 
 export default function HrPage() {
-    const { activeTab, handleTabChange } = useTabPersistence(HR_TABS, 'employees');
+    const { user } = useAuthStore();
+    // Determine if user is HR admin (can see all tabs)
+    const userRole = typeof user?.role === 'object' && user?.role !== null
+        ? (user.role as { code?: string }).code
+        : user?.role;
+    const isHrAdmin = userRole === 'super_admin' || userRole === 'admin' || userRole === 'manager';
+
+    // Non-HR users default to 'leave' tab
+    const defaultTab = isHrAdmin ? 'employees' : 'leave';
+    const { activeTab, handleTabChange } = useTabPersistence(HR_TABS, defaultTab);
     const queryClient = useQueryClient();
     const [search, setSearch] = useState('');
     const [roleFilter, setRoleFilter] = useState<string>('all');
@@ -100,9 +110,10 @@ export default function HrPage() {
             const employees = await api.get<Employee[]>(`/hr/employees${queryString ? `?${queryString}` : ''}`);
             return { items: employees, total: employees.length };
         },
+        enabled: isHrAdmin,
     });
 
-    // Stats query
+    // Stats query — HR admin only
     const { data: statsData } = useQuery({
         queryKey: ['employee-stats'],
         queryFn: async () => {
@@ -113,6 +124,7 @@ export default function HrPage() {
                 return null;
             }
         },
+        enabled: isHrAdmin,
     });
 
     const employees = data?.items || [];
@@ -213,7 +225,7 @@ export default function HrPage() {
             'CHEF': 'bg-red-100 text-red-700',
             'KITCHEN': 'bg-orange-100 text-orange-700',
             'WAITER': 'bg-blue-100 text-blue-700',
-            'DRIVER': 'bg-purple-100 text-purple-700',
+            'DRIVER': 'bg-accent-100 text-accent-strong',
             'LEAD': 'bg-yellow-100 text-yellow-700',
             'MANAGER': 'bg-pink-100 text-pink-700',
         };
@@ -299,63 +311,65 @@ export default function HrPage() {
         <div className="space-y-4">
             <motion.div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
                 <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Nhân sự</h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Quản lý nhân viên, chấm công, lương và nghỉ phép</p>
+                    <h1 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">{isHrAdmin ? 'Nhân sự' : 'Nghỉ phép'}</h1>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{isHrAdmin ? 'Quản lý nhân viên, chấm công, lương và nghỉ phép' : `Xin chào, ${user?.full_name || 'Nhân viên'} — Quản lý nghỉ phép cá nhân`}</p>
                 </div>
-                <div className="flex gap-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setExportOpen(true)}
-                        className="gap-1.5 border-gray-300 hover:border-[#c2185b] hover:text-[#c2185b] transition-colors"
-                    >
-                        <IconDownload className="h-4 w-4" />
-                        <span className="hidden sm:inline">Xuất báo cáo</span>
-                    </Button>
-                    <PermissionGate module="hr" action="create">
+                {isHrAdmin && (
+                    <div className="flex gap-2">
                         <Button
-                            className="w-full sm:w-auto bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:opacity-90 transition-opacity"
-                            onClick={handleAddEmployee}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setExportOpen(true)}
+                            className="gap-1.5 border-gray-300 hover:border-[#c2185b] hover:text-[#c2185b] transition-colors"
                         >
-                            <IconUserPlus className="mr-2 h-4 w-4" />Thêm nhân viên
+                            <IconDownload className="h-4 w-4" />
+                            <span className="hidden sm:inline">Xuất báo cáo</span>
                         </Button>
-                    </PermissionGate>
-                </div>
-            </motion.div>
-
-            <motion.div className="grid grid-cols-3 gap-2 md:gap-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
-                {[
-                    { label: 'Tổng NV', value: stats.total, icon: IconUsers, bgColor: 'bg-blue-50', iconColor: 'text-blue-600' },
-                    { label: 'Đang làm', value: stats.active, icon: IconClock, bgColor: 'bg-green-50', iconColor: 'text-green-600' },
-                    { label: 'Toàn thời gian', value: stats.fulltime || '--', icon: IconCash, bgColor: 'bg-purple-50', iconColor: 'text-purple-600' },
-                ].map((stat, i) => (
-                    <Card key={i} className="hover:shadow-sm transition-shadow cursor-pointer">
-                        <CardContent className="p-3 md:p-4">
-                            <div className="flex items-center gap-2 md:gap-3">
-                                <div className={`p-1.5 md:p-2 rounded-lg ${stat.bgColor}`}>
-                                    <stat.icon className={`h-4 w-4 md:h-5 md:w-5 ${stat.iconColor}`} />
-                                </div>
-                                <div>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">{stat.label}</p>
-                                    <p className="text-base md:text-lg font-bold">{stat.value}</p>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                ))}
+                        <PermissionGate module="hr" action="create">
+                            <Button
+                                className="w-full sm:w-auto bg-accent-gradient hover:opacity-90 transition-opacity"
+                                onClick={handleAddEmployee}
+                            >
+                                <IconUserPlus className="mr-2 h-4 w-4" />Thêm nhân viên
+                            </Button>
+                        </PermissionGate>
+                    </div>
+                )}
             </motion.div>
 
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
                 <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
                     <TabsList className="w-full md:w-auto flex overflow-x-auto">
-                        <TabsTrigger value="employees" className="text-xs md:text-sm">Nhân viên</TabsTrigger>
-                        <TabsTrigger value="assignments" className="text-xs md:text-sm">Phân công</TabsTrigger>
-                        <TabsTrigger value="timesheets" className="text-xs md:text-sm">Chấm công</TabsTrigger>
-                        <TabsTrigger value="payroll" className="text-xs md:text-sm">Lương</TabsTrigger>
+                        {isHrAdmin && <TabsTrigger value="employees" className="text-xs md:text-sm">Nhân viên</TabsTrigger>}
+                        {isHrAdmin && <TabsTrigger value="assignments" className="text-xs md:text-sm">Phân công</TabsTrigger>}
+                        {isHrAdmin && <TabsTrigger value="timesheets" className="text-xs md:text-sm">Chấm công</TabsTrigger>}
+                        {isHrAdmin && <TabsTrigger value="payroll" className="text-xs md:text-sm">Lương</TabsTrigger>}
                         <TabsTrigger value="leave" className="text-xs md:text-sm">Nghỉ phép</TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="employees">
+                    <TabsContent value="employees" className="space-y-3">
+                        {/* Employee KPI Cards */}
+                        <div className="grid grid-cols-3 gap-2 md:gap-3">
+                            {[
+                                { label: 'Tổng NV', value: stats.total, icon: IconUsers, bgColor: 'bg-blue-50', iconColor: 'text-blue-600' },
+                                { label: 'Đang làm', value: stats.active, icon: IconClock, bgColor: 'bg-green-50', iconColor: 'text-green-600' },
+                                { label: 'Toàn thời gian', value: stats.fulltime || '--', icon: IconCash, bgColor: 'bg-accent-50', iconColor: 'text-accent-primary' },
+                            ].map((stat, i) => (
+                                <Card key={i} className="hover:shadow-sm transition-shadow cursor-pointer">
+                                    <CardContent className="p-3 md:p-4">
+                                        <div className="flex items-center gap-2 md:gap-3">
+                                            <div className={`p-1.5 md:p-2 rounded-lg ${stat.bgColor}`}>
+                                                <stat.icon className={`h-4 w-4 md:h-5 md:w-5 ${stat.iconColor}`} />
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-gray-500 dark:text-gray-400">{stat.label}</p>
+                                                <p className="text-base md:text-lg font-bold">{stat.value}</p>
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
                         <Card className="overflow-hidden">
                             {/* Toolbar */}
                             <div className="flex items-center gap-2 p-2 md:p-3 border-b bg-gray-50 dark:bg-gray-900/50 dark:bg-gray-800/50">
@@ -517,7 +531,7 @@ export default function HrPage() {
                                             key={emp.id}
                                             role="row"
                                             tabIndex={0}
-                                            className={`relative flex items-center gap-0 px-2 md:px-4 py-2 md:py-3 cursor-pointer transition-colors ${selectedIds.includes(emp.id) ? 'bg-blue-50' : 'hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800'} focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-inset group`}
+                                            className={`relative flex items-center gap-0 px-2 md:px-4 py-2 md:py-3 cursor-pointer transition-colors ${selectedIds.includes(emp.id) ? 'bg-blue-50' : 'hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800'} focus:outline-none focus:ring-2 focus:ring-accent focus:ring-inset group`}
                                             onMouseEnter={() => setHoveredId(emp.id)}
                                             onMouseLeave={() => setHoveredId(null)}
                                             onClick={() => { setSelectedEmployee(emp); setDetailModalOpen(true); }}
@@ -525,7 +539,7 @@ export default function HrPage() {
                                         >
                                             <Checkbox checked={selectedIds.includes(emp.id)} onCheckedChange={() => toggleSelect(emp.id)} onClick={(e) => e.stopPropagation()} aria-label={`Chọn ${emp.full_name}`} />
 
-                                            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center text-white font-medium text-sm shrink-0">
+                                            <div className="h-8 w-8 rounded-full bg-accent-gradient-br to-purple-500 flex items-center justify-center text-white font-medium text-sm shrink-0">
                                                 {emp.full_name?.charAt(0) || 'N'}
                                             </div>
 
@@ -533,7 +547,7 @@ export default function HrPage() {
                                             <div className="truncate shrink-0" style={{ width: getWidth('name') }}>
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); setSelectedEmployee(emp); setDetailModalOpen(true); }}
-                                                    className="font-medium text-sm text-gray-900 dark:text-gray-100 hover:text-purple-600 hover:underline text-left truncate max-w-full block"
+                                                    className="font-medium text-sm text-gray-900 dark:text-gray-100 hover:text-accent-primary hover:underline text-left truncate max-w-full block"
                                                 >
                                                     {emp.full_name}
                                                 </button>
@@ -550,7 +564,7 @@ export default function HrPage() {
                                             <div className="hidden md:block shrink-0" style={{ width: getWidth('phone') }}>
                                                 <button
                                                     onClick={(e) => handleCallEmployee(emp.phone, e)}
-                                                    className="text-sm text-gray-600 dark:text-gray-400 hover:text-purple-600 hover:underline truncate max-w-full block"
+                                                    className="text-sm text-gray-600 dark:text-gray-400 hover:text-accent-primary hover:underline truncate max-w-full block"
                                                     aria-label={`Gọi ${emp.phone || 'không có số'}`}
                                                 >
                                                     {emp.phone || '--'}
@@ -561,7 +575,7 @@ export default function HrPage() {
                                             <div className="hidden lg:block truncate shrink-0" style={{ width: getWidth('email') }}>
                                                 <button
                                                     onClick={(e) => handleEmailEmployee(emp.email, e)}
-                                                    className="text-sm text-gray-500 dark:text-gray-400 hover:text-purple-600 hover:underline truncate block max-w-full"
+                                                    className="text-sm text-gray-500 dark:text-gray-400 hover:text-accent-primary hover:underline truncate block max-w-full"
                                                     aria-label={`Gửi email đến ${emp.email || 'không có email'}`}
                                                 >
                                                     {emp.email || '--'}
@@ -644,18 +658,22 @@ export default function HrPage() {
                 </Tabs>
             </motion.div>
 
-            {/* Modals */}
-            <EmployeeFormModal
-                open={formModalOpen}
-                onOpenChange={setFormModalOpen}
-                employee={selectedEmployee}
-                mode={modalMode}
-            />
-            <DeleteEmployeeModal
-                open={deleteModalOpen}
-                onOpenChange={setDeleteModalOpen}
-                employee={selectedEmployee}
-            />
+            {/* Modals — only render for HR admins */}
+            {isHrAdmin && (
+                <>
+                    <EmployeeFormModal
+                        open={formModalOpen}
+                        onOpenChange={setFormModalOpen}
+                        employee={selectedEmployee}
+                        mode={modalMode}
+                    />
+                    <DeleteEmployeeModal
+                        open={deleteModalOpen}
+                        onOpenChange={setDeleteModalOpen}
+                        employee={selectedEmployee}
+                    />
+                </>
+            )}
 
             {/* Bulk Delete Confirmation Modal */}
             {
@@ -689,16 +707,18 @@ export default function HrPage() {
             }
 
             {/* Employee Detail Modal */}
-            <EmployeeDetailModal
-                open={detailModalOpen}
-                onOpenChange={setDetailModalOpen}
-                employee={selectedEmployee}
-                onEdit={(emp) => {
-                    setSelectedEmployee(emp);
-                    setModalMode('edit');
-                    setFormModalOpen(true);
-                }}
-            />
+            {isHrAdmin && (
+                <EmployeeDetailModal
+                    open={detailModalOpen}
+                    onOpenChange={setDetailModalOpen}
+                    employee={selectedEmployee}
+                    onEdit={(emp) => {
+                        setSelectedEmployee(emp);
+                        setModalMode('edit');
+                        setFormModalOpen(true);
+                    }}
+                />
+            )}
 
             {/* Professional Export Dialog */}
             <ExportDialog

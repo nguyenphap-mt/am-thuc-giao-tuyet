@@ -13,30 +13,30 @@ import { useCallback } from 'react';
  * @returns { activeTab, handleTabChange }
  */
 export function useTabPersistence<T extends string>(
-    validTabs: readonly T[],
-    defaultTab: T,
+ validTabs: readonly T[],
+ defaultTab: T,
 ): {
-    activeTab: T;
-    handleTabChange: (value: string) => void;
+ activeTab: T;
+ handleTabChange: (value: string) => void;
 } {
-    const searchParams = useSearchParams();
-    const router = useRouter();
-    const pathname = usePathname();
+ const searchParams = useSearchParams();
+ const router = useRouter();
+ const pathname = usePathname();
 
-    // Read tab from URL, validate, fallback to default
-    const tabParam = searchParams.get('tab') as T | null;
-    const activeTab = tabParam && validTabs.includes(tabParam) ? tabParam : defaultTab;
+ // Read tab from URL, validate, fallback to default
+ const tabParam = searchParams.get('tab') as T | null;
+ const activeTab = tabParam && validTabs.includes(tabParam) ? tabParam : defaultTab;
 
-    const handleTabChange = useCallback((value: string) => {
-        const params = new URLSearchParams(searchParams.toString());
-        if (value === defaultTab) {
-            params.delete('tab');
-        } else {
-            params.set('tab', value);
-        }
-        const qs = params.toString();
-        router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
-    }, [searchParams, router, pathname, defaultTab]);
+ const handleTabChange = useCallback((value: string) => {
+ const params = new URLSearchParams(searchParams.toString());
+ if (value === defaultTab) {
+ params.delete('tab');
+ } else {
+ params.set('tab', value);
+ }
+ const qs = params.toString();
+ router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+ }, [searchParams, router, pathname, defaultTab]);
 
-    return { activeTab, handleTabChange };
+ return { activeTab, handleTabChange };
 }

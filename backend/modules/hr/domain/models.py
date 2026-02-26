@@ -148,11 +148,13 @@ class PayrollPeriodModel(Base):
     approved_by = Column(UUID(as_uuid=True))
     approved_at = Column(DateTime(timezone=True))
     paid_at = Column(DateTime(timezone=True))
+    payment_transaction_id = Column(UUID(as_uuid=True))  # FK to finance_transactions.id
     
     total_employees = Column(DECIMAL(10, 0), default=0)
     total_gross = Column(DECIMAL(15, 2), default=0)
     total_deductions = Column(DECIMAL(15, 2), default=0)
     total_net = Column(DECIMAL(15, 2), default=0)
+    total_employer_cost = Column(DECIMAL(14, 2), default=0)
     
     notes = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -204,6 +206,13 @@ class PayrollItemModel(Base):
     deduction_tax = Column(DECIMAL(12, 2), default=0)
     deduction_advance = Column(DECIMAL(12, 2), default=0)
     deduction_other = Column(DECIMAL(12, 2), default=0)
+    
+    # Employer contributions (Vietnam Labor Law)
+    employer_social_ins = Column(DECIMAL(12, 2), default=0)    # BHXH NSDLĐ 17.5%
+    employer_health_ins = Column(DECIMAL(12, 2), default=0)    # BHYT NSDLĐ 3%
+    employer_unemployment = Column(DECIMAL(12, 2), default=0)  # BHTN NSDLĐ 1%
+    employer_union_fee = Column(DECIMAL(12, 2), default=0)     # Phí Công đoàn 2%
+    employer_total = Column(DECIMAL(12, 2), default=0)         # Tổng chi phí NSDLĐ
     
     # Totals - GENERATED columns in PostgreSQL, must be defined in ORM to read
     # FIX 2024-02-04: Added so API can access DB-computed values
@@ -314,6 +323,10 @@ class LeaveRequestModel(Base):
     
     reason = Column(Text)
     
+    # Half-day leave support
+    is_half_day = Column(Boolean, default=False)
+    half_day_period = Column(String(10))  # 'MORNING' | 'AFTERNOON'
+    
     status = Column(String(20), default='PENDING')  # PENDING, APPROVED, REJECTED, CANCELLED
     
     approved_by = Column(UUID(as_uuid=True))
@@ -349,6 +362,12 @@ class PayrollSettingsModel(Base):
     rate_health_insurance = Column(DECIMAL(5, 4), default=0.015)   # BHYT: 1.5%
     rate_unemployment = Column(DECIMAL(5, 4), default=0.01)        # BHTN: 1%
     
+    # Employer insurance rates (Vietnam Labor Law)
+    rate_employer_social = Column(DECIMAL(6, 4), default=0.175)      # BHXH NSDLĐ: 17.5%
+    rate_employer_health = Column(DECIMAL(6, 4), default=0.03)       # BHYT NSDLĐ: 3%
+    rate_employer_unemployment = Column(DECIMAL(6, 4), default=0.01) # BHTN NSDLĐ: 1%
+    rate_union_fee = Column(DECIMAL(6, 4), default=0.02)             # Phí Công đoàn: 2%
+    
     # Overtime multipliers (Vietnam Labor Law)
     multiplier_overtime = Column(DECIMAL(4, 2), default=1.50)      # 150%
     multiplier_weekend = Column(DECIMAL(4, 2), default=2.00)       # 200%
@@ -358,6 +377,9 @@ class PayrollSettingsModel(Base):
     # Working hours configuration
     standard_working_days_per_month = Column(Integer, default=26)
     standard_hours_per_day = Column(Integer, default=8)
+    
+    # Finance integration
+    default_labor_cost_ratio = Column(DECIMAL(5, 4), default=0.15)  # 15% fallback for P&L
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -391,6 +413,29 @@ class LeaveApprovalHistoryModel(Base):
 
     # Relationships
     leave_request = relationship("LeaveRequestModel")
+
+
+class PayrollAuditLogModel(Base):
+    """Audit trail for payroll actions"""
+    __tablename__ = "payroll_audit_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    tenant_id = Column(UUID(as_uuid=True), nullable=False)
+    period_id = Column(UUID(as_uuid=True), ForeignKey("payroll_periods.id", ondelete="SET NULL"))
+    item_id = Column(UUID(as_uuid=True), ForeignKey("payroll_items.id", ondelete="SET NULL"))
+    
+    action = Column(String(30), nullable=False)  # CALCULATE, APPROVE, PAY, REOPEN, DELETE, EDIT_ITEM
+    action_by = Column(UUID(as_uuid=True))
+    action_by_name = Column(String(255))
+    action_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    period_name = Column(String(50))
+    employee_name = Column(String(100))
+    details = Column(Text)
+    previous_status = Column(String(20))
+    new_status = Column(String(20))
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class NotificationModel(Base):

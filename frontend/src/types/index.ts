@@ -68,9 +68,9 @@ export interface Customer {
 
 // Quote - Synced with backend Quote entity (entities.py)
 export interface Quote {
-    id: number;  // UUID string from backend but used as number in some places
-    code: string;  // Quote code (e.g., BG-2026XXXX)
-    quote_number?: string;  // Legacy support
+    id: number; // UUID string from backend but used as number in some places
+    code: string; // Quote code (e.g., BG-2026XXXX)
+    quote_number?: string; // Legacy support
     tenant_id?: string;
     customer_id?: string;
     customer_name: string;
@@ -78,7 +78,7 @@ export interface Quote {
     customer_email?: string;
     event_date: string;
     event_time?: string;
-    event_location?: string;  // Legacy support
+    event_location?: string; // Legacy support
     event_address?: string;
     event_type?: string;
     guest_count: number;
@@ -166,8 +166,8 @@ export interface QuoteServiceBase {
 
 // Order - Synced with backend Order entity
 export interface Order {
-    id: string;  // UUID from backend
-    code: string;  // Order code (e.g., DH-2026XXXX)
+    id: string; // UUID from backend
+    code: string; // Order code (e.g., DH-2026XXXX)
     tenant_id: string;
     quote_id?: string;
     customer_id?: string;
@@ -185,8 +185,8 @@ export interface Order {
     final_amount: number;
     paid_amount: number;
     balance_amount: number;
-    expenses_amount?: number;  // R1: Order Cost Tracking
-    cost_amount?: number;  // Total cost from menu item cost_prices
+    expenses_amount?: number; // R1: Order Cost Tracking
+    cost_amount?: number; // Total cost from menu item cost_prices
     status: 'PENDING' | 'CONFIRMED' | 'IN_PROGRESS' | 'ON_HOLD' | 'COMPLETED' | 'PAID' | 'CANCELLED';
     note?: string;
     confirmed_at?: string;
@@ -197,13 +197,13 @@ export interface Order {
     payments?: OrderPayment[];
 
     // Revision Tracking (Order Amendment Feature)
-    replaced_by_order_id?: string;  // New order that replaced this one
-    replaces_order_id?: string;  // Old order this one replaced  
-    cancel_reason?: string;  // Reason for cancellation
+    replaced_by_order_id?: string; // New order that replaced this one
+    replaces_order_id?: string; // Old order this one replaced 
+    cancel_reason?: string; // Reason for cancellation
 }
 
 
-// Order Item - Synced with backend OrderItem entity  
+// Order Item - Synced with backend OrderItem entity 
 export interface OrderItem {
     id: string;
     order_id: string;
@@ -214,7 +214,7 @@ export interface OrderItem {
     uom: string;
     quantity: number;
     unit_price: number;
-    cost_price?: number;  // BUG-20260203-002: Unit cost for profit calculation
+    cost_price?: number; // BUG-20260203-002: Unit cost for profit calculation
     total_price: number;
     note?: string;
     created_at: string;
@@ -281,7 +281,7 @@ export interface InventoryLot {
 
 // Supplier
 export interface Supplier {
-    id: string;  // UUID from backend
+    id: string; // UUID from backend
     tenant_id?: string;
     name: string;
     contact_person?: string;
@@ -289,11 +289,11 @@ export interface Supplier {
     email?: string;
     address?: string;
     tax_id?: string;
-    category: string;  // FOOD, BEVERAGE, EQUIPMENT, SERVICE, OTHER
+    category: string; // FOOD, BEVERAGE, EQUIPMENT, SERVICE, OTHER
     website?: string;
     notes?: string;
     is_active: boolean;
-    payment_terms: string;  // IMMEDIATE, NET15, NET30, NET60, NET90
+    payment_terms: string; // IMMEDIATE, NET15, NET30, NET60, NET90
     bank_account?: string;
     bank_name?: string;
     balance: number;
@@ -303,7 +303,7 @@ export interface Supplier {
 
 // Purchase Order — Synced with backend PO entity (UUID, UPPERCASE statuses)
 export interface PurchaseOrder {
-    id: string;  // UUID from backend
+    id: string; // UUID from backend
     tenant_id?: string;
     supplier_id?: string;
     code: string;
@@ -322,9 +322,9 @@ export interface PurchaseOrder {
 }
 
 export interface PurchaseOrderItem {
-    id: string;  // UUID from backend
+    id: string; // UUID from backend
     purchase_order_id: string;
-    item_id?: string;  // FK to inventory_items
+    item_id?: string; // FK to inventory_items
     item_name: string;
     quantity: number;
     uom?: string;
@@ -340,13 +340,13 @@ export interface Employee {
     full_name: string;
     email?: string;
     phone?: string;
-    position?: string;  // Legacy field for display
-    department?: string;  // Legacy field for display
+    position?: string; // Legacy field for display
+    department?: string; // Legacy field for display
     role_type: 'CHEF' | 'WAITER' | 'DRIVER' | 'MANAGER' | 'KITCHEN' | 'LEAD' | string;
     is_active: boolean;
     is_fulltime: boolean;
     hourly_rate: number;
-    base_salary?: number;  // Monthly salary for fulltime employees
+    base_salary?: number; // Monthly salary for fulltime employees
     id_number?: string;
     date_of_birth?: string;
     address?: string;
@@ -362,10 +362,10 @@ export interface Employee {
     allowance_transport?: number;
     allowance_phone?: number;
     allowance_other?: number;
-    insurance_salary_base?: number;  // Mức lương hưởng BHXH
-    rate_social_override?: number;   // Override % BHXH
-    rate_health_override?: number;   // Override % BHYT
-    rate_unemployment_override?: number;  // Override % BHTN
+    insurance_salary_base?: number; // Mức lương hưởng BHXH
+    rate_social_override?: number; // Override % BHXH
+    rate_health_override?: number; // Override % BHYT
+    rate_unemployment_override?: number; // Override % BHTN
     // User-Employee link
     user_id?: string;
     has_login_account?: boolean;
@@ -382,7 +382,7 @@ export interface EmployeePayload {
     email?: string;
     is_fulltime?: boolean;
     hourly_rate?: number;
-    base_salary?: number;  // Monthly salary for fulltime
+    base_salary?: number; // Monthly salary for fulltime
     is_active?: boolean;
     id_number?: string;
     date_of_birth?: string;
@@ -396,6 +396,8 @@ export interface EmployeePayload {
     login_email?: string;
     login_password?: string;
     login_role?: string;
+    // Link to existing user account (PRD-link-user-employee)
+    link_user_id?: string;
     // Per-employee payroll config
     allowance_meal?: number;
     allowance_transport?: number;

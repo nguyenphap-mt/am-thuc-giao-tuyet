@@ -7,14 +7,14 @@ import { useCallback } from 'react';
  * Usage: const announce = useAnnounce(); announce('3 items loaded');
  */
 export function useAnnounce() {
-    return useCallback((message: string) => {
-        const el = document.getElementById('app-announcer');
-        if (el) {
-            el.textContent = '';
-            // Reset to trigger re-announcement
-            requestAnimationFrame(() => {
-                el.textContent = message;
-            });
-        }
-    }, []);
+ return useCallback((message: string) => {
+ const el = document.getElementById('app-announcer');
+ if (el) {
+ el.textContent = '';
+ // Reset to trigger re-announcement
+ requestAnimationFrame(() => {
+ el.textContent = message;
+ });
+ }
+ }, []);
 }

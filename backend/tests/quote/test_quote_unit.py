@@ -23,32 +23,35 @@ from backend.modules.quote.domain.entities import QuoteBase, Quote
 class TestQuoteCodeGeneration:
     """Test suite for quote code generation utility"""
     
-    def test_generate_quote_code_format(self):
-        """Test that quote code follows BG-YYYYNNNNNN format"""
+    @pytest.mark.asyncio
+    async def test_generate_quote_code_format(self):
+        """Test that quote code follows BG-dd/mm/yy*** format"""
         from backend.common.utils.code_generator import generate_quote_code
         
-        code = generate_quote_code()
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.first.return_value = None
+        mock_db.execute.return_value = mock_result
+        
+        code = await generate_quote_code(mock_db)
         
         assert code.startswith("BG-")
-        assert len(code) == 13  # BG-2026123456
+        assert len(code) == 12  # BG-ddmmyy001
     
-    def test_generate_order_code_format(self):
-        """Test that order code follows DH-YYYYNNNNNN format"""
+    @pytest.mark.asyncio
+    async def test_generate_order_code_format(self):
+        """Test that order code follows ĐH-ddmmyy*** format"""
         from backend.common.utils.code_generator import generate_order_code
         
-        code = generate_order_code()
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.first.return_value = None
+        mock_db.execute.return_value = mock_result
         
-        assert code.startswith("DH-")
-        assert len(code) == 13
-    
-    def test_code_uniqueness(self):
-        """Test that generated codes are unique"""
-        from backend.common.utils.code_generator import generate_quote_code
+        code = await generate_order_code(mock_db)
         
-        codes = [generate_quote_code() for _ in range(100)]
-        
-        # Should be unique (probability of collision is extremely low)
-        assert len(codes) == len(set(codes))
+        assert code.startswith("ĐH-")
+        # ĐH-ddmmyy001 = 12 chars (Đ is 1 Python char)
 
 
 class TestQuoteValidation:

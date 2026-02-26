@@ -5,25 +5,56 @@ Uses SQLAlchemy async for database operations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from uuid import UUID
+import json
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text, or_, delete as sql_delete
 from sqlalchemy.orm import selectinload
 
 from backend.core.database import get_db
+from backend.core.auth.permissions import require_permission
+from backend.core.auth.router import get_current_user
+from backend.core.auth.schemas import User as UserSchema
+from backend.modules.menu.domain.models import CategoryModel, MenuItemModel, RecipeModel, SetMenuModel, SetMenuItemModel, MenuAuditLogModel
 from backend.modules.menu.domain.entities import (
     MenuItem, MenuItemBase, Category, CategoryBase, CategoryUpdate,
     SetMenuCreate, SetMenuUpdate, SetMenu, SetMenuItemResponse,
     BulkActionRequest, MenuStats
-)
-from backend.modules.menu.domain.models import (
-    MenuItemModel, CategoryModel, SetMenuModel, SetMenuItemModel
 )
 
 router = APIRouter(tags=["Menu Management"])
 
 # Default tenant for development
 DEFAULT_TENANT_ID = UUID("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
+
+
+async def _log_menu_audit(
+    db: AsyncSession,
+    action: str,
+    entity_type: str,
+    entity_id: UUID = None,
+    entity_name: str = None,
+    old_value: dict = None,
+    new_value: dict = None,
+    details: str = None,
+):
+    """Non-blocking audit log for critical menu actions.
+    Failures are silently ignored to avoid disrupting user workflows."""
+    try:
+        audit = MenuAuditLogModel(
+            tenant_id=DEFAULT_TENANT_ID,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            entity_name=entity_name,
+            old_value=json.dumps(old_value) if old_value else None,
+            new_value=json.dumps(new_value) if new_value else None,
+            details=details,
+        )
+        db.add(audit)
+        await db.commit()
+    except Exception:
+        pass  # Non-blocking — never fail the user operation
 
 
 # --- Helper Functions ---
@@ -64,7 +95,8 @@ def model_to_menu_item(model: MenuItemModel, category_name: str = None) -> MenuI
 
 # --- Categories Endpoints ---
 
-@router.get("/categories", response_model=List[Category])
+@router.get("/categories", response_model=List[Category],
+              dependencies=[Depends(require_permission("menu", "view"))])
 async def list_categories(
     item_type: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
@@ -79,7 +111,8 @@ async def list_categories(
     return [model_to_category(c) for c in categories]
 
 
-@router.get("/categories/{category_id}", response_model=Category)
+@router.get("/categories/{category_id}", response_model=Category,
+              dependencies=[Depends(require_permission("menu", "view"))])
 async def get_category(category_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get category by ID"""
     result = await db.execute(
@@ -93,7 +126,8 @@ async def get_category(category_id: UUID, db: AsyncSession = Depends(get_db)):
     return model_to_category(category)
 
 
-@router.post("/categories", response_model=Category)
+@router.post("/categories", response_model=Category,
+              dependencies=[Depends(require_permission("menu", "create"))])
 async def create_category(data: CategoryBase, db: AsyncSession = Depends(get_db)):
     """Create new category"""
     new_category = CategoryModel(
@@ -107,10 +141,19 @@ async def create_category(data: CategoryBase, db: AsyncSession = Depends(get_db)
     db.add(new_category)
     await db.commit()
     await db.refresh(new_category)
+
+    # Audit: log category creation
+    await _log_menu_audit(
+        db, action='CATEGORY_CREATE', entity_type='CATEGORY',
+        entity_id=new_category.id, entity_name=new_category.name,
+        details=f'Category "{new_category.name}" ({new_category.item_type}) created',
+    )
+
     return model_to_category(new_category)
 
 
-@router.put("/categories/{category_id}", response_model=Category)
+@router.put("/categories/{category_id}", response_model=Category,
+              dependencies=[Depends(require_permission("menu", "edit"))])
 async def update_category(category_id: UUID, data: CategoryUpdate, db: AsyncSession = Depends(get_db)):
     """Update category"""
     result = await db.execute(
@@ -121,6 +164,8 @@ async def update_category(category_id: UUID, data: CategoryUpdate, db: AsyncSess
     category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
+
+    old_name = category.name
     
     if data.name is not None:
         category.name = data.name
@@ -135,10 +180,19 @@ async def update_category(category_id: UUID, data: CategoryUpdate, db: AsyncSess
     
     await db.commit()
     await db.refresh(category)
+
+    # Audit: log category update
+    await _log_menu_audit(
+        db, action='CATEGORY_UPDATE', entity_type='CATEGORY',
+        entity_id=category_id, entity_name=category.name,
+        details=f'Category "{old_name}" updated',
+    )
+
     return model_to_category(category)
 
 
-@router.delete("/categories/{category_id}")
+@router.delete("/categories/{category_id}",
+              dependencies=[Depends(require_permission("menu", "delete"))])
 async def delete_category(category_id: UUID, db: AsyncSession = Depends(get_db)):
     """Delete category (fails if items reference it)"""
     result = await db.execute(
@@ -162,14 +216,24 @@ async def delete_category(category_id: UUID, db: AsyncSession = Depends(get_db))
             detail=f"Không thể xóa danh mục đang có {items_count} món ăn"
         )
     
+    category_name = category.name
     await db.delete(category)
     await db.commit()
+
+    # Audit: log category deletion
+    await _log_menu_audit(
+        db, action='CATEGORY_DELETE', entity_type='CATEGORY',
+        entity_id=category_id, entity_name=category_name,
+        details=f'Category "{category_name}" deleted',
+    )
+
     return {"message": "Category deleted", "id": str(category_id)}
 
 
 # --- Menu Items Endpoints ---
 
-@router.get("/items", response_model=List[MenuItem])
+@router.get("/items", response_model=List[MenuItem],
+              dependencies=[Depends(require_permission("menu", "view"))])
 async def list_items(
     category_id: Optional[UUID] = None,
     search: Optional[str] = None,
@@ -208,7 +272,8 @@ async def list_items(
     return [model_to_menu_item(item, cat_name) for item, cat_name in rows]
 
 
-@router.get("/items/{item_id}", response_model=MenuItem)
+@router.get("/items/{item_id}", response_model=MenuItem,
+              dependencies=[Depends(require_permission("menu", "view"))])
 async def get_item(item_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get menu item by ID"""
     result = await db.execute(
@@ -222,7 +287,8 @@ async def get_item(item_id: UUID, db: AsyncSession = Depends(get_db)):
     return model_to_menu_item(item)
 
 
-@router.post("/items", response_model=MenuItem)
+@router.post("/items", response_model=MenuItem,
+              dependencies=[Depends(require_permission("menu", "create"))])
 async def create_item(data: MenuItemBase, db: AsyncSession = Depends(get_db)):
     """Create new menu item"""
     new_item = MenuItemModel(
@@ -238,12 +304,27 @@ async def create_item(data: MenuItemBase, db: AsyncSession = Depends(get_db)):
     db.add(new_item)
     await db.commit()
     await db.refresh(new_item)
+
+    # Audit: log item creation
+    await _log_menu_audit(
+        db, action='ITEM_CREATE', entity_type='MENU_ITEM',
+        entity_id=new_item.id, entity_name=new_item.name,
+        new_value={'cost_price': float(new_item.cost_price or 0), 'selling_price': float(new_item.selling_price or 0)},
+        details=f'Menu item "{new_item.name}" created',
+    )
+
     return model_to_menu_item(new_item)
 
 
-@router.put("/items/{item_id}", response_model=MenuItem)
-async def update_item(item_id: UUID, data: MenuItemBase, db: AsyncSession = Depends(get_db)):
-    """Update menu item"""
+@router.put("/items/{item_id}", response_model=MenuItem,
+              dependencies=[Depends(require_permission("menu", "edit"))])
+async def update_item(
+    item_id: UUID,
+    data: MenuItemBase,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserSchema = Depends(get_current_user),
+):
+    """Update menu item. Requires set_price permission if selling_price changes."""
     result = await db.execute(
         select(MenuItemModel)
         .where(MenuItemModel.id == item_id)
@@ -252,6 +333,31 @@ async def update_item(item_id: UUID, data: MenuItemBase, db: AsyncSession = Depe
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Menu item not found")
+    
+    # Capture old values for audit
+    old_cost = float(item.cost_price or 0)
+    old_sell = float(item.selling_price or 0)
+    new_sell = float(data.selling_price or 0)
+
+    # GAP-M4: Inline set_price permission check — SoD enforcement
+    # If selling_price is changing, user must have menu:set_price permission
+    if old_sell != new_sell:
+        user_role = current_user.role.code.lower() if current_user.role else ""
+        if user_role != "super_admin":
+            role_perms = []
+            if current_user.role and hasattr(current_user.role, 'permissions'):
+                role_perms = current_user.role.permissions or []
+            has_set_price = (
+                "ALL" in role_perms
+                or "menu:*" in role_perms
+                or "menu:set_price" in role_perms
+            )
+            # If role has no granular permissions yet, allow (backward compat)
+            if role_perms and not has_set_price:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Quyền bị từ chối: bạn không có quyền 'set_price' để thay đổi giá bán"
+                )
     
     # Update fields
     item.name = data.name
@@ -263,10 +369,23 @@ async def update_item(item_id: UUID, data: MenuItemBase, db: AsyncSession = Depe
     
     await db.commit()
     await db.refresh(item)
+    
+    # Audit: log price changes
+    new_cost = float(data.cost_price or 0)
+    if old_cost != new_cost or old_sell != new_sell:
+        await _log_menu_audit(
+            db, action='PRICE_CHANGE', entity_type='MENU_ITEM',
+            entity_id=item_id, entity_name=item.name,
+            old_value={'cost_price': old_cost, 'selling_price': old_sell},
+            new_value={'cost_price': new_cost, 'selling_price': new_sell},
+            details=f'Price changed: cost {old_cost:.0f}→{new_cost:.0f}, sell {old_sell:.0f}→{new_sell:.0f}',
+        )
+    
     return model_to_menu_item(item)
 
 
-@router.delete("/items/{item_id}")
+@router.delete("/items/{item_id}",
+              dependencies=[Depends(require_permission("menu", "delete"))])
 async def delete_item(item_id: UUID, db: AsyncSession = Depends(get_db)):
     """Delete menu item"""
     result = await db.execute(
@@ -278,12 +397,22 @@ async def delete_item(item_id: UUID, db: AsyncSession = Depends(get_db)):
     if not item:
         raise HTTPException(status_code=404, detail="Menu item not found")
     
+    item_name = item.name
     await db.delete(item)
     await db.commit()
+    
+    # Audit: log item deletion
+    await _log_menu_audit(
+        db, action='ITEM_DELETE', entity_type='MENU_ITEM',
+        entity_id=item_id, entity_name=item_name,
+        details=f'Menu item "{item_name}" deleted',
+    )
+    
     return {"message": "Item deleted", "id": str(item_id)}
 
 
-@router.put("/items/{item_id}/toggle-active")
+@router.put("/items/{item_id}/toggle-active",
+              dependencies=[Depends(require_permission("menu", "edit"))])
 async def toggle_item_active(item_id: UUID, db: AsyncSession = Depends(get_db)):
     """Toggle menu item active status"""
     result = await db.execute(
@@ -301,7 +430,8 @@ async def toggle_item_active(item_id: UUID, db: AsyncSession = Depends(get_db)):
     return {"id": str(item_id), "is_active": item.is_active}
 
 
-@router.post("/items/bulk-action")
+@router.post("/items/bulk-action",
+              dependencies=[Depends(require_permission("menu", "delete"))])
 async def bulk_action(data: BulkActionRequest, db: AsyncSession = Depends(get_db)):
     """Bulk activate/deactivate/delete menu items"""
     result = await db.execute(
@@ -313,6 +443,8 @@ async def bulk_action(data: BulkActionRequest, db: AsyncSession = Depends(get_db
     
     if not items:
         raise HTTPException(status_code=404, detail="No items found")
+
+    item_names = [item.name for item in items]
     
     if data.action == "activate":
         for item in items:
@@ -327,12 +459,23 @@ async def bulk_action(data: BulkActionRequest, db: AsyncSession = Depends(get_db
         raise HTTPException(status_code=400, detail=f"Unknown action: {data.action}")
     
     await db.commit()
+
+    # Audit: log bulk action
+    names_preview = ", ".join(item_names[:5])
+    if len(item_names) > 5:
+        names_preview += ", ..."
+    await _log_menu_audit(
+        db, action='BULK_ACTION', entity_type='MENU_ITEM',
+        details=f'Bulk {data.action}: {len(items)} items ({names_preview})',
+    )
+
     return {"message": f"Bulk {data.action} completed", "affected": len(items)}
 
 
 # --- Stats Endpoint ---
 
-@router.get("/stats", response_model=MenuStats)
+@router.get("/stats", response_model=MenuStats,
+              dependencies=[Depends(require_permission("menu", "view"))])
 async def get_menu_stats(db: AsyncSession = Depends(get_db)):
     """Get menu statistics"""
     total_result = await db.execute(
@@ -399,7 +542,8 @@ class MatchResult(BaseModel):
     match_type: str  # 'exact', 'unaccent', 'fuzzy', 'none'
     matches: List[dict]  # List of {id, name, score}
 
-@router.post("/smart-match", response_model=List[MatchResult])
+@router.post("/smart-match", response_model=List[MatchResult],
+              dependencies=[Depends(require_permission("menu", "view"))])
 async def smart_match_menu_items(
     payload: SmartMatchRequest,
     db: AsyncSession = Depends(get_db)
@@ -529,7 +673,8 @@ class RecipeCostResponse(BaseModel):
     ingredients: List[dict]
 
 
-@router.get("/items/{item_id}/recipes")
+@router.get("/items/{item_id}/recipes",
+              dependencies=[Depends(require_permission("menu", "view"))])
 async def list_item_recipes(
     item_id: UUID,
     db: AsyncSession = Depends(get_db)
@@ -567,7 +712,8 @@ async def list_item_recipes(
     }
 
 
-@router.post("/items/{item_id}/recipes")
+@router.post("/items/{item_id}/recipes",
+              dependencies=[Depends(require_permission("menu", "edit"))])
 async def add_recipe_ingredient(
     item_id: UUID,
     data: RecipeIngredientBase,
@@ -608,6 +754,14 @@ async def add_recipe_ingredient(
     await db.commit()
     await db.refresh(recipe)
     
+    # Audit: log recipe ingredient addition
+    await _log_menu_audit(
+        db, action='RECIPE_ADD', entity_type='RECIPE',
+        entity_id=item_id, entity_name=item.name,
+        new_value={'ingredient': data.ingredient_name, 'qty': float(data.quantity_per_unit), 'uom': data.uom},
+        details=f'Added {data.ingredient_name} ({data.quantity_per_unit} {data.uom}) to recipe of "{item.name}"',
+    )
+    
     return {
         "id": str(recipe.id),
         "menu_item_id": str(item_id),
@@ -619,7 +773,8 @@ async def add_recipe_ingredient(
     }
 
 
-@router.put("/items/{item_id}/recipes/{recipe_id}")
+@router.put("/items/{item_id}/recipes/{recipe_id}",
+              dependencies=[Depends(require_permission("menu", "edit"))])
 async def update_recipe_ingredient(
     item_id: UUID,
     recipe_id: UUID,
@@ -637,12 +792,25 @@ async def update_recipe_ingredient(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe ingredient not found")
     
+    old_qty = float(recipe.quantity_per_unit)
+    old_uom = recipe.uom
+    
     recipe.quantity_per_unit = data.quantity_per_unit
     recipe.uom = data.uom
     recipe.notes = data.notes
     
     await db.commit()
     await db.refresh(recipe)
+    
+    # Audit: log recipe update
+    if old_qty != float(data.quantity_per_unit) or old_uom != data.uom:
+        await _log_menu_audit(
+            db, action='RECIPE_UPDATE', entity_type='RECIPE',
+            entity_id=item_id, entity_name=recipe.ingredient_name,
+            old_value={'qty': old_qty, 'uom': old_uom},
+            new_value={'qty': float(data.quantity_per_unit), 'uom': data.uom},
+            details=f'Updated {recipe.ingredient_name}: {old_qty} {old_uom} → {float(data.quantity_per_unit)} {data.uom}',
+        )
     
     return {
         "id": str(recipe.id),
@@ -652,7 +820,8 @@ async def update_recipe_ingredient(
     }
 
 
-@router.delete("/items/{item_id}/recipes/{recipe_id}")
+@router.delete("/items/{item_id}/recipes/{recipe_id}",
+              dependencies=[Depends(require_permission("menu", "delete"))])
 async def delete_recipe_ingredient(
     item_id: UUID,
     recipe_id: UUID,
@@ -669,13 +838,24 @@ async def delete_recipe_ingredient(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe ingredient not found")
     
+    ingredient_name = recipe.ingredient_name
+    menu_item_id = recipe.menu_item_id
+    
     await db.delete(recipe)
     await db.commit()
+    
+    # Audit: log recipe ingredient deletion
+    await _log_menu_audit(
+        db, action='RECIPE_DELETE', entity_type='RECIPE',
+        entity_id=menu_item_id, entity_name=ingredient_name,
+        details=f'Removed ingredient "{ingredient_name}" from recipe',
+    )
     
     return {"message": "Ingredient removed from recipe"}
 
 
-@router.get("/items/{item_id}/cost", response_model=RecipeCostResponse)
+@router.get("/items/{item_id}/cost", response_model=RecipeCostResponse,
+              dependencies=[Depends(require_permission("menu", "view_cost"))])
 async def calculate_food_cost(
     item_id: UUID,
     portions: int = 1,
@@ -738,7 +918,8 @@ async def calculate_food_cost(
 
 # ============ SET MENU (COMBO) MANAGEMENT ============
 
-@router.get("/set-menus")
+@router.get("/set-menus",
+              dependencies=[Depends(require_permission("menu", "view"))])
 async def list_set_menus(db: AsyncSession = Depends(get_db)):
     """List all set menus with their items"""
     result = await db.execute(
@@ -775,7 +956,8 @@ async def list_set_menus(db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.post("/set-menus")
+@router.post("/set-menus",
+              dependencies=[Depends(require_permission("menu", "create"))])
 async def create_set_menu(data: SetMenuCreate, db: AsyncSession = Depends(get_db)):
     """Create a new set menu with items"""
     new_set_menu = SetMenuModel(
@@ -805,7 +987,8 @@ async def create_set_menu(data: SetMenuCreate, db: AsyncSession = Depends(get_db
     return {"id": str(new_set_menu.id), "message": "Set menu created"}
 
 
-@router.put("/set-menus/{set_menu_id}")
+@router.put("/set-menus/{set_menu_id}",
+              dependencies=[Depends(require_permission("menu", "edit"))])
 async def update_set_menu(set_menu_id: UUID, data: SetMenuUpdate, db: AsyncSession = Depends(get_db)):
     """Update a set menu"""
     result = await db.execute(
@@ -848,7 +1031,8 @@ async def update_set_menu(set_menu_id: UUID, data: SetMenuUpdate, db: AsyncSessi
     return {"id": str(set_menu_id), "message": "Set menu updated"}
 
 
-@router.delete("/set-menus/{set_menu_id}")
+@router.delete("/set-menus/{set_menu_id}",
+              dependencies=[Depends(require_permission("menu", "delete"))])
 async def delete_set_menu(set_menu_id: UUID, db: AsyncSession = Depends(get_db)):
     """Delete a set menu"""
     result = await db.execute(
@@ -860,14 +1044,24 @@ async def delete_set_menu(set_menu_id: UUID, db: AsyncSession = Depends(get_db))
     if not set_menu:
         raise HTTPException(status_code=404, detail="Set menu not found")
     
+    set_menu_name = set_menu.name
     await db.delete(set_menu)
     await db.commit()
+    
+    # Audit: log set menu deletion
+    await _log_menu_audit(
+        db, action='SET_MENU_DELETE', entity_type='SET_MENU',
+        entity_id=set_menu_id, entity_name=set_menu_name,
+        details=f'Set menu "{set_menu_name}" deleted',
+    )
+    
     return {"message": "Set menu deleted", "id": str(set_menu_id)}
 
 
 # ============ MENU ENGINEERING ANALYTICS ============
 
-@router.get("/stats/menu-engineering")
+@router.get("/stats/menu-engineering",
+              dependencies=[Depends(require_permission("menu", "view_cost"))])
 async def menu_engineering_analysis(db: AsyncSession = Depends(get_db)):
     """
     Menu Engineering 4-quadrant analysis:
@@ -971,7 +1165,8 @@ async def menu_engineering_analysis(db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.get("/stats/top-sellers")
+@router.get("/stats/top-sellers",
+              dependencies=[Depends(require_permission("menu", "view"))])
 async def top_sellers(limit: int = 10, db: AsyncSession = Depends(get_db)):
     """
     Top-selling menu items by selling price (proxy for popularity).
@@ -1005,7 +1200,8 @@ async def top_sellers(limit: int = 10, db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.get("/stats/category-breakdown")
+@router.get("/stats/category-breakdown",
+              dependencies=[Depends(require_permission("menu", "view"))])
 async def category_breakdown(db: AsyncSession = Depends(get_db)):
     """Category breakdown with item counts and average food cost."""
     # Get all categories

@@ -8,9 +8,9 @@ import { api } from '@/lib/api';
  * @description Represents a predefined note that can be selected when creating quotes
  */
 export interface QuoteNotePreset {
-    id: string;
-    content: string;
-    created_at: string;
+ id: string;
+ content: string;
+ created_at: string;
 }
 
 /**
@@ -18,13 +18,13 @@ export interface QuoteNotePreset {
  * @returns Query result with list of note presets from database
  */
 export const useQuoteNotePresets = () => {
-    return useQuery<QuoteNotePreset[]>({
-        queryKey: ['quote-note-presets'],
-        queryFn: async () => {
-            return api.get<QuoteNotePreset[]>('/quotes/notes/presets');
-        },
-        staleTime: 1000 * 60 * 5, // 5 minutes - notes don't change often
-    });
+ return useQuery<QuoteNotePreset[]>({
+ queryKey: ['quote-note-presets'],
+ queryFn: async () => {
+ return api.get<QuoteNotePreset[]>('/quotes/notes/presets');
+ },
+ staleTime: 1000 * 60 * 5, // 5 minutes - notes don't change often
+ });
 };
 
 /**
@@ -32,16 +32,16 @@ export const useQuoteNotePresets = () => {
  * @returns Mutation function to create a new preset
  */
 export const useCreateNotePreset = () => {
-    const queryClient = useQueryClient();
+ const queryClient = useQueryClient();
 
-    return useMutation({
-        mutationFn: async (content: string) => {
-            return api.post<QuoteNotePreset>('/quotes/notes/presets', { content });
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['quote-note-presets'] });
-        },
-    });
+ return useMutation({
+ mutationFn: async (content: string) => {
+ return api.post<QuoteNotePreset>('/quotes/notes/presets', { content });
+ },
+ onSuccess: () => {
+ queryClient.invalidateQueries({ queryKey: ['quote-note-presets'] });
+ },
+ });
 };
 
 /**
@@ -49,14 +49,14 @@ export const useCreateNotePreset = () => {
  * @returns Mutation function to delete a preset by ID
  */
 export const useDeleteNotePreset = () => {
-    const queryClient = useQueryClient();
+ const queryClient = useQueryClient();
 
-    return useMutation({
-        mutationFn: async (noteId: string) => {
-            await api.delete(`/quotes/notes/presets/${noteId}`);
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['quote-note-presets'] });
-        },
-    });
+ return useMutation({
+ mutationFn: async (noteId: string) => {
+ await api.delete(`/quotes/notes/presets/${noteId}`);
+ },
+ onSuccess: () => {
+ queryClient.invalidateQueries({ queryKey: ['quote-note-presets'] });
+ },
+ });
 };

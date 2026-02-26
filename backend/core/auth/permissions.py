@@ -12,7 +12,7 @@ MODULE_ACCESS = {
     "order": ["super_admin", "admin", "manager", "chef", "sales", "staff", "accountant"],
     "calendar": ["super_admin", "admin", "manager", "chef", "sales", "staff"],
     "procurement": ["super_admin", "admin", "manager", "chef", "accountant"],
-    "hr": ["super_admin", "admin", "manager"],
+    "hr": ["super_admin", "admin", "manager", "accountant"],
     "finance": ["super_admin", "admin", "manager", "accountant"],
     "crm": ["super_admin", "admin", "manager", "sales"],
     "analytics": ["super_admin", "admin", "manager", "sales", "accountant"],

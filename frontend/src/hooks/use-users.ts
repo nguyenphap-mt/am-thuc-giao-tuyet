@@ -46,7 +46,8 @@ export function useUsers(filters: UserFilters = {}) {
             if (filters.role && filters.role !== 'all') params.set('role', filters.role);
             if (filters.status && filters.status !== 'all') params.set('status', filters.status);
             const queryStr = params.toString() ? `?${params.toString()}` : '';
-            return api.get<UserItem[]>(`/users/${queryStr}`);
+            // BUGFIX: BUG-20260223-002 - no trailing slash (redirect_slashes=False)
+            return api.get<UserItem[]>(`/users${queryStr}`);
         },
     });
 }
@@ -61,7 +62,14 @@ export function useUserStats() {
 export function useRoles() {
     return useQuery({
         queryKey: userKeys.roles(),
-        queryFn: () => api.get<RoleOption[]>('/roles/'),
+        queryFn: () => api.get<RoleOption[]>('/roles'),
+    });
+}
+
+export function useUnlinkedUsers() {
+    return useQuery({
+        queryKey: [...userKeys.all, 'unlinked'] as const,
+        queryFn: () => api.get<{ id: string; email: string; full_name: string; role: string }[]>('/users/unlinked'),
     });
 }
 
@@ -79,7 +87,7 @@ export function useCreateUser() {
 
     return useMutation({
         mutationFn: (data: CreateUserData) =>
-            api.post<UserItem>('/users/', data),
+            api.post<UserItem>('/users', data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: userKeys.all });
             toast.success('Tạo người dùng thành công');

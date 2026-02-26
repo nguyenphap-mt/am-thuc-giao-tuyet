@@ -8,8 +8,8 @@ import { NextRequest, NextResponse } from 'next/server';
  * Problem: Next.js normalizes URLs by stripping trailing slashes before
  * processing routes. The backend has redirect_slashes=False with an
  * inconsistent mix of routes:
- *   - /api/v1/users/  (requires trailing slash)
- *   - /api/v1/users/stats  (NO trailing slash)
+ * - /api/v1/users/ (requires trailing slash)
+ * - /api/v1/users/stats (NO trailing slash)
  *
  * Solution: Try the request without trailing slash first. If the backend
  * returns 404, retry with a trailing slash. This handles both cases.
@@ -17,7 +17,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const API_BACKEND =
     process.env.API_BACKEND_URL ||
-    'https://am-thuc-api-321822391174.asia-southeast1.run.app';
+    'https://am-thuc-api.onrender.com';
 
 export async function GET(
     request: NextRequest,

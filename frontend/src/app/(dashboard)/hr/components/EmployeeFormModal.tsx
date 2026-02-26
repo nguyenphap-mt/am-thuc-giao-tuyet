@@ -26,6 +26,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { IconUser, IconPhone, IconMail, IconCash, IconId, IconBuildingBank, IconLoader2, IconLock, IconCopy, IconCheck, IconRefresh, IconShieldLock } from '@tabler/icons-react';
 import { Employee, EmployeePayload } from '@/types';
+import { useRoles, useUnlinkedUsers } from '@/hooks/use-users';
 
 interface EmployeeFormModalProps {
     open: boolean;
@@ -43,11 +44,7 @@ const ROLE_TYPES = [
     { value: 'MANAGER', label: 'Quản lý' },
 ];
 
-const SYSTEM_ROLES = [
-    { value: 'staff', label: 'Nhân viên (Staff)' },
-    { value: 'manager', label: 'Quản lý (Manager)' },
-    { value: 'admin', label: 'Admin' },
-];
+
 
 const initialFormData: EmployeePayload = {
     full_name: '',
@@ -56,7 +53,7 @@ const initialFormData: EmployeePayload = {
     email: '',
     is_fulltime: false,
     hourly_rate: 50000,
-    base_salary: 0,  // Monthly salary for fulltime
+    base_salary: 0, // Monthly salary for fulltime
     is_active: true,
     id_number: '',
     date_of_birth: '',
@@ -88,9 +85,12 @@ export default function EmployeeFormModal({
     mode,
 }: EmployeeFormModalProps) {
     const queryClient = useQueryClient();
+    const { data: systemRoles = [] } = useRoles();
+    const { data: unlinkedUsers = [] } = useUnlinkedUsers();
     const [formData, setFormData] = useState<EmployeePayload>(initialFormData);
     const [copied, setCopied] = useState(false);
     const [resetResult, setResetResult] = useState<string | null>(null);
+    const [accountMode, setAccountMode] = useState<'none' | 'create' | 'link'>('create');
 
     useEffect(() => {
         setResetResult(null);
@@ -114,8 +114,10 @@ export default function EmployeeFormModal({
                 create_account: false,
                 login_role: employee.login_role || 'staff',
             });
+            setAccountMode('none');
         } else {
             setFormData(initialFormData);
+            setAccountMode('create');
         }
     }, [mode, employee, open]);
 
@@ -149,7 +151,8 @@ export default function EmployeeFormModal({
             onOpenChange(false);
         },
         onError: (error: any) => {
-            toast.error(error?.message || 'Không thể thêm nhân viên');
+            const msg = error?.response?.data?.detail || error?.message || 'Không thể thêm nhân viên';
+            toast.error(msg);
         },
     });
 
@@ -163,7 +166,8 @@ export default function EmployeeFormModal({
             onOpenChange(false);
         },
         onError: (error: any) => {
-            toast.error(error?.message || 'Không thể cập nhật nhân viên');
+            const msg = error?.response?.data?.detail || error?.message || 'Không thể cập nhật nhân viên';
+            toast.error(msg);
         },
     });
 
@@ -190,9 +194,32 @@ export default function EmployeeFormModal({
         }
 
         if (mode === 'create') {
-            createMutation.mutate(formData);
+            const payload = { ...formData };
+            // Set account fields based on accountMode
+            if (accountMode === 'none') {
+                delete payload.login_email;
+                delete payload.login_password;
+                delete payload.link_user_id;
+                payload.create_account = false;
+            } else if (accountMode === 'link') {
+                delete payload.login_email;
+                delete payload.login_password;
+                payload.create_account = false;
+                // link_user_id already set
+            } else {
+                // create mode
+                delete payload.link_user_id;
+                payload.create_account = true;
+            }
+            createMutation.mutate(payload);
         } else {
-            updateMutation.mutate(formData);
+            const payload = { ...formData };
+            if (accountMode === 'link') {
+                payload.create_account = false;
+            } else if (accountMode === 'create') {
+                payload.create_account = true;
+            }
+            updateMutation.mutate(payload);
         }
     };
 
@@ -321,7 +348,7 @@ export default function EmployeeFormModal({
                             {formData.is_fulltime && (
                                 <div className="space-y-2 md:col-span-2">
                                     <Label htmlFor="base_salary" className="flex items-center gap-1">
-                                        <IconCash className="h-4 w-4 text-purple-600" />
+                                        <IconCash className="h-4 w-4 text-accent-primary" />
                                         Lương cơ bản tháng (VND)
                                         <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">(Cho nhân viên toàn thời gian)</span>
                                     </Label>
@@ -331,7 +358,7 @@ export default function EmployeeFormModal({
                                         value={formData.base_salary}
                                         onChange={(e) => handleChange('base_salary', Number(e.target.value))}
                                         placeholder="10000000"
-                                        className="border-purple-200 focus:border-purple-500"
+                                        className="border-accent-subtle focus:border-accent-medium"
                                     />
                                     <p className="text-xs text-gray-500 dark:text-gray-400">Nhập mức lương cố định hàng tháng. Hệ thống sẽ dùng lương này thay vì lương theo giờ.</p>
                                 </div>
@@ -469,9 +496,9 @@ export default function EmployeeFormModal({
                                                 <SelectValue placeholder="Chọn vai trò" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {SYSTEM_ROLES.map((role) => (
-                                                    <SelectItem key={role.value} value={role.value}>
-                                                        {role.label}
+                                                {systemRoles.map((role) => (
+                                                    <SelectItem key={role.code} value={role.code}>
+                                                        {role.name}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -526,23 +553,55 @@ export default function EmployeeFormModal({
                                 </div>
                             </div>
                         ) : (
-                            /* CASE 2: Create mode OR Edit without account → Create toggle */
+                            /* CASE 2: Create mode OR Edit without account → 3-mode selection */
                             <>
-                                <div className="flex items-center justify-between mb-3">
-                                    <span className="text-xs text-gray-500">
-                                        {mode === 'edit' ? 'Nhân viên chưa có tài khoản' : 'Tạo tài khoản cùng lúc'}
-                                    </span>
-                                    <div className="flex items-center gap-2">
-                                        <Label htmlFor="create_account" className="text-xs text-gray-500">Tạo tài khoản</Label>
-                                        <Switch
-                                            id="create_account"
-                                            checked={formData.create_account ?? (mode === 'create')}
-                                            onCheckedChange={(v) => handleChange('create_account', v)}
-                                        />
-                                    </div>
+                                {/* 3-Mode Radio Group */}
+                                <div className="flex gap-1 mb-3 p-1 bg-gray-100 rounded-lg">
+                                    <button
+                                        type="button"
+                                        className={`flex-1 text-xs py-1.5 px-2 rounded-md transition-all ${accountMode === 'none'
+                                                ? 'bg-white shadow-sm text-gray-900 font-medium'
+                                                : 'text-gray-500 hover:text-gray-700'
+                                            }`}
+                                        onClick={() => {
+                                            setAccountMode('none');
+                                            handleChange('create_account', false);
+                                            handleChange('link_user_id', undefined);
+                                        }}
+                                    >
+                                        Không tạo TK
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`flex-1 text-xs py-1.5 px-2 rounded-md transition-all ${accountMode === 'create'
+                                                ? 'bg-white shadow-sm text-gray-900 font-medium'
+                                                : 'text-gray-500 hover:text-gray-700'
+                                            }`}
+                                        onClick={() => {
+                                            setAccountMode('create');
+                                            handleChange('create_account', true);
+                                            handleChange('link_user_id', undefined);
+                                        }}
+                                    >
+                                        Tạo TK mới
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`flex-1 text-xs py-1.5 px-2 rounded-md transition-all ${accountMode === 'link'
+                                                ? 'bg-white shadow-sm text-gray-900 font-medium'
+                                                : 'text-gray-500 hover:text-gray-700'
+                                            }`}
+                                        onClick={() => {
+                                            setAccountMode('link');
+                                            handleChange('create_account', false);
+                                        }}
+                                    >
+                                        Liên kết TK có sẵn
+                                    </button>
                                 </div>
 
-                                {formData.create_account && (
+                                {/* Mode: Create new account */}
+                                {accountMode === 'create' && (
                                     <div className="space-y-3 p-3 bg-green-50 rounded-lg border border-green-200">
                                         <div className="space-y-2">
                                             <Label htmlFor="login_email" className="flex items-center gap-1">
@@ -574,7 +633,7 @@ export default function EmployeeFormModal({
                                                 </div>
                                                 <p className="text-xs text-gray-500">
                                                     Mặc định: GiaoTuyet@{new Date().getFullYear()}.
-                                                    <button type="button" onClick={generatePassword} className="ml-1 text-purple-600 hover:underline">Tạo lại</button>
+                                                    <button type="button" onClick={generatePassword} className="ml-1 text-accent-primary hover:underline">Tạo lại</button>
                                                 </p>
                                             </div>
 
@@ -588,14 +647,72 @@ export default function EmployeeFormModal({
                                                         <SelectValue placeholder="Chọn vai trò" />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        {SYSTEM_ROLES.map((role) => (
-                                                            <SelectItem key={role.value} value={role.value}>
-                                                                {role.label}
+                                                        {systemRoles.map((role) => (
+                                                            <SelectItem key={role.code} value={role.code}>
+                                                                {role.name}
                                                             </SelectItem>
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
                                             </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Mode: Link existing user */}
+                                {accountMode === 'link' && (
+                                    <div className="space-y-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                        <div className="space-y-2">
+                                            <Label className="flex items-center gap-1">
+                                                <IconShieldLock className="h-4 w-4" />
+                                                Chọn tài khoản có sẵn
+                                            </Label>
+                                            {unlinkedUsers.length === 0 ? (
+                                                <p className="text-xs text-gray-500 italic">
+                                                    Không có tài khoản chưa liên kết. Tạo tài khoản mới tại Settings → Quản lý người dùng.
+                                                </p>
+                                            ) : (
+                                                <Select
+                                                    value={formData.link_user_id || ''}
+                                                    onValueChange={(value) => handleChange('link_user_id', value)}
+                                                >
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Chọn tài khoản chưa sử dụng" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {unlinkedUsers.map((u) => (
+                                                            <SelectItem key={u.id} value={u.id}>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span>{u.email}</span>
+                                                                    <span className="text-xs text-gray-400">— {u.full_name} ({u.role})</span>
+                                                                </div>
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            )}
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="login_role_link">Vai trò hệ thống</Label>
+                                            <Select
+                                                value={formData.login_role || ''}
+                                                onValueChange={(value) => handleChange('login_role', value)}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Giữ nguyên vai trò hiện tại" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {systemRoles.map((role) => (
+                                                        <SelectItem key={role.code} value={role.code}>
+                                                            {role.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <p className="text-xs text-gray-500">
+                                                Để trống = giữ nguyên vai trò hiện tại của tài khoản
+                                            </p>
                                         </div>
                                     </div>
                                 )}
@@ -605,12 +722,12 @@ export default function EmployeeFormModal({
 
                     {/* Payroll Config Section - Only for fulltime employees */}
                     {formData.is_fulltime && (
-                        <div className="space-y-3 p-4 bg-purple-50 rounded-lg border border-purple-200">
-                            <h4 className="font-medium text-purple-800 flex items-center gap-2">
+                        <div className="space-y-3 p-4 bg-accent-50 rounded-lg border border-accent-subtle">
+                            <h4 className="font-medium text-accent-strong flex items-center gap-2">
                                 <IconCash className="h-4 w-4" />
                                 Cài đặt lương & phụ cấp riêng
                             </h4>
-                            <p className="text-xs text-purple-600 mb-2">
+                            <p className="text-xs text-accent-primary mb-2">
                                 Để trống = dùng cài đặt công ty mặc định
                             </p>
 
@@ -659,7 +776,7 @@ export default function EmployeeFormModal({
                             </div>
 
                             {/* Insurance Config */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-purple-200">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-accent-subtle">
                                 <div className="space-y-1 md:col-span-2">
                                     <Label className="text-xs">Lương đóng BHXH (VND)</Label>
                                     <Input
@@ -721,7 +838,7 @@ export default function EmployeeFormModal({
                         <Button
                             type="submit"
                             disabled={isPending}
-                            className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500"
+                            className="bg-accent-gradient"
                         >
                             {isPending ? (
                                 <>

@@ -25,6 +25,8 @@ from backend.modules.finance.domain.models import (
 )
 from backend.modules.finance.domain.entities import Account, AccountBase, Journal, JournalBase
 from backend.modules.order.domain.models import OrderModel, OrderPaymentModel
+from backend.core.auth.permissions import require_permission
+from backend.modules.procurement.domain.models import PurchaseOrderModel, SupplierModel
 
 router = APIRouter(tags=["Finance Core"])
 
@@ -64,7 +66,8 @@ class RecentTransaction(BaseModel):
 
 # ============ DASHBOARD API ============
 
-@router.get("/dashboard", response_model=DashboardStats)
+@router.get("/dashboard", response_model=DashboardStats,
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_dashboard_stats(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """
     Get finance dashboard statistics.
@@ -217,7 +220,8 @@ async def get_dashboard_stats(tenant_id: UUID = Depends(get_current_tenant), db:
     )
 
 
-@router.get("/recent-transactions", response_model=List[RecentTransaction])
+@router.get("/recent-transactions", response_model=List[RecentTransaction],
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_recent_transactions(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     limit: int = Query(10, le=50)
@@ -269,7 +273,8 @@ async def get_recent_transactions(
 
 # ============ STATS FOR CHARTS ============
 
-@router.get("/stats/monthly")
+@router.get("/stats/monthly",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_monthly_stats(
     tenant_id: UUID = Depends(get_current_tenant), 
     db: AsyncSession = Depends(get_db),
@@ -357,7 +362,8 @@ async def get_monthly_stats(
     return result
 
 
-@router.get("/stats/expenses-by-category")
+@router.get("/stats/expenses-by-category",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_expenses_by_category(
     tenant_id: UUID = Depends(get_current_tenant), 
     db: AsyncSession = Depends(get_db),
@@ -436,7 +442,8 @@ async def get_expenses_by_category(
 
 # ============ ACCOUNTS (Chart of Accounts) ============
 
-@router.get("/accounts", response_model=List[Account])
+@router.get("/accounts", response_model=List[Account],
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def list_accounts(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get Chart of Accounts from PostgreSQL"""
     result = await db.execute(
@@ -448,7 +455,8 @@ async def list_accounts(tenant_id: UUID = Depends(get_current_tenant), db: Async
     return accounts
 
 
-@router.post("/accounts", response_model=Account)
+@router.post("/accounts", response_model=Account,
+              dependencies=[Depends(require_permission("finance", "create"))])
 async def create_account(data: AccountBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Create a new account in Chart of Accounts"""
     # Check if code already exists
@@ -487,7 +495,8 @@ class TransactionCreate(BaseModel):
     reference_type: Optional[str] = None
 
 
-@router.get("/transactions", response_model=List[TransactionResponse])
+@router.get("/transactions", response_model=List[TransactionResponse],
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def list_transactions(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     type: Optional[str] = Query(None, description="RECEIPT or PAYMENT"),
@@ -508,7 +517,8 @@ async def list_transactions(
     return result.scalars().all()
 
 
-@router.post("/transactions", response_model=TransactionResponse)
+@router.post("/transactions", response_model=TransactionResponse,
+              dependencies=[Depends(require_permission("finance", "create"))])
 async def create_transaction(data: TransactionCreate, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Create a finance transaction (Thu/Chi)"""
     import random
@@ -568,7 +578,8 @@ class ReceivableItem(BaseModel):
     aging_bucket: str
 
 
-@router.get("/receivables", response_model=List[ReceivableItem])
+@router.get("/receivables", response_model=List[ReceivableItem],
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def list_receivables(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """
     List accounts receivable (unpaid order amounts).
@@ -640,7 +651,8 @@ class ReceivableAlertsSummary(BaseModel):
     alerts: List[ReceivableAlertItem]
 
 
-@router.get("/receivables/alerts", response_model=ReceivableAlertsSummary)
+@router.get("/receivables/alerts", response_model=ReceivableAlertsSummary,
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_receivables_alerts(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
@@ -732,7 +744,8 @@ class BulkPaymentResponse(BaseModel):
     total_amount: Decimal
     results: List[BulkPaymentResult]
 
-@router.post("/payments/bulk", response_model=BulkPaymentResponse)
+@router.post("/payments/bulk", response_model=BulkPaymentResponse,
+              dependencies=[Depends(require_permission("finance", "record_payment"))])
 async def record_bulk_payments(
     request: BulkPaymentRequest,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -844,7 +857,8 @@ async def record_bulk_payments(
 
 # ============ JOURNALS ============
 
-@router.get("/journals")
+@router.get("/journals",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def list_journals(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     skip: int = 0,
@@ -862,7 +876,8 @@ async def list_journals(
     return result.scalars().all()
 
 
-@router.post("/journals", response_model=Journal)
+@router.post("/journals", response_model=Journal,
+              dependencies=[Depends(require_permission("finance", "create"))])
 async def create_journal(data: JournalBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Create a journal entry with lines"""
     import random
@@ -901,7 +916,8 @@ async def create_journal(data: JournalBase, tenant_id: UUID = Depends(get_curren
     return new_journal
 
 
-@router.get("/journals/{journal_id}")
+@router.get("/journals/{journal_id}",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_journal(
     journal_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -921,7 +937,8 @@ async def get_journal(
     return journal
 
 
-@router.post("/journals/{journal_id}/post")
+@router.post("/journals/{journal_id}/post",
+              dependencies=[Depends(require_permission("finance", "post_journal"))])
 async def post_journal(
     journal_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -973,7 +990,8 @@ async def post_journal(
     }
 
 
-@router.post("/journals/{journal_id}/reverse")
+@router.post("/journals/{journal_id}/reverse",
+              dependencies=[Depends(require_permission("finance", "reverse_journal"))])
 async def reverse_journal(
     journal_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -1058,7 +1076,8 @@ class BalanceSheetItem(BaseModel):
     net_balance: float
 
 
-@router.get("/reports/balance-sheet")
+@router.get("/reports/balance-sheet",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_balance_sheet_report(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
@@ -1181,7 +1200,8 @@ class PayableItem(BaseModel):
     days_outstanding: int
 
 
-@router.get("/payables", response_model=List[PayableItem])
+@router.get("/payables", response_model=List[PayableItem],
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def list_payables(
     include_paid: bool = False,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -1253,7 +1273,8 @@ async def list_payables(
     return payables
 
 
-@router.get("/payables/summary")
+@router.get("/payables/summary",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_payables_summary(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get payables summary for dashboard"""
     # Total payables (not PAID)
@@ -1298,7 +1319,8 @@ class PaymentScheduleItem(BaseModel):
     created_at: datetime
 
 
-@router.get("/payables/schedule")
+@router.get("/payables/schedule",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_payment_schedule(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """
     Get payment schedule with due dates and urgency status.
@@ -1386,7 +1408,8 @@ async def get_payment_schedule(tenant_id: UUID = Depends(get_current_tenant), db
     }
 
 
-@router.put("/payables/{po_id}/payment-terms")
+@router.put("/payables/{po_id}/payment-terms",
+              dependencies=[Depends(require_permission("finance", "edit"))])
 async def update_payment_terms(
     po_id: UUID,
     payment_terms: str,
@@ -1446,7 +1469,8 @@ class PnLItem(BaseModel):
     amount: float
 
 
-@router.get("/reports/cashflow")
+@router.get("/reports/cashflow",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_cashflow_report(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     months: int = Query(6, le=12)
@@ -1499,15 +1523,17 @@ async def get_cashflow_report(
     return result
 
 
-@router.get("/reports/pnl")
+@router.get("/reports/pnl",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_pnl_report(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     year: int = Query(None),
     month: int = Query(None)
 ):
     """
-    Profit & Loss Statement
+    Profit & Loss Statement — Enhanced with detail breakdown
     Revenue - COGS - Operating Expenses = Net Profit
+    Includes per-order revenue, per-PO COGS, per-category OPEX details
     """
     now = datetime.now()
     if not year:
@@ -1521,31 +1547,81 @@ async def get_pnl_report(
     else:
         month_end = date(year, month + 1, 1) - timedelta(days=1)
     
-    # Revenue from Orders (paid amounts)
-    revenue_result = await db.execute(
-        select(func.coalesce(func.sum(OrderPaymentModel.amount), 0))
+    # ============ REVENUE: Detail per Order Payment ============
+    revenue_detail_result = await db.execute(
+        select(
+            OrderPaymentModel.amount,
+            OrderPaymentModel.payment_date,
+            OrderPaymentModel.payment_method,
+            OrderModel.code.label('order_code'),
+            OrderModel.customer_name
+        )
+        .select_from(OrderPaymentModel)
+        .outerjoin(OrderModel, OrderPaymentModel.order_id == OrderModel.id)
         .where(
             func.date(OrderPaymentModel.payment_date) >= month_start,
             func.date(OrderPaymentModel.payment_date) <= month_end
         )
+        .order_by(OrderPaymentModel.payment_date.desc())
     )
-    revenue = float(revenue_result.scalar() or 0)
+    revenue_rows = revenue_detail_result.all()
+    revenue = sum(float(r.amount or 0) for r in revenue_rows)
+    revenue_details = [
+        {
+            "code": r.order_code or "N/A",
+            "customer": r.customer_name or "Khách lẻ",
+            "amount": float(r.amount or 0),
+            "date": r.payment_date.strftime('%d/%m/%Y') if r.payment_date else None,
+            "payment_method": r.payment_method
+        }
+        for r in revenue_rows
+    ]
     
-    # COGS from Procurement (materials)
-    cogs_result = await db.execute(
-        select(func.coalesce(func.sum(PurchaseOrderModel.total_amount), 0))
+    # ============ COGS: Detail per Purchase Order ============
+    # BUGFIX: BUG-20260221-002
+    # Root Cause: RC-BUG-20260221-002 - PurchaseOrderModel has no supplier_name column
+    # Solution: Join with SupplierModel to get supplier name
+    cogs_detail_result = await db.execute(
+        select(
+            PurchaseOrderModel.code,
+            SupplierModel.name.label('supplier_name'),
+            PurchaseOrderModel.total_amount,
+            PurchaseOrderModel.status,
+            PurchaseOrderModel.created_at
+        )
+        .select_from(PurchaseOrderModel)
+        .outerjoin(SupplierModel, PurchaseOrderModel.supplier_id == SupplierModel.id)
         .where(
             PurchaseOrderModel.tenant_id == tenant_id,
             PurchaseOrderModel.status.in_(['RECEIVED', 'PAID']),
             func.date(PurchaseOrderModel.created_at) >= month_start,
             func.date(PurchaseOrderModel.created_at) <= month_end
         )
+        .order_by(PurchaseOrderModel.created_at.desc())
     )
-    cogs = float(cogs_result.scalar() or 0)
+    cogs_rows = cogs_detail_result.all()
+    cogs = sum(float(r.total_amount or 0) for r in cogs_rows)
+    cogs_details = [
+        {
+            "code": r.code or "N/A",
+            "supplier": r.supplier_name or "Không rõ",
+            "amount": float(r.total_amount or 0),
+            "status": r.status,
+            "date": r.created_at.strftime('%d/%m/%Y') if r.created_at else None
+        }
+        for r in cogs_rows
+    ]
     
-    # Operating expenses from Finance Transactions
-    opex_result = await db.execute(
-        select(func.coalesce(func.sum(FinanceTransactionModel.amount), 0))
+    # ============ OPEX: Detail per Category ============
+    opex_detail_result = await db.execute(
+        select(
+            FinanceTransactionModel.code,
+            FinanceTransactionModel.category,
+            FinanceTransactionModel.amount,
+            FinanceTransactionModel.description,
+            FinanceTransactionModel.transaction_date,
+            FinanceTransactionModel.payment_method
+        )
         .where(
             FinanceTransactionModel.tenant_id == tenant_id,
             FinanceTransactionModel.type == 'PAYMENT',
@@ -1553,14 +1629,71 @@ async def get_pnl_report(
             FinanceTransactionModel.transaction_date >= month_start,
             FinanceTransactionModel.transaction_date <= month_end
         )
+        .order_by(FinanceTransactionModel.transaction_date.desc())
     )
-    opex = float(opex_result.scalar() or 0)
+    opex_rows = opex_detail_result.all()
+    
+    # Group OPEX by category
+    opex_by_category = {'SALARY': [], 'OPERATING': [], 'OTHER': []}
+    for r in opex_rows:
+        cat = r.category or 'OTHER'
+        if cat not in opex_by_category:
+            opex_by_category[cat] = []
+        opex_by_category[cat].append({
+            "code": r.code or "N/A",
+            "description": r.description or "Không mô tả",
+            "amount": float(r.amount or 0),
+            "date": r.transaction_date.strftime('%d/%m/%Y') if r.transaction_date else None,
+            "payment_method": r.payment_method
+        })
+    
+    salary_total = sum(d['amount'] for d in opex_by_category.get('SALARY', []))
+    operating_total = sum(d['amount'] for d in opex_by_category.get('OPERATING', []))
+    other_total = sum(d['amount'] for d in opex_by_category.get('OTHER', []))
+    opex = salary_total + operating_total + other_total
     
     gross_profit = revenue - cogs
     net_profit = gross_profit - opex
     
     return {
         "period": f"{month:02d}/{year}",
+        # === NEW: Hierarchical detail breakdown ===
+        "revenue": {
+            "total": revenue,
+            "count": len(revenue_details),
+            "details": revenue_details
+        },
+        "cogs": {
+            "total": cogs,
+            "count": len(cogs_details),
+            "details": cogs_details
+        },
+        "opex": {
+            "total": opex,
+            "breakdown": {
+                "salary": {
+                    "label": "Lương nhân viên",
+                    "total": salary_total,
+                    "count": len(opex_by_category.get('SALARY', [])),
+                    "details": opex_by_category.get('SALARY', [])
+                },
+                "operating": {
+                    "label": "Chi phí vận hành",
+                    "total": operating_total,
+                    "count": len(opex_by_category.get('OPERATING', [])),
+                    "details": opex_by_category.get('OPERATING', [])
+                },
+                "other": {
+                    "label": "Chi phí khác",
+                    "total": other_total,
+                    "count": len(opex_by_category.get('OTHER', [])),
+                    "details": opex_by_category.get('OTHER', [])
+                }
+            }
+        },
+        "gross_profit": gross_profit,
+        "net_profit": net_profit,
+        # === BACKWARD COMPATIBLE: Keep flat items list ===
         "items": [
             {"category": "Doanh thu", "amount": revenue},
             {"category": "Giá vốn hàng bán (COGS)", "amount": -cogs},
@@ -1619,7 +1752,8 @@ class ProfitabilitySummary(BaseModel):
     orders: List[OrderPnLResponse]
 
 
-@router.get("/orders/{order_id}/pnl", response_model=OrderPnLResponse)
+@router.get("/orders/{order_id}/pnl", response_model=OrderPnLResponse,
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_order_pnl(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """
     Get P&L breakdown for a specific order.
@@ -1650,6 +1784,16 @@ async def get_order_pnl(order_id: UUID, tenant_id: UUID = Depends(get_current_te
     
     # Labor cost (from HR timesheets with actual hourly rates - SOL-2 Fix)
     labor_cost = 0.0
+    
+    # GAP-3 FIX: Load configurable labor cost ratio from PayrollSettings
+    from backend.modules.hr.domain.models import PayrollSettingsModel
+    labor_ratio_result = await db.execute(
+        select(PayrollSettingsModel.default_labor_cost_ratio).where(
+            PayrollSettingsModel.tenant_id == tenant_id
+        )
+    )
+    default_labor_ratio = float(labor_ratio_result.scalar() or 0.15)
+    
     try:
         from backend.modules.hr.domain.models import TimesheetModel, EmployeeModel
         
@@ -1690,12 +1834,12 @@ async def get_order_pnl(order_id: UUID, tenant_id: UUID = Depends(get_current_te
             )
             labor_cost = float(assignment_result.scalar() or 0)
             
-            # If still no data, estimate based on revenue
+            # If still no data, estimate based on configurable ratio
             if labor_cost == 0:
-                labor_cost = final_amount * 0.15  # Last resort: 15% estimate
+                labor_cost = final_amount * default_labor_ratio  # Configurable fallback
     except Exception as e:
-        # HR module not found or error
-        labor_cost = final_amount * 0.15  # Estimate 15% of revenue
+        # HR module not found or error — use configurable ratio
+        labor_cost = final_amount * default_labor_ratio
     
     # Overhead allocation (rent, utilities, admin - ~10%)
     overhead = final_amount * 0.10
@@ -1734,7 +1878,8 @@ async def get_order_pnl(order_id: UUID, tenant_id: UUID = Depends(get_current_te
     )
 
 
-@router.get("/orders/profitability", response_model=ProfitabilitySummary)
+@router.get("/orders/profitability", response_model=ProfitabilitySummary,
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_orders_profitability(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     start_date: Optional[str] = Query(None),
@@ -1867,14 +2012,18 @@ class LaborEntryResult(BaseModel):
     transaction_ids: List[str]
 
 
-@router.post("/auto-entries/from-timesheets", response_model=LaborEntryResult)
+@router.post("/auto-entries/from-timesheets", response_model=LaborEntryResult, deprecated=True,
+              dependencies=[Depends(require_permission("finance", "create"))])
 async def create_labor_entries_from_timesheets(
     data: LaborEntryRequest,
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)
 ):
     """
-    Auto-generate finance transactions from HR timesheets.
-    Creates PAYMENT transactions for labor costs.
+    ⚠️ DEPRECATED — Use POST /auto-entries/from-payroll/{period_id} instead.
+    
+    This endpoint creates per-timesheet transactions which risks duplicating
+    salary expenses if used alongside from-payroll. The canonical path is
+    from-payroll which creates a single aggregated transaction per period.
     """
     from backend.modules.hr.domain.models import TimesheetModel, EmployeeModel
     
@@ -1938,7 +2087,8 @@ async def create_labor_entries_from_timesheets(
     )
 
 
-@router.get("/labor-costs/by-event")
+@router.get("/labor-costs/by-event",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_labor_costs_by_event(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     event_id: Optional[UUID] = Query(None)
@@ -2005,7 +2155,8 @@ class ForecastItem(BaseModel):
     cumulative: float
 
 
-@router.get("/forecast/cashflow")
+@router.get("/forecast/cashflow",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_cashflow_forecast(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     weeks: int = Query(4, le=12)
@@ -2072,7 +2223,8 @@ async def get_cashflow_forecast(
     }
 
 
-@router.get("/forecast/upcoming-receipts")
+@router.get("/forecast/upcoming-receipts",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_upcoming_receipts(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     days: int = Query(30, le=90)
@@ -2119,14 +2271,18 @@ async def get_upcoming_receipts(
 
 from backend.modules.hr.domain.models import PayrollPeriodModel
 
-@router.post("/auto-entries/from-payroll/{period_id}")
+@router.post("/auto-entries/from-payroll/{period_id}",
+              dependencies=[Depends(require_permission("finance", "create"))])
 async def create_salary_expense_from_payroll(
     period_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)
 ):
     """
     Create finance expense transaction from approved payroll period.
-    Automatically generates PAYMENT transaction for salary category.
+    Automatically generates:
+    1. PAYMENT transaction (category=SALARY)
+    2. Journal entry (Nợ 642 Chi phí tiền lương / Có 112 Tiền gửi NH)
+    3. Links transaction back to PayrollPeriod.payment_transaction_id
     """
     import random
     
@@ -2145,7 +2301,9 @@ async def create_salary_expense_from_payroll(
     if period.status not in ['APPROVED', 'PAID']:
         raise HTTPException(status_code=400, detail="Payroll must be approved before creating expense")
     
-    # Check if expense already exists
+    # BUGFIX: BUG-20260222-001 — Idempotent check
+    # Root Cause: RC-20260222-001 — endpoint raised 400 if transaction pre-existed
+    # Solution: Return existing data and sync period to PAID instead of erroring
     existing = await db.execute(
         select(FinanceTransactionModel).where(
             FinanceTransactionModel.tenant_id == tenant_id,
@@ -2153,44 +2311,113 @@ async def create_salary_expense_from_payroll(
             FinanceTransactionModel.reference_type == 'PAYROLL'
         )
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Salary expense already created for this period")
+    existing_txn = existing.scalar_one_or_none()
+    if existing_txn:
+        current_total = Decimal(str(period.total_net or 0))
+        needs_update = False
+
+        # BUGFIX: BUG-20260222-002 — Sync stale amounts
+        # Root Cause: RC-20260222-002 — idempotent path didn't update
+        # transaction/journal amounts when payroll was recalculated
+        if existing_txn.amount != current_total:
+            # Update FinanceTransaction amount
+            existing_txn.amount = current_total
+            existing_txn.description = f"Chi lương kỳ {period.period_name} ({int(period.total_employees or 0)} nhân viên)"
+            needs_update = True
+
+            # Update linked Journal + JournalLines
+            if existing_txn.journal_id:
+                from backend.modules.finance.domain.models import JournalModel, JournalLineModel
+                journal_result = await db.execute(
+                    select(JournalModel).where(JournalModel.id == existing_txn.journal_id)
+                )
+                journal = journal_result.scalar_one_or_none()
+                if journal:
+                    journal.total_amount = current_total
+                    journal.description = existing_txn.description
+
+                # Update journal lines (debit line and credit line)
+                lines_result = await db.execute(
+                    select(JournalLineModel).where(
+                        JournalLineModel.journal_id == existing_txn.journal_id
+                    )
+                )
+                for line in lines_result.scalars().all():
+                    if line.debit and line.debit > 0:
+                        line.debit = current_total
+                    if line.credit and line.credit > 0:
+                        line.credit = current_total
+
+        # Idempotent: ensure period is marked PAID
+        if period.status != 'PAID':
+            now = datetime.now()
+            period.status = 'PAID'
+            if hasattr(PayrollPeriodModel, 'paid_at'):
+                period.paid_at = now
+            if hasattr(PayrollPeriodModel, 'payment_transaction_id'):
+                period.payment_transaction_id = existing_txn.id
+            needs_update = True
+
+        if needs_update:
+            await db.commit()
+
+        return {
+            "message": f"Đã tạo chi phí lương {period.period_name}",
+            "transaction_code": existing_txn.code,
+            "journal_code": existing_txn.code,
+            "amount": float(current_total),
+            "employees": int(period.total_employees or 0),
+            "journal_id": str(existing_txn.journal_id) if existing_txn.journal_id else None,
+            "has_journal_entry": existing_txn.journal_id is not None,
+        }
     
-    # Create expense transaction
-    now = datetime.now()
-    random_suffix = random.randint(1000, 9999)
-    code = f"CHI-{now.strftime('%Y%m')}-{random_suffix}"
+    # GAP-2 FIX: Auto-create Journal Entry via JournalService
+    from backend.modules.finance.services.journal_service import JournalService
     
-    salary_transaction = FinanceTransactionModel(
-        tenant_id=tenant_id,
-        code=code,
-        type='PAYMENT',
-        category='SALARY',
-        amount=Decimal(str(period.total_net or 0)),
-        payment_method='BANK_TRANSFER',
-        description=f"Chi lương kỳ {period.period_name} ({int(period.total_employees or 0)} nhân viên)",
-        transaction_date=date.today(),
-        reference_id=period_id,
-        reference_type='PAYROLL'
+    total_amount = Decimal(str(period.total_net or 0))
+    journal_service = JournalService(db, tenant_id)
+    
+    journal = await journal_service.create_journal_from_payroll(
+        payroll_period_id=period_id,
+        total_amount=total_amount,
+        payment_method="TRANSFER",
+        description=f"Chi lương kỳ {period.period_name} ({int(period.total_employees or 0)} nhân viên)"
     )
     
-    db.add(salary_transaction)
+    # GAP-4 FIX: Link transaction back to PayrollPeriod
+    # Find the transaction created by JournalService
+    txn_result = await db.execute(
+        select(FinanceTransactionModel).where(
+            FinanceTransactionModel.tenant_id == tenant_id,
+            FinanceTransactionModel.reference_id == period_id,
+            FinanceTransactionModel.reference_type == 'PAYROLL'
+        )
+    )
+    salary_transaction = txn_result.scalar_one_or_none()
     
-    # Update payroll period status to PAID
+    # Update payroll period status to PAID + link transaction (if columns exist)
+    now = datetime.now()
     period.status = 'PAID'
-    period.paid_at = now
+    if hasattr(PayrollPeriodModel, 'paid_at'):
+        period.paid_at = now
+    if salary_transaction and hasattr(PayrollPeriodModel, 'payment_transaction_id'):
+        period.payment_transaction_id = salary_transaction.id
     
     await db.commit()
     
     return {
         "message": f"Đã tạo chi phí lương {period.period_name}",
-        "transaction_code": code,
+        "transaction_code": journal.code,
+        "journal_code": journal.code,
         "amount": float(period.total_net or 0),
-        "employees": int(period.total_employees or 0)
+        "employees": int(period.total_employees or 0),
+        "journal_id": str(journal.id),
+        "has_journal_entry": True
     }
 
 
-@router.get("/labor-costs/summary")
+@router.get("/labor-costs/summary",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_labor_cost_summary(
     tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db),
     months: int = Query(6, le=12)
@@ -2232,7 +2459,8 @@ async def get_labor_cost_summary(
 from fastapi.responses import StreamingResponse
 import io
 
-@router.get("/reports/export")
+@router.get("/reports/export",
+              dependencies=[Depends(require_permission("finance", "export"))])
 async def export_finance_report(
     format: str = Query("excel", description="Export format: excel or pdf"),
     from_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
@@ -2521,7 +2749,8 @@ class CreatePeriodRequest(BaseModel):
     notes: Optional[str] = None
 
 
-@router.get("/periods", response_model=List[PeriodResponse])
+@router.get("/periods", response_model=List[PeriodResponse],
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def list_accounting_periods(
     status: Optional[str] = None,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -2543,7 +2772,8 @@ async def list_accounting_periods(
     return periods
 
 
-@router.post("/periods", response_model=PeriodResponse)
+@router.post("/periods", response_model=PeriodResponse,
+              dependencies=[Depends(require_permission("finance", "create"))])
 async def create_accounting_period(
     data: CreatePeriodRequest,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -2588,7 +2818,8 @@ async def create_accounting_period(
     return period
 
 
-@router.get("/periods/current")
+@router.get("/periods/current",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_current_period(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db)
@@ -2644,7 +2875,8 @@ async def get_current_period(
     return period
 
 
-@router.post("/periods/{period_id}/close")
+@router.post("/periods/{period_id}/close",
+              dependencies=[Depends(require_permission("finance", "close_period"))])
 async def close_accounting_period(
     period_id: UUID,
     notes: Optional[str] = None,
@@ -2733,7 +2965,8 @@ class ReopenPeriodRequest(BaseModel):
     """Request body for reopening a period"""
     reason: str = "Mở lại để chỉnh sửa"
 
-@router.post("/periods/{period_id}/reopen")
+@router.post("/periods/{period_id}/reopen",
+              dependencies=[Depends(require_permission("finance", "reopen_period"))])
 async def reopen_accounting_period(
     period_id: UUID,
     request: ReopenPeriodRequest = ReopenPeriodRequest(),
@@ -2773,7 +3006,8 @@ async def reopen_accounting_period(
     }
 
 
-@router.delete("/periods/{period_id}")
+@router.delete("/periods/{period_id}",
+              dependencies=[Depends(require_permission("finance", "delete"))])
 async def delete_accounting_period(
     period_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -2821,7 +3055,8 @@ async def delete_accounting_period(
     return {"message": f"Đã xóa kỳ kế toán '{period_name}'"}
 
 
-@router.post("/periods/cleanup-duplicates")
+@router.post("/periods/cleanup-duplicates",
+              dependencies=[Depends(require_permission("finance", "delete"))])
 async def cleanup_duplicate_periods(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db)
@@ -2895,7 +3130,8 @@ class PreCloseValidationResponse(BaseModel):
     checks: List[ValidationCheck]
 
 
-@router.get("/periods/{period_id}/pre-close-validation", response_model=PreCloseValidationResponse)
+@router.get("/periods/{period_id}/pre-close-validation", response_model=PreCloseValidationResponse,
+              dependencies=[Depends(require_permission("finance", "close_period"))])
 async def get_pre_close_validation(
     period_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -3065,7 +3301,8 @@ class AuditLogEntry(BaseModel):
         from_attributes = True
 
 
-@router.get("/periods/{period_id}/audit-log")
+@router.get("/periods/{period_id}/audit-log",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_period_audit_log(
     period_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -3108,7 +3345,8 @@ DEFAULT_CHECKLIST_ITEMS = [
 ]
 
 
-@router.get("/periods/{period_id}/checklist")
+@router.get("/periods/{period_id}/checklist",
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_period_checklist(
     period_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -3182,7 +3420,8 @@ class UpdateChecklistItemRequest(BaseModel):
     notes: Optional[str] = None
 
 
-@router.patch("/periods/{period_id}/checklist/{item_id}")
+@router.patch("/periods/{period_id}/checklist/{item_id}",
+              dependencies=[Depends(require_permission("finance", "close_period"))])
 async def update_checklist_item(
     period_id: UUID,
     item_id: UUID,
@@ -3256,7 +3495,8 @@ class COGSReport(BaseModel):
     items: List[COGSItem]
 
 
-@router.get("/reports/cogs", response_model=COGSReport)
+@router.get("/reports/cogs", response_model=COGSReport,
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_cogs_report(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
@@ -3343,7 +3583,8 @@ class StockValuationReport(BaseModel):
     items: List[StockValuationItem]
 
 
-@router.get("/reports/stock-valuation", response_model=StockValuationReport)
+@router.get("/reports/stock-valuation", response_model=StockValuationReport,
+              dependencies=[Depends(require_permission("finance", "view"))])
 async def get_stock_valuation(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),

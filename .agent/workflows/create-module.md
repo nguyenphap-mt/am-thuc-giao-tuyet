@@ -273,12 +273,43 @@ frontend/src/assets/i18n/
 cd frontend && ng serve
 ```
 
+### 4.6 Orphaned Component Check (BẮT BUỘC)
+
+> [!CAUTION]
+> **SAU KHI tạo component mới, PHẢI verify nó được import ở parent component.**
+> **Lesson Learned (2026-02-26)**: `SalaryAdvanceSection`, `AssignmentBatchModal`, `AssignmentGroupedView` 
+> đã được code hoàn chỉnh nhưng KHÔNG import vào parent → chức năng "biến mất" khỏi UI.
+
+```powershell
+# // turbo - Scan for orphaned components
+# Cho MỖI file .tsx/.ts mới tạo, verify nó được import ở nơi khác:
+Get-ChildItem -Path "frontend/src" -Recurse -Include "*.tsx","*.ts" |
+  Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-2) } |
+  ForEach-Object {
+    $name = $_.BaseName
+    $importCount = (Select-String -Path "frontend/src" -Pattern $name -Recurse -Include "*.tsx","*.ts" | 
+      Where-Object { $_.Path -ne $_.Path }).Count
+    if ($importCount -eq 0) {
+      Write-Warning "⚠️ ORPHANED: $name — không được import ở đâu!"
+    }
+  }
+```
+
+**Orphaned Component Checklist**:
+| New Component | Imported In | Rendered? | Status |
+| :--- | :--- | :---: | :---: |
+| `{ComponentA}.tsx` | `{ParentA}.tsx` | ✅ | ⬜ |
+| `{ComponentB}.tsx` | `{ParentB}.tsx` | ✅ | ⬜ |
+
+**Nếu có component orphaned → PHẢI fix TRƯỚC KHI tiếp tục.**
+
 ### ✅ Checkpoint Validation
 ```
-□ All Angular components created (standalone)
-□ TypeScript compiles (ng build)
+□ All components created (standalone)
+□ TypeScript compiles (build passes)
 □ Translations added (VN + EN)
-□ Routes added to app.routes.ts
+□ Routes added
+□ ⭐ NO orphaned components (all new files imported in parent)
 → Save checkpoint: frontend_complete
 ```
 
@@ -503,6 +534,7 @@ Cập nhật `.agent/api-contracts.md` với endpoints mới.
 - [ ] UI renders correctly
 - [ ] i18n complete (VN/EN)
 - [ ] Responsive design
+- [ ] ⭐ No orphaned components (all new .tsx imported in parent)
 
 ### 9.5 Security
 - [ ] Permission matrix defined

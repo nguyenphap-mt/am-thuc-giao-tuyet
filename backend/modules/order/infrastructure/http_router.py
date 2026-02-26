@@ -5,19 +5,21 @@ Database: PostgreSQL (catering_db)
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update, Integer
+from sqlalchemy import select, func, update, Integer, or_
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, timezone
 from decimal import Decimal
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
 
 from backend.core.database import get_db
 from backend.core.dependencies import get_current_tenant, CurrentTenant
+from backend.core.auth.permissions import require_permission
 from backend.modules.order.domain.models import OrderModel, OrderItemModel, OrderPaymentModel, OrderStaffAssignmentModel
 from backend.modules.order.domain.entities import (
     Order, OrderBase, OrderItem, OrderItemBase,
@@ -28,10 +30,37 @@ from backend.modules.crm.application.loyalty_service import LoyaltyService
 
 router = APIRouter(tags=["Order Management"])
 
+# GAP-O2: Structured audit logging for order module
+audit_logger = logging.getLogger("order.audit")
+
+def _log_order_audit(
+    action: str,
+    entity_id: str = None,
+    entity_code: str = None,
+    details: str = None,
+    extra: dict = None,
+):
+    """Non-blocking structured audit log for order actions.
+    Uses Python logging (JSON) — no separate DB table needed."""
+    try:
+        log_data = {
+            "module": "order",
+            "action": action,
+            "entity_id": entity_id,
+            "entity_code": entity_code,
+            "details": details,
+        }
+        if extra:
+            log_data.update(extra)
+        audit_logger.info(f"AUDIT: {action} | {json.dumps(log_data, ensure_ascii=False, default=str)}")
+    except Exception:
+        pass  # Non-blocking — never fail the user operation
+
 
 # ============ MY ACTIVE ORDERS (Field Expense Feature) ============
 
-@router.get("/my-active")
+@router.get("/my-active",
+              dependencies=[Depends(require_permission("order", "view"))])
 async def get_my_active_orders(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db)
@@ -105,7 +134,8 @@ EXPENSE_CATEGORY_LABELS = {
 }
 
 
-@router.get("/{order_id}/expenses", response_model=List[OrderExpenseResponse])
+@router.get("/{order_id}/expenses", response_model=List[OrderExpenseResponse],
+              dependencies=[Depends(require_permission("order", "view"))])
 async def get_order_expenses(
     order_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -154,7 +184,8 @@ async def get_order_expenses(
     ]
 
 
-@router.post("/{order_id}/expenses", response_model=OrderExpenseResponse)
+@router.post("/{order_id}/expenses", response_model=OrderExpenseResponse,
+              dependencies=[Depends(require_permission("order", "create"))])
 async def add_order_expense(
     order_id: UUID,
     data: OrderExpenseCreate,
@@ -209,6 +240,10 @@ async def add_order_expense(
     await db.commit()
     await db.refresh(new_expense)
     
+    _log_order_audit("EXPENSE_ADD", str(order_id), order.code,
+                     f"Added expense {data.category}: {data.amount}",
+                     {"expense_id": str(new_expense.id), "category": data.category, "amount": str(data.amount)})
+    
     return OrderExpenseResponse(
         id=str(new_expense.id),
         order_id=str(order_id),
@@ -232,6 +267,7 @@ class StaffCostItem(BaseModel):
     planned_hours: float
     actual_hours: float
     cost: float
+    cost_type: str  # 'direct' = parttime (counted in P&L), 'reference' = fulltime (not in P&L)
     status: str
     phone: Optional[str] = None
     start_time: Optional[str] = None  # ISO format
@@ -242,14 +278,16 @@ class OrderStaffCostsResponse(BaseModel):
     """Schema for order staff costs response"""
     order_id: str
     order_code: str
-    total_staff_cost: float
+    total_staff_cost: float  # Only parttime/hourly staff (direct labor for P&L)
+    fulltime_reference_cost: float  # Fulltime salaried staff (reference only, NOT in P&L)
     total_planned_hours: float
     total_actual_hours: float
     staff_count: int
     assignments: List[StaffCostItem]
 
 
-@router.get("/{order_id}/staff-costs", response_model=OrderStaffCostsResponse)
+@router.get("/{order_id}/staff-costs", response_model=OrderStaffCostsResponse,
+              dependencies=[Depends(require_permission("order", "view"))])
 async def get_order_staff_costs(
     order_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -264,8 +302,16 @@ async def get_order_staff_costs(
     - Otherwise: hourly_rate × planned_hours (from start_time/end_time)
     
     BUGFIX: BUG-20260205-002 - Now also checks timesheets for actual hours when available
+    BUGFIX: BUG-20260221-005 - Use PayrollSettings as fallback when employee.hourly_rate is 0
     """
-    from backend.modules.hr.domain.models import StaffAssignmentModel, EmployeeModel, TimesheetModel
+    from backend.modules.hr.domain.models import StaffAssignmentModel, EmployeeModel, TimesheetModel, PayrollSettingsModel
+    from decimal import Decimal
+    
+    # Load PayrollSettings for rate fallback (same logic as calculate_payroll)
+    settings_result = await db.execute(
+        select(PayrollSettingsModel).where(PayrollSettingsModel.tenant_id == tenant_id)
+    )
+    payroll_settings = settings_result.scalar_one_or_none()
     
     # Verify order belongs to tenant
     order_result = await db.execute(
@@ -363,11 +409,21 @@ async def get_order_staff_costs(
         # Use actual hours if available, otherwise planned
         billable_hours = actual_hours if actual_hours > 0 else planned_hours
         
-        # Fulltime employees use base_salary prorated, part-time use hourly_rate
+        # Resolve hourly rate - MUST match payroll calculate_payroll logic (lines 2927-2934)
+        # Priority: employee.hourly_rate > derive from base_salary > PayrollSettings default
         hourly_rate = float(employee.hourly_rate or 0)
-        if employee.is_fulltime and employee.base_salary:
-            # Convert monthly to hourly (assuming 22 working days, 8 hours/day)
-            hourly_rate = float(employee.base_salary) / (22 * 8)
+        if not hourly_rate and employee.is_fulltime:
+            # Use employee's base_salary or tenant default from PayrollSettings
+            if employee.base_salary and float(employee.base_salary) > 0:
+                base = float(employee.base_salary)
+            elif payroll_settings and payroll_settings.default_base_salary:
+                base = float(payroll_settings.default_base_salary)
+            else:
+                base = 8000000.0  # Fallback: 8M VND default
+            
+            days_per_month = float(payroll_settings.standard_working_days_per_month or 26) if payroll_settings else 26.0
+            hours_per_day = float(payroll_settings.standard_hours_per_day or 8) if payroll_settings else 8.0
+            hourly_rate = base / (days_per_month * hours_per_day)
         
         cost = hourly_rate * billable_hours
         
@@ -379,6 +435,10 @@ async def get_order_staff_costs(
         if hasattr(assignment, 'end_time') and assignment.end_time:
             end_time_str = assignment.end_time.isoformat()
         
+        # Fulltime salaried = reference only (company overhead, not order cost)
+        # Parttime/hourly = direct labor cost (allocated to order P&L)
+        cost_type = 'reference' if employee.is_fulltime else 'direct'
+        
         assignments.append(StaffCostItem(
             assignment_id=str(assignment.id),
             employee_id=str(employee.id),
@@ -389,20 +449,28 @@ async def get_order_staff_costs(
             planned_hours=round(planned_hours, 2),
             actual_hours=round(actual_hours, 2),
             cost=round(cost, 0),
+            cost_type=cost_type,
             status=getattr(assignment, 'status', 'ASSIGNED'),
             phone=employee.phone,
             start_time=start_time_str,
             end_time=end_time_str
         ))
         
-        total_cost += cost
+        # Only parttime costs go into order P&L
+        if cost_type == 'direct':
+            total_cost += cost
+        
         total_planned_hours += planned_hours
         total_actual_hours += actual_hours
+    
+    # Calculate fulltime reference cost (sum of all fulltime staff costs)
+    fulltime_ref_cost = sum(a.cost for a in assignments if a.cost_type == 'reference')
     
     return OrderStaffCostsResponse(
         order_id=str(order_id),
         order_code=order.code,
         total_staff_cost=round(total_cost, 0),
+        fulltime_reference_cost=round(fulltime_ref_cost, 0),
         total_planned_hours=round(total_planned_hours, 2),
         total_actual_hours=round(total_actual_hours, 2),
         staff_count=len(assignments),
@@ -437,7 +505,8 @@ class SuggestStaffResponse(BaseModel):
     total_available: int
 
 
-@router.get("/{order_id}/suggest-staff", response_model=SuggestStaffResponse)
+@router.get("/{order_id}/suggest-staff", response_model=SuggestStaffResponse,
+              dependencies=[Depends(require_permission("order", "view"))])
 async def suggest_staff_for_order(
     order_id: UUID,
     role_filter: Optional[str] = Query(None, description="Filter by role: CHEF, WAITER, CAPTAIN, etc."),
@@ -600,7 +669,8 @@ class CreateRevisionQuoteResponse(BaseModel):
         from_attributes = True
 
 
-@router.post("/{order_id}/create-revision-quote", response_model=CreateRevisionQuoteResponse)
+@router.post("/{order_id}/create-revision-quote", response_model=CreateRevisionQuoteResponse,
+              dependencies=[Depends(require_permission("order", "edit"))])
 async def create_revision_quote(
     order_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -615,7 +685,7 @@ async def create_revision_quote(
     Only allowed for CONFIRMED orders.
     """
     from backend.modules.quote.domain.models import QuoteModel, QuoteItemModel
-    import random
+    from backend.common.utils.code_generator import generate_quote_code
     
     # Verify order exists and belongs to tenant
     order_result = await db.execute(
@@ -638,10 +708,8 @@ async def create_revision_quote(
             detail=f"Chỉ có thể tạo báo giá mới từ đơn hàng ĐÃ XÁC NHẬN. Trạng thái hiện tại: {order.status}"
         )
     
-    # Generate quote code
-    now = datetime.now()
-    random_suffix = random.randint(1000, 9999)
-    quote_code = f"BG-REV-{now.strftime('%Y%m')}-{random_suffix}"
+    # Generate quote code: BG-ddmmyy***
+    quote_code = await generate_quote_code(db)
     
     # Calculate deposit amount
     deposit_amount = order.paid_amount or Decimal(0)
@@ -702,6 +770,10 @@ async def create_revision_quote(
     
     logger.info(f"Created revision quote {quote_code} from order {order.code} (deposit: {deposit_amount})")
     
+    _log_order_audit("ORDER_REVISION", str(order_id), order.code,
+                     f"Created revision quote {quote_code}",
+                     {"new_quote_code": quote_code, "deposit_amount": str(deposit_amount)})
+    
     return CreateRevisionQuoteResponse(
         quote_id=str(new_quote.id),
         quote_code=quote_code,
@@ -709,7 +781,8 @@ async def create_revision_quote(
         deposit_amount=deposit_amount
     )
 
-@router.get("", response_model=PaginatedOrderResponse)
+@router.get("", response_model=PaginatedOrderResponse,
+              dependencies=[Depends(require_permission("order", "view"))])
 async def list_orders(
     status: Optional[str] = Query(None, description="Filter by status"),
     search: Optional[str] = Query(None, description="Search by code or customer name"),
@@ -762,7 +835,8 @@ async def list_orders(
     )
 
 
-@router.get("/stats", response_model=OrderStats)
+@router.get("/stats", response_model=OrderStats,
+              dependencies=[Depends(require_permission("order", "view"))])
 async def get_order_stats(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get order statistics summary"""
     # Total orders by status
@@ -794,7 +868,8 @@ async def get_order_stats(tenant_id: UUID = Depends(get_current_tenant), db: Asy
 
 # ============ OVERDUE PAYMENTS (Phase 13.3) ============
 
-@router.get("/overdue")
+@router.get("/overdue",
+              dependencies=[Depends(require_permission("order", "view"))])
 async def get_overdue_orders(
     days_threshold: int = Query(3, description="SềEngày quá hạn đềEcoi là overdue"),
     tenant_id: UUID = Depends(get_current_tenant),
@@ -863,7 +938,8 @@ async def get_overdue_orders(
     }
 
 
-@router.get("/{order_id}", response_model=Order)
+@router.get("/{order_id}", response_model=Order,
+              dependencies=[Depends(require_permission("order", "view"))])
 async def get_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get order by ID with items and payments"""
     result = await db.execute(
@@ -885,7 +961,8 @@ async def get_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant
     return order
 
 
-@router.post("", response_model=Order)
+@router.post("", response_model=Order,
+              dependencies=[Depends(require_permission("order", "create"))])
 async def create_order(data: OrderBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Create a new order"""
     
@@ -931,6 +1008,10 @@ async def create_order(data: OrderBase, tenant_id: UUID = Depends(get_current_te
             f"Tạo đơn hàng mới (Trực tiếp)"
         )
     
+    _log_order_audit("ORDER_CREATE", str(new_order.id), new_order.code,
+                     f"Created order for {data.customer_name}",
+                     {"customer_name": data.customer_name, "final_amount": str(data.final_amount)})
+    
     # Reload with relationships
     result = await db.execute(
         select(OrderModel)
@@ -943,7 +1024,8 @@ async def create_order(data: OrderBase, tenant_id: UUID = Depends(get_current_te
     return result.scalar_one()
 
 
-@router.put("/{order_id}", response_model=Order)
+@router.put("/{order_id}", response_model=Order,
+              dependencies=[Depends(require_permission("order", "edit"))])
 async def update_order(order_id: UUID, data: OrderBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Update an existing order"""
     result = await db.execute(
@@ -965,6 +1047,8 @@ async def update_order(order_id: UUID, data: OrderBase, tenant_id: UUID = Depend
     order.updated_at = datetime.now(timezone.utc)  # ISS-008 Fix
     await db.commit()
     
+    _log_order_audit("ORDER_UPDATE", str(order_id), order.code, "Order updated")
+    
     # Reload with relationships
     result = await db.execute(
         select(OrderModel)
@@ -979,7 +1063,8 @@ async def update_order(order_id: UUID, data: OrderBase, tenant_id: UUID = Depend
 
 # ============ ORDER STATUS ACTIONS ============
 
-@router.post("/{order_id}/confirm", response_model=Order)
+@router.post("/{order_id}/confirm", response_model=Order,
+              dependencies=[Depends(require_permission("order", "confirm"))])
 async def confirm_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Confirm an order (change status to CONFIRMED)"""
     result = await db.execute(
@@ -1001,6 +1086,8 @@ async def confirm_order(order_id: UUID, tenant_id: UUID = Depends(get_current_te
     order.updated_at = datetime.now(timezone.utc)
     await db.commit()
     
+    _log_order_audit("ORDER_CONFIRM", str(order_id), order.code, "Order confirmed")
+    
     # CRM Hook: Recalculate Stats (e.g. Order Count increases)
     if order.customer_id:
         await CrmIntegrationService.recalculate_stats(db, tenant_id, order.customer_id)
@@ -1017,7 +1104,8 @@ async def confirm_order(order_id: UUID, tenant_id: UUID = Depends(get_current_te
     return result.scalar_one()
 
 
-@router.post("/{order_id}/start", response_model=Order)
+@router.post("/{order_id}/start", response_model=Order,
+              dependencies=[Depends(require_permission("order", "update_status"))])
 async def start_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """
     Start order execution (CONFIRMED → IN_PROGRESS)
@@ -1042,6 +1130,8 @@ async def start_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tena
     order.updated_at = datetime.now(timezone.utc)
     await db.commit()
     
+    _log_order_audit("ORDER_START", str(order_id), order.code, "Order started")
+    
     # Reload with relationships
     result = await db.execute(
         select(OrderModel)
@@ -1054,7 +1144,8 @@ async def start_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tena
     return result.scalar_one()
 
 
-@router.post("/{order_id}/complete", response_model=Order)
+@router.post("/{order_id}/complete", response_model=Order,
+              dependencies=[Depends(require_permission("order", "update_status"))])
 async def complete_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Mark order as completed and auto-deduct inventory (GAP-6.1 Fix)"""
     result = await db.execute(
@@ -1163,7 +1254,7 @@ async def complete_order(order_id: UUID, tenant_id: UUID = Depends(get_current_t
     # ============ HR INTEGRATION: Auto-Create Timesheets (SOL-1) ============
     # Create timesheets for all staff assigned to this order
     try:
-        from backend.modules.hr.domain.models import TimesheetModel, StaffAssignmentModel as HrStaffAssignment
+        from backend.modules.hr.domain.models import TimesheetModel, StaffAssignmentModel as HrStaffAssignment, EmployeeModel
         from decimal import Decimal
         
         # Get all staff assignments for this order
@@ -1193,11 +1284,29 @@ async def complete_order(order_id: UUID, tenant_id: UUID = Depends(get_current_t
         
         # Process OrderStaffAssignmentModel records
         for assignment in staff_assignments:
-            # Check if timesheet already exists for this order+staff
+            # BUGFIX: Resolve employee_id from staff_id safely
+            # staff_id FK points to users.id but may store employees.id in practice
+            emp_lookup = await db.execute(
+                select(EmployeeModel).where(
+                    or_(
+                        EmployeeModel.id == assignment.staff_id,       # Direct employee ID
+                        EmployeeModel.user_id == assignment.staff_id   # User ID → Employee
+                    ),
+                    EmployeeModel.tenant_id == tenant_id
+                )
+            )
+            employee = emp_lookup.scalar_one_or_none()
+            if not employee:
+                logger.warning(f"Order {order.code}: No employee found for staff_id {assignment.staff_id}, skipping timesheet")
+                continue
+            
+            resolved_employee_id = employee.id
+            
+            # Check if timesheet already exists for this order+employee
             existing = await db.execute(
                 select(TimesheetModel).where(
                     TimesheetModel.tenant_id == tenant_id,
-                    TimesheetModel.employee_id == assignment.staff_id,
+                    TimesheetModel.employee_id == resolved_employee_id,
                     TimesheetModel.order_id == order_id
                 )
             )
@@ -1212,7 +1321,7 @@ async def complete_order(order_id: UUID, tenant_id: UUID = Depends(get_current_t
             # Create timesheet
             timesheet = TimesheetModel(
                 tenant_id=tenant_id,
-                employee_id=assignment.staff_id,
+                employee_id=resolved_employee_id,
                 order_id=order_id,
                 work_date=event_date,
                 total_hours=Decimal("8.0"),  # Default 8 hours, HR can adjust
@@ -1273,6 +1382,8 @@ async def complete_order(order_id: UUID, tenant_id: UUID = Depends(get_current_t
         logger.warning(f"HR timesheet auto-create failed for order {order.code}: {e}")
     # ============ END HR INTEGRATION ============
     
+    _log_order_audit("ORDER_COMPLETE", str(order_id), order.code, "Order completed")
+    
     # Reload with relationships
     result = await db.execute(
         select(OrderModel)
@@ -1293,7 +1404,8 @@ class ReopenOrderRequest(PydanticBaseModel):
     reason: str
 
 
-@router.post("/{order_id}/reopen", response_model=Order)
+@router.post("/{order_id}/reopen", response_model=Order,
+              dependencies=[Depends(require_permission("order", "update_status"))])
 async def reopen_order(
     order_id: UUID,
     body: ReopenOrderRequest,
@@ -1497,6 +1609,10 @@ async def reopen_order(
         logger.warning(f"Failed to create reopen audit note: {e}")
 
     logger.info(f"Order {order.code} reopened by request. Reason: {body.reason}. Rollback: {rollback_summary}")
+    
+    _log_order_audit("ORDER_REOPEN", str(order_id), order.code,
+                     f"Order reopened. Reason: {body.reason}",
+                     {"reason": body.reason, "rollback": str(rollback_summary)})
 
     # Reload with relationships
     result = await db.execute(
@@ -1512,7 +1628,8 @@ async def reopen_order(
 # ============ END ORDER REOPEN ============
 
 
-@router.post("/{order_id}/cancel", response_model=Order)
+@router.post("/{order_id}/cancel", response_model=Order,
+              dependencies=[Depends(require_permission("order", "cancel"))])
 async def cancel_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Cancel an order"""
     result = await db.execute(
@@ -1532,6 +1649,8 @@ async def cancel_order(order_id: UUID, tenant_id: UUID = Depends(get_current_ten
     order.status = 'CANCELLED'
     order.updated_at = datetime.now(timezone.utc)
     await db.commit()
+    
+    _log_order_audit("ORDER_CANCEL", str(order_id), order.code, "Order cancelled")
     
     # Reload with relationships
     result = await db.execute(
@@ -1619,7 +1738,8 @@ def calculate_refund_policy(days_before: int, paid_amount: Decimal, force_majeur
     }
 
 
-@router.post("/{order_id}/cancel-with-refund", response_model=CancelWithRefundResponse)
+@router.post("/{order_id}/cancel-with-refund", response_model=CancelWithRefundResponse,
+              dependencies=[Depends(require_permission("order", "cancel"))])
 async def cancel_order_with_refund(
     order_id: UUID,
     request: CancelWithRefundRequest,
@@ -1684,6 +1804,11 @@ async def cancel_order_with_refund(
     
     await db.commit()
     
+    _log_order_audit("ORDER_CANCEL", str(order_id), order.code,
+                     f"Cancelled with refund. Reason: {request.cancel_reason}",
+                     {"refund_amount": str(policy['refund_amount']), "cancellation_type": policy['cancellation_type'],
+                      "days_before_event": days_before, "force_majeure": request.force_majeure})
+    
     return CancelWithRefundResponse(
         order_id=order.id,
         order_code=order.code,
@@ -1698,7 +1823,8 @@ async def cancel_order_with_refund(
     )
 
 
-@router.get("/{order_id}/refund-preview")
+@router.get("/{order_id}/refund-preview",
+              dependencies=[Depends(require_permission("order", "view"))])
 async def preview_refund(
     order_id: UUID,
     force_majeure: bool = False,
@@ -1746,7 +1872,8 @@ async def preview_refund(
     }
 
 
-@router.post("/{order_id}/hold", response_model=Order)
+@router.post("/{order_id}/hold", response_model=Order,
+              dependencies=[Depends(require_permission("order", "update_status"))])
 async def hold_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Put order on hold (CONFIRMED ↁEON_HOLD)"""
     result = await db.execute(
@@ -1767,6 +1894,8 @@ async def hold_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenan
     order.updated_at = datetime.now(timezone.utc)
     await db.commit()
     
+    _log_order_audit("ORDER_HOLD", str(order_id), order.code, "Order put on hold")
+    
     # Reload with relationships
     result = await db.execute(
         select(OrderModel)
@@ -1779,7 +1908,8 @@ async def hold_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenan
     return result.scalar_one()
 
 
-@router.post("/{order_id}/resume", response_model=Order)
+@router.post("/{order_id}/resume", response_model=Order,
+              dependencies=[Depends(require_permission("order", "update_status"))])
 async def resume_order(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Resume order from hold (ON_HOLD ↁECONFIRMED)"""
     result = await db.execute(
@@ -1800,6 +1930,8 @@ async def resume_order(order_id: UUID, tenant_id: UUID = Depends(get_current_ten
     order.updated_at = datetime.now(timezone.utc)
     await db.commit()
     
+    _log_order_audit("ORDER_RESUME", str(order_id), order.code, "Order resumed from hold")
+    
     # Reload with relationships
     result = await db.execute(
         select(OrderModel)
@@ -1812,7 +1944,8 @@ async def resume_order(order_id: UUID, tenant_id: UUID = Depends(get_current_ten
     return result.scalar_one()
 
 
-@router.post("/{order_id}/mark-paid", response_model=Order)
+@router.post("/{order_id}/mark-paid", response_model=Order,
+              dependencies=[Depends(require_permission("order", "confirm"))])
 async def mark_paid(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Mark order as fully paid (COMPLETED ↁEPAID)"""
     result = await db.execute(
@@ -1833,6 +1966,10 @@ async def mark_paid(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant
     order.updated_at = datetime.now(timezone.utc)
     await db.commit()
     
+    _log_order_audit("ORDER_MARK_PAID", str(order_id), order.code,
+                     f"Order marked as paid. Amount: {order.final_amount}",
+                     {"final_amount": str(order.final_amount)})
+    
     # CRM Hook: Recalculate Stats
     if order.customer_id:
         await CrmIntegrationService.recalculate_stats(db, tenant_id, order.customer_id)
@@ -1851,7 +1988,8 @@ async def mark_paid(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant
 
 # ============ ORDER PAYMENTS ============
 
-@router.get("/{order_id}/payments", response_model=List[OrderPayment])
+@router.get("/{order_id}/payments", response_model=List[OrderPayment],
+              dependencies=[Depends(require_permission("order", "view"))])
 async def list_order_payments(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """List all payments for an order - ISS-006 Fix: Added tenant_id check"""
     # First verify order belongs to tenant (RLS check)
@@ -1875,7 +2013,8 @@ async def list_order_payments(order_id: UUID, tenant_id: UUID = Depends(get_curr
     return result.scalars().all()
 
 
-@router.post("/{order_id}/payments", response_model=OrderPayment)
+@router.post("/{order_id}/payments", response_model=OrderPayment,
+              dependencies=[Depends(require_permission("order", "create"))])
 async def add_payment(order_id: UUID, data: OrderPaymentBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Add a payment to an order"""
     # Verify order exists
@@ -1934,6 +2073,10 @@ async def add_payment(order_id: UUID, data: OrderPaymentBase, tenant_id: UUID = 
     await db.commit()
     await db.refresh(new_payment)
     
+    _log_order_audit("PAYMENT_ADD", str(order_id), order.code,
+                     f"Payment added: {data.amount} via {data.payment_method}",
+                     {"payment_id": str(new_payment.id), "amount": str(data.amount), "method": data.payment_method})
+    
     return new_payment
 
 
@@ -1945,7 +2088,8 @@ class UpdatePaymentRequest(BaseModel):
     note: Optional[str] = None
 
 
-@router.put("/{order_id}/payments/{payment_id}", response_model=OrderPayment)
+@router.put("/{order_id}/payments/{payment_id}", response_model=OrderPayment,
+              dependencies=[Depends(require_permission("order", "edit"))])
 async def update_payment(order_id: UUID, payment_id: UUID, data: UpdatePaymentRequest, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Update an existing payment"""
     # Get payment
@@ -1994,10 +2138,15 @@ async def update_payment(order_id: UUID, payment_id: UUID, data: UpdatePaymentRe
     await db.commit()
     await db.refresh(payment)
     
+    _log_order_audit("PAYMENT_EDIT", str(order_id), order.code,
+                     f"Payment updated: {old_amount} -> {payment.amount}",
+                     {"payment_id": str(payment_id), "old_amount": str(old_amount), "new_amount": str(payment.amount)})
+    
     return payment
 
 
-@router.delete("/{order_id}/payments/{payment_id}")
+@router.delete("/{order_id}/payments/{payment_id}",
+              dependencies=[Depends(require_permission("order", "delete"))])
 async def delete_payment(order_id: UUID, payment_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Delete a payment from an order"""
     result = await db.execute(
@@ -2046,15 +2195,21 @@ async def delete_payment(order_id: UUID, payment_id: UUID, tenant_id: UUID = Dep
     except Exception as e:
         logger.warning(f"Failed to delete finance transaction: {e}")
     
+    deleted_amount = payment.amount
     await db.delete(payment)
     await db.commit()
+    
+    _log_order_audit("PAYMENT_DELETE", str(order_id), order.code if order else "",
+                     f"Payment deleted: {deleted_amount}",
+                     {"payment_id": str(payment_id), "amount": str(deleted_amount)})
     
     return {"message": "Payment deleted successfully"}
 
 
 # ============ ORDER ITEMS ============
 
-@router.post("/{order_id}/items", response_model=OrderItem)
+@router.post("/{order_id}/items", response_model=OrderItem,
+              dependencies=[Depends(require_permission("order", "edit"))])
 async def add_order_item(order_id: UUID, data: OrderItemBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Add an item to an order"""
     # Verify order exists
@@ -2113,7 +2268,8 @@ class StaffAssignmentResponse(BaseModel):
         from_attributes = True
 
 
-@router.get("/{order_id}/staff", response_model=List[StaffAssignmentResponse])
+@router.get("/{order_id}/staff", response_model=List[StaffAssignmentResponse],
+              dependencies=[Depends(require_permission("order", "view"))])
 async def list_order_staff(order_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """List all staff assigned to an order"""
     # Verify order exists
@@ -2134,7 +2290,8 @@ async def list_order_staff(order_id: UUID, tenant_id: UUID = Depends(get_current
     return result.scalars().all()
 
 
-@router.post("/{order_id}/staff", response_model=StaffAssignmentResponse)
+@router.post("/{order_id}/staff", response_model=StaffAssignmentResponse,
+              dependencies=[Depends(require_permission("order", "edit"))])
 async def assign_staff(order_id: UUID, data: StaffAssignmentCreate, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Assign a staff member to an order"""
     # Verify order exists and get event info
@@ -2246,7 +2403,8 @@ async def assign_staff(order_id: UUID, data: StaffAssignmentCreate, tenant_id: U
     return response
 
 
-@router.delete("/{order_id}/staff/{assignment_id}")
+@router.delete("/{order_id}/staff/{assignment_id}",
+              dependencies=[Depends(require_permission("order", "edit"))])
 async def remove_staff(order_id: UUID, assignment_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Remove a staff assignment from an order"""
     result = await db.execute(
@@ -2266,7 +2424,8 @@ async def remove_staff(order_id: UUID, assignment_id: UUID, tenant_id: UUID = De
     return {"message": "Đã xóa phân công nhân viên"}
 
 
-@router.patch("/{order_id}/staff/{assignment_id}/confirm")
+@router.patch("/{order_id}/staff/{assignment_id}/confirm",
+              dependencies=[Depends(require_permission("order", "confirm"))])
 async def confirm_staff_assignment(order_id: UUID, assignment_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Confirm a staff assignment (staff acknowledges the assignment)"""
     result = await db.execute(
@@ -2289,7 +2448,8 @@ async def confirm_staff_assignment(order_id: UUID, assignment_id: UUID, tenant_i
 
 # ============ STAFF CONFLICT CHECKING ============
 
-@router.get("/staff/{staff_id}/conflicts")
+@router.get("/staff/{staff_id}/conflicts",
+              dependencies=[Depends(require_permission("order", "view"))])
 async def check_staff_conflicts(
     staff_id: UUID,
     event_date: str = Query(..., description="Date to check (YYYY-MM-DD format)"),
@@ -2352,7 +2512,8 @@ async def check_staff_conflicts(
     }
 
 
-@router.get("/staff/{staff_id}/schedule")
+@router.get("/staff/{staff_id}/schedule",
+              dependencies=[Depends(require_permission("order", "view"))])
 async def get_staff_schedule(
     staff_id: UUID,
     from_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
@@ -2452,7 +2613,8 @@ class PrepSheet(BaseModel):
     generated_at: str
 
 
-@router.get("/{order_id}/prep-sheet", response_model=PrepSheet)
+@router.get("/{order_id}/prep-sheet", response_model=PrepSheet,
+              dependencies=[Depends(require_permission("order", "view"))])
 async def generate_prep_sheet(
     order_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -2586,7 +2748,8 @@ class PullSheet(BaseModel):
     generated_at: str
 
 
-@router.get("/{order_id}/pull-sheet", response_model=PullSheet)
+@router.get("/{order_id}/pull-sheet", response_model=PullSheet,
+              dependencies=[Depends(require_permission("order", "view"))])
 async def generate_pull_sheet(
     order_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -2775,7 +2938,8 @@ async def generate_pull_sheet(
 
 from fastapi.responses import StreamingResponse
 
-@router.get("/{order_id}/menu-docx")
+@router.get("/{order_id}/menu-docx",
+              dependencies=[Depends(require_permission("order", "view"))])
 async def generate_menu_docx(
     order_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -2836,7 +3000,8 @@ async def generate_menu_docx(
 
 # ============ CONTRACT DOCX GENERATION ============
 
-@router.get("/{order_id}/contract-docx")
+@router.get("/{order_id}/contract-docx",
+              dependencies=[Depends(require_permission("order", "view"))])
 async def generate_contract_docx_endpoint(
     order_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),

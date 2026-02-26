@@ -67,11 +67,11 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
                     </div>
                 ) : (
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 rounded-xl flex items-center justify-center">
+                        <div className="w-10 h-10 bg-accent-gradient rounded-xl flex items-center justify-center">
                             <span className="text-lg font-bold text-white">GT</span>
                         </div>
                         <div>
-                            <h1 className="text-lg font-bold bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                            <h1 className="text-lg font-bold text-accent-gradient">
                                 {tenantName}
                             </h1>
                             <p className="text-xs text-gray-500 dark:text-gray-400">Catering ERP</p>
@@ -93,14 +93,14 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
                                     className={cn(
                                         'group flex gap-x-3 rounded-lg p-2.5 text-sm font-medium transition-all duration-200',
                                         isActive
-                                            ? 'bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-indigo-500/10 text-purple-700 dark:text-purple-300'
+                                            ? 'bg-accent-gradient-subtle text-accent-active'
                                             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 dark:hover:bg-gray-800'
                                     )}
                                 >
                                     <item.icon
                                         className={cn(
                                             'h-5 w-5 shrink-0 transition-colors',
-                                            isActive ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 dark:text-gray-600 dark:group-hover:text-gray-300 dark:text-gray-600'
+                                            isActive ? 'text-accent-icon' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 dark:text-gray-600 dark:group-hover:text-gray-300 dark:text-gray-600'
                                         )}
                                     />
                                     {item.name}

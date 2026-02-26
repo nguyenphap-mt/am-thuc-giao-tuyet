@@ -49,6 +49,7 @@ import { format, parseISO, addMonths, subMonths } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import AssignmentCalendar from './AssignmentCalendar';
 import { OrderSearchCombobox } from './OrderSearchCombobox';
+import AssignmentBatchModal from './AssignmentBatchModal';
 
 // Types
 interface Assignment {
@@ -66,8 +67,8 @@ interface Assignment {
     check_in_time: string | null;
     check_out_time: string | null;
     notes: string | null;
-    order_code: string | null;           // Order code (e.g., DH-202602-001)
-    order_customer_name: string | null;  // Customer name from order
+    order_code: string | null; // Order code (e.g., DH-202602-001)
+    order_customer_name: string | null; // Customer name from order
     created_at: string;
     updated_at: string;
 }
@@ -86,8 +87,8 @@ interface Order {
     customer_name: string;
     event_date: string;
     event_time?: string;
-    event_location?: string;  // Location of the event
-    guest_count?: number;     // Number of guests
+    event_location?: string; // Location of the event
+    guest_count?: number; // Number of guests
     status: string;
 }
 
@@ -111,6 +112,7 @@ export default function AssignmentTab() {
     const [conflictWarning, setConflictWarning] = useState<ConflictCheck | null>(null);
     const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
     const [currentMonth, setCurrentMonth] = useState(new Date());
+    const [batchModalOpen, setBatchModalOpen] = useState(false);
 
     // Form state for new assignment
     const [formData, setFormData] = useState({
@@ -291,7 +293,7 @@ export default function AssignmentTab() {
         const styles: Record<string, string> = {
             'ASSIGNED': 'bg-blue-100 text-blue-700',
             'CONFIRMED': 'bg-green-100 text-green-700',
-            'CHECKED_IN': 'bg-purple-100 text-purple-700',
+            'CHECKED_IN': 'bg-accent-100 text-accent-strong',
             'COMPLETED': 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300',
             'CANCELLED': 'bg-red-100 text-red-700',
         };
@@ -338,7 +340,7 @@ export default function AssignmentTab() {
                     { label: 'Tổng', value: stats.total, icon: IconUsers, bgColor: 'bg-blue-50', iconColor: 'text-blue-600' },
                     { label: 'Chờ xác nhận', value: stats.assigned, icon: IconClock, bgColor: 'bg-amber-50', iconColor: 'text-amber-600' },
                     { label: 'Đã xác nhận', value: stats.confirmed, icon: IconCheck, bgColor: 'bg-green-50', iconColor: 'text-green-600' },
-                    { label: 'Hoàn thành', value: stats.completed, icon: IconCalendarEvent, bgColor: 'bg-purple-50', iconColor: 'text-purple-600' },
+                    { label: 'Hoàn thành', value: stats.completed, icon: IconCalendarEvent, bgColor: 'bg-accent-50', iconColor: 'text-accent-primary' },
                 ].map((stat, i) => (
                     <Card key={i} className="hover:shadow-sm transition-shadow">
                         <CardContent className="p-3">
@@ -383,7 +385,7 @@ export default function AssignmentTab() {
                             <Button
                                 variant={viewMode === 'list' ? 'default' : 'ghost'}
                                 size="icon"
-                                className={`h-8 w-8 rounded-r-none ${viewMode === 'list' ? 'bg-purple-600 hover:bg-purple-700' : ''}`}
+                                className={`h-8 w-8 rounded-r-none ${viewMode === 'list' ? 'bg-accent-solid ' : ''}`}
                                 onClick={() => setViewMode('list')}
                             >
                                 <IconList className="h-4 w-4" />
@@ -391,7 +393,7 @@ export default function AssignmentTab() {
                             <Button
                                 variant={viewMode === 'calendar' ? 'default' : 'ghost'}
                                 size="icon"
-                                className={`h-8 w-8 rounded-l-none ${viewMode === 'calendar' ? 'bg-purple-600 hover:bg-purple-700' : ''}`}
+                                className={`h-8 w-8 rounded-l-none ${viewMode === 'calendar' ? 'bg-accent-solid ' : ''}`}
                                 onClick={() => setViewMode('calendar')}
                             >
                                 <IconCalendar className="h-4 w-4" />
@@ -428,7 +430,16 @@ export default function AssignmentTab() {
                         </Button>
                         <Button
                             size="sm"
-                            className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:opacity-90"
+                            variant="outline"
+                            className="border-accent-subtle text-accent-primary hover:bg-accent-50"
+                            onClick={() => setBatchModalOpen(true)}
+                        >
+                            <IconUsers className="mr-2 h-4 w-4" />
+                            Phân công nhóm
+                        </Button>
+                        <Button
+                            size="sm"
+                            className="bg-accent-gradient hover:opacity-90"
                             onClick={handleOpenCreate}
                         >
                             <IconUserPlus className="mr-2 h-4 w-4" />
@@ -475,7 +486,7 @@ export default function AssignmentTab() {
                                         className={`relative flex items-center gap-4 px-4 py-3 cursor-pointer transition-colors group ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-900'}`}
                                     >
                                         {/* Employee Avatar */}
-                                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center text-white font-medium shrink-0">
+                                        <div className="h-10 w-10 rounded-full bg-accent-gradient-br to-purple-500 flex items-center justify-center text-white font-medium shrink-0">
                                             {assignment.employee_name?.charAt(0) || 'N'}
                                         </div>
 
@@ -495,7 +506,7 @@ export default function AssignmentTab() {
                                         <div className="w-48 shrink-0 hidden md:block">
                                             {assignment.order_code ? (
                                                 <div>
-                                                    <span className="font-medium text-purple-700 text-sm">
+                                                    <span className="font-medium text-accent-strong text-sm">
                                                         {assignment.order_code}
                                                     </span>
                                                     <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
@@ -731,7 +742,7 @@ export default function AssignmentTab() {
                         <Button
                             onClick={() => createMutation.mutate(formData)}
                             disabled={!formData.event_id || !formData.employee_id || createMutation.isPending}
-                            className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500"
+                            className="bg-accent-gradient"
                         >
                             {createMutation.isPending && <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Tạo phân công
@@ -765,6 +776,12 @@ export default function AssignmentTab() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Batch Assignment Modal */}
+            <AssignmentBatchModal
+                open={batchModalOpen}
+                onOpenChange={setBatchModalOpen}
+            />
         </div>
     );
 }

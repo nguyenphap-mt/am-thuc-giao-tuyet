@@ -108,6 +108,11 @@ app.include_router(procurement_router.router, prefix="/api/v1/procurement",
                    dependencies=[Depends(require_permission("procurement"))])
 app.include_router(hr_router.router, prefix="/api/v1/hr",
                    dependencies=[Depends(require_permission("hr"))])
+
+# Employee Self-Service Leave — accessible by ALL authenticated users
+# Bypasses HR module guard so Chef/Staff/Sales can manage their own leave
+from backend.modules.hr.infrastructure.leave_self_service_router import router as leave_self_service_router
+app.include_router(leave_self_service_router, prefix="/api/v1/hr")
 app.include_router(finance_router.router, prefix="/api/v1/finance",
                    dependencies=[Depends(require_permission("finance"))])
 app.include_router(crm_router.router, prefix="/api/v1/crm",
@@ -128,6 +133,12 @@ app.include_router(notification_router.router, prefix="/api/v1",
 # Notification Preferences (user-level settings, open to all authenticated users)
 from backend.modules.notification.infrastructure import preferences_router as notif_pref_router
 app.include_router(notif_pref_router.router, prefix="/api/v1")
+
+# BUGFIX: BUG-20260226-001 — User notification endpoints (list, count, mark-read)
+# Previously embedded in HR router which restricted to admin/manager/accountant.
+# Now standalone at /api/v1/notifications/* for ALL authenticated users.
+from backend.modules.notification.infrastructure.user_notifications_router import router as user_notif_router
+app.include_router(user_notif_router, prefix="/api/v1")
 
 # CRM Sub-routers (inherits CRM module permission)
 from backend.modules.crm.infrastructure.routers import marketing as crm_marketing_router
@@ -161,10 +172,14 @@ app.include_router(settings_router, prefix="/api/v1",
                    dependencies=[Depends(require_permission("settings"))])
 
 # Tenant Management Module
+# BUGFIX: BUG-20260226-002 — No blanket require_permission("tenant") on router level.
+# Admin-only endpoints (/{tenant_id}, etc.) already have per-endpoint
+# dependencies=[Depends(require_permission("tenant", "view"))].
+# Self-service endpoints (/me, /me/settings, /me/usage) must be accessible
+# by ALL authenticated users (chef, staff, etc.), not just super_admin.
 from backend.modules.tenant.infrastructure.http_router import router as tenant_router
 from backend.modules.tenant.infrastructure.http_router import public_router as tenant_public_router
-app.include_router(tenant_router, prefix="/api/v1",
-                   dependencies=[Depends(require_permission("tenant"))])
+app.include_router(tenant_router, prefix="/api/v1")
 
 # BUGFIX: BUG-20260218-003 — Tenant public endpoints (logo serving)
 # <img> tags cannot send JWT Authorization headers, so logo serving

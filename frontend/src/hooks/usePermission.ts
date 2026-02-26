@@ -14,7 +14,7 @@ const MODULE_ACCESS: Record<string, string[]> = {
     order: ['super_admin', 'admin', 'manager', 'chef', 'sales', 'staff', 'accountant'],
     calendar: ['super_admin', 'admin', 'manager', 'chef', 'sales', 'staff'],
     procurement: ['super_admin', 'admin', 'manager', 'chef', 'accountant'],
-    hr: ['super_admin', 'admin', 'manager'],
+    hr: ['*'], // All roles can access HR (tab filtering controls visibility)
     finance: ['super_admin', 'admin', 'manager', 'accountant'],
     crm: ['super_admin', 'admin', 'manager', 'sales'],
     analytics: ['super_admin', 'admin', 'manager', 'sales', 'accountant'],
@@ -86,6 +86,101 @@ export function hasModuleAccess(roleCode: string, module: string): boolean {
 }
 
 /**
+ * Hardcoded Action Permissions Map — mirrors permission-matrix.md Section 3.
+ * Maps module → action → allowed roles.
+ * Source of truth for frontend permission enforcement.
+ */
+const ACTION_PERMISSIONS: Record<string, Record<string, string[]>> = {
+    order: {
+        view: ['admin', 'manager', 'chef', 'sales', 'staff', 'accountant'],
+        create: ['admin', 'manager', 'sales'],
+        edit: ['admin', 'manager', 'sales'],
+        delete: ['admin', 'manager'],
+        confirm: ['admin', 'manager'],
+        cancel: ['admin', 'manager'],
+        update_status: ['admin', 'manager'],
+    },
+    menu: {
+        view: ['admin', 'manager', 'chef', 'sales', 'viewer'],
+        create: ['admin', 'manager', 'chef'],
+        edit: ['admin', 'manager', 'chef'],
+        delete: ['admin'],
+        set_price: ['admin', 'manager'],
+        view_cost: ['admin', 'manager', 'chef'],
+    },
+    quote: {
+        read: ['admin', 'manager', 'sales', 'accountant', 'viewer'],
+        create: ['admin', 'manager', 'sales'],
+        update: ['admin', 'manager', 'sales'],
+        delete: ['admin', 'manager'],
+        convert: ['admin', 'manager', 'sales'],
+        clone: ['admin', 'manager', 'sales'],
+        export: ['admin', 'manager', 'sales', 'accountant', 'viewer'],
+    },
+    procurement: {
+        view: ['admin', 'manager', 'chef', 'accountant'],
+        create: ['admin', 'manager'],
+        edit: ['admin', 'manager'],
+        delete: ['admin'],
+        approve_po: ['admin', 'manager'],
+        record_payment: ['admin', 'accountant'],
+        receive_goods: ['admin', 'manager', 'chef'],
+    },
+    hr: {
+        view: ['admin', 'manager', 'accountant'],
+        create: ['admin', 'manager'],
+        edit: ['admin', 'manager'],
+        delete: ['admin'],
+        view_salary: ['admin', 'accountant'],
+        approve: ['admin', 'manager'],
+        view_payroll: ['admin', 'accountant'],
+        process_payroll: ['admin'],
+    },
+    finance: {
+        view: ['admin', 'manager', 'accountant'],
+        create: ['admin', 'accountant'],
+        edit: ['admin', 'accountant'],
+        delete: ['admin'],
+        post_journal: ['admin', 'accountant'],
+        reverse_journal: ['admin'],
+        record_payment: ['admin', 'accountant'],
+        export: ['admin', 'manager', 'accountant'],
+        close_period: ['admin'],
+        reopen_period: ['admin'],
+    },
+    inventory: {
+        view: ['admin', 'manager', 'chef', 'staff'],
+        create: ['admin', 'manager'],
+        edit: ['admin', 'manager'],
+        delete: ['admin'],
+        stock_transfer: ['admin', 'manager', 'chef'],
+        reverse_transaction: ['admin'],
+        manage_equipment: ['admin', 'manager'],
+        export: ['admin', 'manager'],
+    },
+    crm: {
+        view: ['admin', 'manager', 'sales'],
+        create: ['admin', 'manager', 'sales'],
+        edit: ['admin', 'manager', 'sales'],
+        delete: ['admin'],
+    },
+    user: {
+        view: ['admin'],
+        create: ['admin'],
+        edit: ['admin'],
+        delete: ['admin'],
+        manage_roles: ['admin'],
+    },
+    settings: {
+        view: ['admin', 'manager'],
+        edit: ['admin'],
+        edit_company: ['admin'],
+        edit_system: ['admin'],
+        upload_logo: ['admin'],
+    },
+};
+
+/**
  * Check if a role has a specific action permission.
  */
 export function hasActionPermission(
@@ -100,7 +195,7 @@ export function hasActionPermission(
     // Must have module access first
     if (!hasModuleAccess(roleCode, module)) return false;
 
-    // Check action-level permissions
+    // Check explicit granular permissions from user role object
     const permKey = `${module}:${action}`;
     const wildcardKey = `${module}:*`;
 
@@ -108,20 +203,29 @@ export function hasActionPermission(
         return true;
     }
 
-    // If no granular permissions set, fall back to module-level access
-    if (permissions.length === 0) return true;
+    // Check hardcoded ACTION_PERMISSIONS matrix (source of truth)
+    const moduleActions = ACTION_PERMISSIONS[module];
+    if (moduleActions) {
+        const allowedRoles = moduleActions[action];
+        if (allowedRoles) {
+            return allowedRoles.includes(roleCode);
+        }
+        // Action not defined in matrix → deny for safety
+        return false;
+    }
 
-    return false;
+    // Module not in ACTION_PERMISSIONS → fall back to module-level access
+    return true;
 }
 
 /**
  * Hook: usePermission
  * 
  * Usage:
- *   const { canAccessModule, canPerformAction, userRole, filterNavigation } = usePermission();
- *   
- *   if (canAccessModule('finance')) { ... }
- *   if (canPerformAction('order', 'delete')) { ... }
+ * const { canAccessModule, canPerformAction, userRole, filterNavigation } = usePermission();
+ * 
+ * if (canAccessModule('finance')) { ... }
+ * if (canPerformAction('order', 'delete')) { ... }
  */
 export function usePermission() {
     const user = useAuthStore(state => state.user);

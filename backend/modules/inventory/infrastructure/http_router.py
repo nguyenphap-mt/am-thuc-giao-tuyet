@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from backend.core.auth.permissions import require_permission
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from typing import List
@@ -11,19 +12,23 @@ logger = logging.getLogger(__name__)
 
 from backend.core.database import get_db
 from backend.core.dependencies import get_current_tenant, CurrentTenant
-from backend.modules.inventory.domain.models import InventoryItemModel, WarehouseModel, InventoryStockModel, InventoryTransactionModel
-from backend.modules.inventory.domain.entities import InventoryItem, InventoryItemBase, Warehouse, WarehouseBase
+from backend.modules.inventory.domain.models import InventoryItemModel, WarehouseModel, InventoryStockModel, InventoryTransactionModel, EquipmentCheckoutModel
+from backend.modules.inventory.domain.entities import (
+    InventoryItem, InventoryItemBase, Warehouse, WarehouseBase,
+    EquipmentCheckoutCreate, EquipmentCheckinRequest, EquipmentCheckoutResponse,
+)
+
 
 router = APIRouter(tags=["Inventory Management"])
 
 
 # --- Warehouse Endpoints ---
-@router.get("/warehouses", response_model=List[Warehouse])
+@router.get("/warehouses", response_model=List[Warehouse], dependencies=[Depends(require_permission("inventory", "view"))])
 async def list_warehouses(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(WarehouseModel).where(WarehouseModel.tenant_id == tenant_id))
     return result.scalars().all()
 
-@router.post("/warehouses", response_model=Warehouse)
+@router.post("/warehouses", response_model=Warehouse, dependencies=[Depends(require_permission("inventory", "create"))])
 async def create_warehouse(data: WarehouseBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     # Create
     item = WarehouseModel(tenant_id=tenant_id, **data.dict())
@@ -34,7 +39,7 @@ async def create_warehouse(data: WarehouseBase, tenant_id: UUID = Depends(get_cu
 
 # --- Item Endpoints ---
 # --- Stats Endpoint ---
-@router.get("/stats")
+@router.get("/stats", dependencies=[Depends(require_permission("inventory", "view"))])
 async def get_inventory_stats(tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Get inventory statistics"""
     # Use the same robust query logic as list_items to avoid CTE issues
@@ -80,10 +85,11 @@ async def get_inventory_stats(tenant_id: UUID = Depends(get_current_tenant), db:
     }
 
 # --- Item Endpoints ---
-@router.get("/items")
+@router.get("/items", dependencies=[Depends(require_permission("inventory", "view"))])
 async def list_items(
     search: str = None,
     category: str = None,
+    item_type: str = None,
     limit: int = None,
     offset: int = 0,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -95,6 +101,8 @@ async def list_items(
         base_filter.append(InventoryItemModel.name.ilike(f"%{search}%"))
     if category:
         base_filter.append(InventoryItemModel.category == category)
+    if item_type:
+        base_filter.append(InventoryItemModel.item_type == item_type)
     
     # Count total matching items
     count_query = select(func.count(InventoryItemModel.id)).where(*base_filter)
@@ -129,7 +137,7 @@ async def list_items(
     
     return {"items": items, "total": total}
 
-@router.post("/items", response_model=InventoryItem)
+@router.post("/items", response_model=InventoryItem, dependencies=[Depends(require_permission("inventory", "create"))])
 async def create_item(data: InventoryItemBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     new_item = InventoryItemModel(tenant_id=tenant_id, **data.dict())
     db.add(new_item)
@@ -137,7 +145,7 @@ async def create_item(data: InventoryItemBase, tenant_id: UUID = Depends(get_cur
     await db.refresh(new_item)
     return new_item
 
-@router.get("/items/{id}", response_model=InventoryItem)
+@router.get("/items/{id}", response_model=InventoryItem, dependencies=[Depends(require_permission("inventory", "view"))])
 async def get_item(id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(InventoryItemModel).where(InventoryItemModel.id == id))
     item = result.scalar_one_or_none()
@@ -145,7 +153,7 @@ async def get_item(id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: 
         raise HTTPException(status_code=404, detail="Item not found")
     return item
 
-@router.put("/items/{id}", response_model=InventoryItem)
+@router.put("/items/{id}", response_model=InventoryItem, dependencies=[Depends(require_permission("inventory", "edit"))])
 async def update_item(id: UUID, data: InventoryItemBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(InventoryItemModel).where(InventoryItemModel.id == id))
     item = result.scalar_one_or_none()
@@ -159,7 +167,7 @@ async def update_item(id: UUID, data: InventoryItemBase, tenant_id: UUID = Depen
     await db.refresh(item)
     return item
 
-@router.delete("/items/{id}")
+@router.delete("/items/{id}", dependencies=[Depends(require_permission("inventory", "delete"))])
 async def delete_inventory_item(id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(InventoryItemModel)
@@ -194,7 +202,7 @@ async def get_default_warehouse(tenant_id: UUID = Depends(get_current_tenant), d
         await db.refresh(wh)
     return wh
 
-@router.post("/transactions", response_model=InventoryTransaction)
+@router.post("/transactions", response_model=InventoryTransaction, dependencies=[Depends(require_permission("inventory", "stock_transfer"))])
 async def create_transaction(data: InventoryTransactionBase, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
     """Process stock movement (Import/Export)"""
     from backend.modules.inventory.domain.services import InventoryService
@@ -217,7 +225,7 @@ async def create_transaction(data: InventoryTransactionBase, tenant_id: UUID = D
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/transactions/{transaction_id}/reverse", response_model=InventoryTransaction)
+@router.post("/transactions/{transaction_id}/reverse", response_model=InventoryTransaction, dependencies=[Depends(require_permission("inventory", "reverse_transaction"))])
 async def reverse_transaction(
     transaction_id: UUID,
     reason: str = None,
@@ -307,7 +315,7 @@ async def reverse_transaction(
     return reversal_txn
 
 
-@router.get("/transactions")
+@router.get("/transactions", dependencies=[Depends(require_permission("inventory", "view"))])
 async def list_transactions(
     item_id: UUID = None,
     limit: int = 50,
@@ -370,7 +378,7 @@ from backend.modules.inventory.domain.models import InventoryLotModel
 from backend.modules.inventory.domain.entities import InventoryLot, InventoryLotCreate, InventoryLotBase
 from typing import Optional
 
-@router.get("/lots")
+@router.get("/lots", dependencies=[Depends(require_permission("inventory", "view"))])
 async def list_lots(
     item_id: Optional[UUID] = None,
     warehouse_id: Optional[UUID] = None,
@@ -427,7 +435,7 @@ async def list_lots(
     return lots_response
 
 
-@router.post("/lots", response_model=InventoryLot)
+@router.post("/lots", response_model=InventoryLot, dependencies=[Depends(require_permission("inventory", "manage_lots"))])
 async def create_lot(
     data: InventoryLotCreate,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -467,7 +475,7 @@ async def create_lot(
     return lot
 
 
-@router.get("/lots/{lot_id}", response_model=InventoryLot)
+@router.get("/lots/{lot_id}", response_model=InventoryLot, dependencies=[Depends(require_permission("inventory", "view"))])
 async def get_lot(
     lot_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -486,7 +494,7 @@ async def get_lot(
     return lot
 
 
-@router.get("/items/{item_id}/lots/fifo")
+@router.get("/items/{item_id}/lots/fifo", dependencies=[Depends(require_permission("inventory", "view"))])
 async def get_fifo_lots(
     item_id: UUID,
     quantity_needed: Optional[float] = None,
@@ -564,7 +572,7 @@ async def get_fifo_lots(
     return response
 
 
-@router.get("/lots-expiring")
+@router.get("/lots-expiring", dependencies=[Depends(require_permission("inventory", "view"))])
 async def get_expiring_lots(
     days: int = 30,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -619,7 +627,7 @@ async def get_expiring_lots(
 
 from backend.modules.inventory.domain.entities import ExportWithLotsRequest
 
-@router.post("/export-with-lots")
+@router.post("/export-with-lots", dependencies=[Depends(require_permission("inventory", "stock_transfer"))])
 async def export_with_lots(
     data: ExportWithLotsRequest,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -742,7 +750,7 @@ from backend.modules.inventory.domain.entities import (
     MaterialPreparationRequest, MaterialPreparationResult, MaterialItemResult
 )
 
-@router.post("/prepare-materials", response_model=MaterialPreparationResult)
+@router.post("/prepare-materials", response_model=MaterialPreparationResult, dependencies=[Depends(require_permission("inventory", "stock_transfer"))])
 async def prepare_materials(
     data: MaterialPreparationRequest,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -916,7 +924,7 @@ class AutoReorderResult(BaseModel):
     message: str
 
 
-@router.get("/low-stock", response_model=LowStockResponse)
+@router.get("/low-stock", response_model=LowStockResponse, dependencies=[Depends(require_permission("inventory", "view"))])
 async def get_low_stock_items(
     include_zero: bool = True,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -1009,7 +1017,7 @@ async def get_low_stock_items(
     )
 
 
-@router.post("/low-stock/auto-reorder", response_model=AutoReorderResult)
+@router.post("/low-stock/auto-reorder", response_model=AutoReorderResult, dependencies=[Depends(require_permission("inventory", "auto_reorder"))])
 async def trigger_auto_reorder(
     request: AutoReorderRequest,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -1133,7 +1141,7 @@ async def trigger_auto_reorder(
         )
 
 
-@router.get("/alerts/summary")
+@router.get("/alerts/summary", dependencies=[Depends(require_permission("inventory", "view"))])
 async def get_inventory_alerts_summary(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db)
@@ -1198,7 +1206,7 @@ class StockCheckItem(BaseModel):
     status: str  # IN_STOCK, LOW_STOCK, OUT_OF_STOCK
 
 
-@router.post("/stock-check")
+@router.post("/stock-check", dependencies=[Depends(require_permission("inventory", "view"))])
 async def check_stock_availability(
     request: StockCheckRequest,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -1266,7 +1274,7 @@ async def check_stock_availability(
 
 # ============ E6: MATERIAL FORECAST (Calendar Integration) ============
 
-@router.get("/forecast")
+@router.get("/forecast", dependencies=[Depends(require_permission("inventory", "view"))])
 async def get_material_forecast(
     days: int = 7,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -1398,7 +1406,7 @@ async def get_material_forecast(
 
 # ============ E8: INVENTORY ANALYTICS (Turnover & Waste) ============
 
-@router.get("/analytics")
+@router.get("/analytics", dependencies=[Depends(require_permission("inventory", "view_analytics"))])
 async def get_inventory_analytics(
     tenant_id: UUID = Depends(get_current_tenant),
     db: AsyncSession = Depends(get_db),
@@ -1503,7 +1511,7 @@ async def get_inventory_analytics(
 
 from fastapi.responses import Response
 
-@router.get("/transactions/{txn_id}/receipt-pdf")
+@router.get("/transactions/{txn_id}/receipt-pdf", dependencies=[Depends(require_permission("inventory", "export"))])
 async def get_transaction_receipt_pdf(
     txn_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -1588,3 +1596,407 @@ async def get_transaction_receipt_pdf(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"PDF generation error: {str(e)}")
+
+
+# ============ EQUIPMENT / CCDC MANAGEMENT ============
+
+
+from pydantic import BaseModel as PydanticBaseModel
+from typing import Optional as Opt
+
+
+class EquipmentStatsResponse(PydanticBaseModel):
+    """Response model for equipment dashboard stats (BE-04)."""
+    total_equipment_types: int = 0
+    total_in_stock: int = 0
+    total_checked_out: int = 0
+    total_damaged_month: int = 0
+    overdue_count: int = 0
+
+
+@router.get("/equipment/stats", response_model=EquipmentStatsResponse, dependencies=[Depends(require_permission("inventory", "view"))])
+async def get_equipment_stats(
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get CCDC equipment dashboard statistics."""
+
+    # Total equipment types
+    total_types = await db.execute(
+        select(func.count(InventoryItemModel.id))
+        .where(
+            InventoryItemModel.tenant_id == tenant_id,
+            InventoryItemModel.item_type == 'EQUIPMENT',
+            InventoryItemModel.is_active == True,
+        )
+    )
+    total_equipment_types = total_types.scalar() or 0
+
+    # Total in-stock quantity
+    in_stock = await db.execute(
+        select(func.coalesce(func.sum(InventoryStockModel.quantity), 0))
+        .join(InventoryItemModel, InventoryStockModel.item_id == InventoryItemModel.id)
+        .where(
+            InventoryItemModel.tenant_id == tenant_id,
+            InventoryItemModel.item_type == 'EQUIPMENT',
+        )
+    )
+    total_in_stock = int(in_stock.scalar() or 0)
+
+    # Total currently checked out
+    checked_out = await db.execute(
+        select(func.coalesce(func.sum(
+            EquipmentCheckoutModel.checkout_qty - EquipmentCheckoutModel.checkin_qty - EquipmentCheckoutModel.damaged_qty
+        ), 0))
+        .where(
+            EquipmentCheckoutModel.tenant_id == tenant_id,
+            EquipmentCheckoutModel.status.in_(['CHECKED_OUT', 'PARTIALLY_RETURNED', 'OVERDUE']),
+        )
+    )
+    total_checked_out = int(checked_out.scalar() or 0)
+
+    # Damaged this month
+    now = datetime.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    damaged = await db.execute(
+        select(func.coalesce(func.sum(EquipmentCheckoutModel.damaged_qty), 0))
+        .where(
+            EquipmentCheckoutModel.tenant_id == tenant_id,
+            EquipmentCheckoutModel.damaged_qty > 0,
+            EquipmentCheckoutModel.updated_at >= month_start,
+        )
+    )
+    total_damaged_month = int(damaged.scalar() or 0)
+
+    # Overdue count
+    overdue = await db.execute(
+        select(func.count(EquipmentCheckoutModel.id))
+        .where(
+            EquipmentCheckoutModel.tenant_id == tenant_id,
+            EquipmentCheckoutModel.status.in_(['CHECKED_OUT', 'PARTIALLY_RETURNED']),
+            EquipmentCheckoutModel.expected_return_date < now,
+        )
+    )
+    overdue_count = overdue.scalar() or 0
+
+    return {
+        "total_equipment_types": total_equipment_types,
+        "total_in_stock": total_in_stock,
+        "total_checked_out": total_checked_out,
+        "total_damaged_month": total_damaged_month,
+        "overdue_count": overdue_count,
+    }
+
+
+@router.get("/equipment/checkouts", dependencies=[Depends(require_permission("inventory", "view"))])
+async def list_equipment_checkouts(
+    order_id: Optional[UUID] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """List equipment checkouts with optional filters. Uses JOIN to avoid N+1."""
+    # JOIN to get item and warehouse names in a single query (fix BE-01)
+    query = (
+        select(
+            EquipmentCheckoutModel,
+            InventoryItemModel.name.label('item_name'),
+            InventoryItemModel.sku.label('item_sku'),
+            WarehouseModel.name.label('warehouse_name'),
+        )
+        .join(InventoryItemModel, EquipmentCheckoutModel.item_id == InventoryItemModel.id)
+        .outerjoin(WarehouseModel, EquipmentCheckoutModel.warehouse_id == WarehouseModel.id)
+        .where(EquipmentCheckoutModel.tenant_id == tenant_id)
+        .order_by(desc(EquipmentCheckoutModel.created_at))
+    )
+
+    if order_id:
+        query = query.where(EquipmentCheckoutModel.order_id == order_id)
+    if status:
+        query = query.where(EquipmentCheckoutModel.status == status)
+
+    query = query.offset(offset).limit(limit)
+    result = await db.execute(query)
+    rows = result.all()
+
+    items = []
+    for co, item_name, item_sku, wh_name in rows:
+        items.append({
+            "id": str(co.id),
+            "tenant_id": str(co.tenant_id),
+            "item_id": str(co.item_id),
+            "item_name": item_name,
+            "item_sku": item_sku,
+            "order_id": str(co.order_id) if co.order_id else None,
+            "warehouse_id": str(co.warehouse_id),
+            "warehouse_name": wh_name,
+            "checkout_qty": co.checkout_qty,
+            "checkin_qty": co.checkin_qty,
+            "damaged_qty": co.damaged_qty,
+            "checkout_date": co.checkout_date.isoformat() if co.checkout_date else None,
+            "expected_return_date": co.expected_return_date.isoformat() if co.expected_return_date else None,
+            "actual_return_date": co.actual_return_date.isoformat() if co.actual_return_date else None,
+            "status": co.status,
+            "damage_notes": co.damage_notes,
+            "notes": co.notes,
+            "created_at": co.created_at.isoformat() if co.created_at else None,
+        })
+
+    # Count total
+    count_query = select(func.count(EquipmentCheckoutModel.id)).where(
+        EquipmentCheckoutModel.tenant_id == tenant_id
+    )
+    if order_id:
+        count_query = count_query.where(EquipmentCheckoutModel.order_id == order_id)
+    if status:
+        count_query = count_query.where(EquipmentCheckoutModel.status == status)
+
+    total = (await db.execute(count_query)).scalar() or 0
+
+    return {"items": items, "total": total}
+
+
+@router.post("/equipment/checkouts", dependencies=[Depends(require_permission("inventory", "manage_equipment"))])
+async def create_equipment_checkout(
+    data: EquipmentCheckoutCreate,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Checkout equipment for an order.
+    Creates one checkout record per item.
+    Validates stock availability (BR-EQ01).
+    """
+    # Get default warehouse if not specified
+    wh = await db.get(WarehouseModel, data.warehouse_id)
+    if not wh:
+        raise HTTPException(status_code=404, detail="Warehouse not found")
+
+    created = []
+    for item_req in data.items:
+        # Validate item is EQUIPMENT type
+        item = await db.get(InventoryItemModel, item_req.item_id)
+        if not item or item.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail=f"Item {item_req.item_id} not found")
+        if item.item_type != 'EQUIPMENT':
+            raise HTTPException(status_code=400, detail=f"Item '{item.name}' is not EQUIPMENT type")
+
+        # Check stock availability (BR-EQ01)
+        stock_q = select(func.coalesce(func.sum(InventoryStockModel.quantity), 0)).where(
+            InventoryStockModel.item_id == item_req.item_id,
+            InventoryStockModel.warehouse_id == data.warehouse_id,
+            InventoryStockModel.tenant_id == tenant_id,
+        )
+        current_stock = int((await db.execute(stock_q)).scalar() or 0)
+
+        # Also subtract currently checked-out but not returned
+        out_q = select(func.coalesce(func.sum(
+            EquipmentCheckoutModel.checkout_qty - EquipmentCheckoutModel.checkin_qty - EquipmentCheckoutModel.damaged_qty
+        ), 0)).where(
+            EquipmentCheckoutModel.item_id == item_req.item_id,
+            EquipmentCheckoutModel.warehouse_id == data.warehouse_id,
+            EquipmentCheckoutModel.tenant_id == tenant_id,
+            EquipmentCheckoutModel.status.in_(['CHECKED_OUT', 'PARTIALLY_RETURNED', 'OVERDUE']),
+        )
+        already_out = int((await db.execute(out_q)).scalar() or 0)
+        available = current_stock - already_out
+
+        if item_req.quantity > available:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Không đủ '{item.name}': cần {item_req.quantity}, khả dụng {available}"
+            )
+
+        checkout = EquipmentCheckoutModel(
+            tenant_id=tenant_id,
+            item_id=item_req.item_id,
+            order_id=data.order_id,
+            warehouse_id=data.warehouse_id,
+            checkout_qty=item_req.quantity,
+            expected_return_date=data.expected_return_date,
+            notes=data.notes,
+            status='CHECKED_OUT',
+        )
+        db.add(checkout)
+        created.append({
+            "item_id": str(item_req.item_id),
+            "item_name": item.name,
+            "quantity": item_req.quantity,
+        })
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Đã xuất {len(created)} dụng cụ",
+        "checkouts": created,
+    }
+
+
+@router.put("/equipment/checkouts/{checkout_id}/checkin", dependencies=[Depends(require_permission("inventory", "manage_equipment"))])
+async def checkin_equipment(
+    checkout_id: UUID,
+    data: EquipmentCheckinRequest,
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Process equipment returns for a checkout.
+    Updates stock and records damage (BR-EQ02, BR-EQ04).
+    """
+    # Find all checkouts with matching order_id or individual checkout
+    checkout = await db.get(EquipmentCheckoutModel, checkout_id)
+    if not checkout or checkout.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Checkout not found")
+
+    if checkout.status == 'RETURNED':
+        raise HTTPException(status_code=400, detail="Checkout already fully returned")
+
+    results = []
+    for ret in data.returns:
+        # Find the specific checkout for this item
+        if checkout.item_id != ret.item_id:
+            # Try to find checkout for this item under same order
+            if checkout.order_id:
+                q = select(EquipmentCheckoutModel).where(
+                    EquipmentCheckoutModel.order_id == checkout.order_id,
+                    EquipmentCheckoutModel.item_id == ret.item_id,
+                    EquipmentCheckoutModel.tenant_id == tenant_id,
+                )
+                r = await db.execute(q)
+                co = r.scalar_one_or_none()
+                if not co:
+                    continue
+            else:
+                continue
+        else:
+            co = checkout
+
+        # Validate BR-EQ02: checkin + damaged <= checkout
+        remaining = co.checkout_qty - co.checkin_qty - co.damaged_qty
+        if ret.returned_qty + ret.damaged_qty > remaining:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Trả vượt quá cho phép: còn lại {remaining}, trả {ret.returned_qty} + hư {ret.damaged_qty}"
+            )
+
+        co.checkin_qty += ret.returned_qty
+        co.damaged_qty += ret.damaged_qty
+        if ret.damage_notes:
+            co.damage_notes = (co.damage_notes or '') + ('\n' if co.damage_notes else '') + ret.damage_notes
+
+        # Update status
+        total_accounted = co.checkin_qty + co.damaged_qty
+        if total_accounted >= co.checkout_qty:
+            co.status = 'RETURNED'
+            co.actual_return_date = datetime.utcnow()
+        elif total_accounted > 0:
+            co.status = 'PARTIALLY_RETURNED'
+
+        # BR-EQ04: Reduce stock for damaged items
+        if ret.damaged_qty > 0:
+            stock_q = select(InventoryStockModel).where(
+                InventoryStockModel.item_id == ret.item_id,
+                InventoryStockModel.warehouse_id == co.warehouse_id,
+                InventoryStockModel.tenant_id == tenant_id,
+            )
+            stock_r = await db.execute(stock_q)
+            stock = stock_r.scalar_one_or_none()
+            if stock:
+                stock.quantity = max(0, float(stock.quantity) - ret.damaged_qty)
+
+        results.append({
+            "item_id": str(ret.item_id),
+            "returned": ret.returned_qty,
+            "damaged": ret.damaged_qty,
+            "status": co.status,
+        })
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Đã nhận trả {len(results)} dụng cụ",
+        "results": results,
+    }
+
+
+@router.get("/equipment/overdue", dependencies=[Depends(require_permission("inventory", "view"))])
+async def get_overdue_checkouts(
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get equipment checkouts past expected return date. Uses JOIN (fix BE-02). Read-only (fix BE-03)."""
+    now = datetime.now()
+
+    # JOIN to avoid N+1 (fix BE-02)
+    query = (
+        select(
+            EquipmentCheckoutModel,
+            InventoryItemModel.name.label('item_name'),
+            InventoryItemModel.sku.label('item_sku'),
+        )
+        .join(InventoryItemModel, EquipmentCheckoutModel.item_id == InventoryItemModel.id)
+        .where(
+            EquipmentCheckoutModel.tenant_id == tenant_id,
+            EquipmentCheckoutModel.status.in_(['CHECKED_OUT', 'PARTIALLY_RETURNED', 'OVERDUE']),
+            EquipmentCheckoutModel.expected_return_date < now,
+        )
+        .order_by(EquipmentCheckoutModel.expected_return_date.asc())
+    )
+    result = await db.execute(query)
+    rows = result.all()
+
+    items = []
+    for co, item_name, item_sku in rows:
+        remaining = co.checkout_qty - co.checkin_qty - co.damaged_qty
+        overdue_hours = int((now - co.expected_return_date).total_seconds() / 3600) if co.expected_return_date else 0
+
+        items.append({
+            "id": str(co.id),
+            "item_name": item_name or "Unknown",
+            "item_sku": item_sku or "",
+            "order_id": str(co.order_id) if co.order_id else None,
+            "checkout_qty": co.checkout_qty,
+            "remaining_out": remaining,
+            "expected_return_date": co.expected_return_date.isoformat() if co.expected_return_date else None,
+            "overdue_hours": overdue_hours,
+            "status": co.status,
+        })
+
+    # Note: Status update to OVERDUE removed from GET (fix BE-03)
+    # Use a separate PATCH endpoint or background job instead
+
+    return {"items": items, "total": len(items)}
+
+
+@router.patch("/equipment/checkouts/mark-overdue", dependencies=[Depends(require_permission("inventory", "manage_equipment"))])
+async def mark_overdue_checkouts(
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark overdue checkouts. Separated from GET to respect REST semantics (fix BE-03)."""
+    now = datetime.now()
+    query = (
+        select(EquipmentCheckoutModel)
+        .where(
+            EquipmentCheckoutModel.tenant_id == tenant_id,
+            EquipmentCheckoutModel.status.in_(['CHECKED_OUT', 'PARTIALLY_RETURNED']),
+            EquipmentCheckoutModel.expected_return_date < now,
+        )
+    )
+    result = await db.execute(query)
+    checkouts = result.scalars().all()
+
+    updated = 0
+    for co in checkouts:
+        if co.status != 'OVERDUE':
+            co.status = 'OVERDUE'
+            updated += 1
+
+    if updated > 0:
+        await db.commit()
+
+    return {"updated": updated, "message": f"Đã đánh dấu {updated} phiếu quá hạn"}

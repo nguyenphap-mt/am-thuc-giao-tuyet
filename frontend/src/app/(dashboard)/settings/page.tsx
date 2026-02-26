@@ -26,6 +26,7 @@ import { PermissionMatrixTab } from './components/permission-matrix-tab';
 import { AppearanceTab } from './components/appearance-tab';
 import NotificationSettingsTab from './components/NotificationSettingsTab';
 import { NotificationErrorBoundary } from './components/NotificationErrorBoundary';
+import { SystemSettingsTab } from './components/system-settings-tab';
 import {
     useMyTenant, useMyTenantUsage, useMyTenantSettings,
     useUpdateMyTenant, useUpdateMyTenantSettings,
@@ -162,26 +163,47 @@ function EditableField({ label, value, icon: Icon, onSave, type = 'text' }: {
 // =============================================
 
 /**
+ * API base URL — same source of truth as api.ts client.
+ * Used to build absolute logo URLs so <img> tags load from
+ * the correct backend (not through Next.js proxy).
+ *
+ * BUGFIX: BUG-20260225-002
+ * Relative URL /api/v1/tenants/{id}/logo resolved to localhost:3000
+ * (Next.js proxy → Cloud Run → 503). Must use absolute backend URL.
+ */
+const API_BASE_FOR_ASSETS = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+
+/**
  * Resolves a logo_url from DB to a displayable URL.
  * 
- * BUGFIX: BUG-20260218-001 + BUG-20260218-002
+ * BUGFIX: BUG-20260218-001 + BUG-20260218-002 + BUG-20260225-002
  * Old format 1: /uploads/logos/{tenant_id}.png (Cloud Run filesystem, 404 on Vercel)
  * Old format 2: /api/v1/tenants/me/logo?v=... (requires auth, 401 from <img> tag)
- * New format:   /api/v1/tenants/{tenant_id}/logo?v=... (public, no auth needed)
+ * New format: {API_BASE}/tenants/{tenant_id}/logo?v=... (absolute, public, no auth)
  */
 function resolveLogoUrl(logoUrl: string | null, tenantId?: string): string | null {
     if (!logoUrl) return null;
-    // New format with tenant_id in path — already correct
-    if (logoUrl.match(/\/api\/v1\/tenants\/[a-f0-9-]+\/logo/)) return logoUrl;
+    // Already an absolute URL (http/https) — pass through
+    if (logoUrl.startsWith('http://') || logoUrl.startsWith('https://')) return logoUrl;
+    // New format with tenant_id in path — convert to absolute URL
+    if (logoUrl.match(/\/api\/v1\/tenants\/[a-f0-9-]+\/logo/)) {
+        // Strip /api/v1 prefix and prepend API_BASE_FOR_ASSETS
+        const relativePath = logoUrl.replace(/^\/api\/v1/, '');
+        return `${API_BASE_FOR_ASSETS}${relativePath}`;
+    }
     // Old /me/logo format — needs tenant_id to convert to public URL
     if (logoUrl.includes('/tenants/me/logo') && tenantId) {
-        return `/api/v1/tenants/${tenantId}/logo?v=${Date.now()}`;
+        return `${API_BASE_FOR_ASSETS}/tenants/${tenantId}/logo?v=${Date.now()}`;
     }
     // Old static path format
     if (logoUrl.startsWith('/uploads/logos/') && tenantId) {
-        return `/api/v1/tenants/${tenantId}/logo?v=${Date.now()}`;
+        return `${API_BASE_FOR_ASSETS}/tenants/${tenantId}/logo?v=${Date.now()}`;
     }
-    // Absolute URL or other format — pass through
+    // Fallback with tenant_id
+    if (tenantId) {
+        return `${API_BASE_FOR_ASSETS}/tenants/${tenantId}/logo?v=${Date.now()}`;
+    }
+    // Unknown format — pass through
     return logoUrl;
 }
 
@@ -243,7 +265,7 @@ function LogoUploadCard({ logoUrl, tenantId }: { logoUrl: string | null; tenantI
         <Card className="border-0 shadow-sm">
             <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                    <IconUpload className="h-5 w-5 text-purple-500" />
+                    <IconUpload className="h-5 w-5 text-accent-primary" />
                     Logo công ty
                 </CardTitle>
                 <CardDescription className="text-sm">Upload logo để hiển thị trên báo giá, báo cáo và hệ thống</CardDescription>
@@ -274,7 +296,7 @@ function LogoUploadCard({ logoUrl, tenantId }: { logoUrl: string | null; tenantI
                         {/* Dropzone */}
                         <div
                             className={`relative border-2 border-dashed rounded-xl p-4 text-center transition-all cursor-pointer
-                                ${dragActive ? 'border-purple-400 bg-purple-50' : 'border-gray-200 dark:border-gray-700 hover:border-purple-300 hover:bg-purple-50/50'}`}
+ ${dragActive ? 'border-accent-medium bg-accent-50' : 'border-gray-200 dark:border-gray-700 hover:border-accent-medium hover:bg-accent-50/50'}`}
                             onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                             onDragLeave={() => setDragActive(false)}
                             onDrop={handleDrop}
@@ -333,7 +355,7 @@ function LogoUploadCard({ logoUrl, tenantId }: { logoUrl: string | null; tenantI
     );
 }
 
-const VALID_TABS = ['general', 'subscription', 'users', 'permissions', 'system', 'appearance', 'notifications'] as const;
+const VALID_TABS = ['general', 'subscription', 'users', 'permissions', 'system-settings', 'appearance', 'notifications'] as const;
 type SettingsTab = typeof VALID_TABS[number];
 
 export default function SettingsPage() {
@@ -470,7 +492,7 @@ export default function SettingsPage() {
                                 <Card className="border-0 shadow-sm">
                                     <CardHeader className="pb-3">
                                         <CardTitle className="text-base flex items-center gap-2">
-                                            <IconBuilding className="h-5 w-5 text-purple-500" />
+                                            <IconBuilding className="h-5 w-5 text-accent-primary" />
                                             Thông tin doanh nghiệp
                                         </CardTitle>
                                         <CardDescription className="text-sm">Cập nhật thông tin liên hệ và nhận diện thương hiệu</CardDescription>
@@ -590,7 +612,7 @@ export default function SettingsPage() {
                                 <Card className="border-0 shadow-sm">
                                     <CardHeader className="pb-4">
                                         <CardTitle className="text-base flex items-center gap-2">
-                                            <IconCrown className="h-5 w-5 text-purple-500" />
+                                            <IconCrown className="h-5 w-5 text-accent-primary" />
                                             So sánh gói dịch vụ
                                         </CardTitle>
                                         <CardDescription className="text-sm">Chọn gói phù hợp với nhu cầu kinh doanh của bạn</CardDescription>
@@ -613,16 +635,16 @@ export default function SettingsPage() {
                                                             <div
                                                                 key={plan.key}
                                                                 className={`relative rounded-2xl border-2 p-5 transition-all duration-300 flex flex-col ${isCurrent
-                                                                    ? 'border-purple-400 shadow-lg shadow-purple-100 bg-purple-50/30'
+                                                                    ? 'border-accent-medium shadow-lg shadow-purple-100 bg-accent-50'
                                                                     : plan.recommended
-                                                                        ? 'border-purple-200 hover:border-purple-300 hover:shadow-md bg-white dark:bg-gray-900 dark:border-purple-700 dark:hover:border-purple-600'
+                                                                        ? 'border-accent-subtle hover:border-accent-medium hover:shadow-md bg-white dark:bg-gray-900 dark:border-accent-strong dark:hover:border-accent-strong'
                                                                         : 'border-gray-200 hover:border-gray-300 dark:border-gray-600 hover:shadow-md bg-white dark:bg-gray-900 dark:border-gray-700 dark:hover:border-gray-600'
                                                                     }`}
                                                             >
                                                                 {/* Badge */}
                                                                 {isCurrent && (
                                                                     <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                                                                        <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider text-white bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 shadow-sm whitespace-nowrap">
+                                                                        <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider text-white bg-accent-gradient shadow-sm whitespace-nowrap">
                                                                             Gói hiện tại
                                                                         </span>
                                                                     </div>
@@ -721,7 +743,7 @@ export default function SettingsPage() {
                                                                 {tierKeys.map(tier => (
                                                                     <th
                                                                         key={tier}
-                                                                        className={`text-center py-3 px-2 font-semibold w-[15%] ${tier === currentPlan ? 'text-purple-700 dark:text-purple-400 bg-purple-50/50 dark:bg-purple-900/20' : 'text-gray-600 dark:text-gray-400'
+                                                                        className={`text-center py-3 px-2 font-semibold w-[15%] ${tier === currentPlan ? 'text-accent-strong dark:text-accent-muted bg-accent-50 dark:bg-accent-200' : 'text-gray-600 dark:text-gray-400'
                                                                             }`}
                                                                     >
                                                                         {tierLabels[tier]}
@@ -736,7 +758,7 @@ export default function SettingsPage() {
                                                                     {tierKeys.map(tier => (
                                                                         <td
                                                                             key={tier}
-                                                                            className={`text-center py-2.5 px-2 ${tier === currentPlan ? 'bg-purple-50/30' : ''}`}
+                                                                            className={`text-center py-2.5 px-2 ${tier === currentPlan ? 'bg-accent-50' : ''}`}
                                                                         >
                                                                             {feature[tier] ? (
                                                                                 <IconCircleCheck size={18} className="text-green-500 mx-auto" />
@@ -782,15 +804,15 @@ export default function SettingsPage() {
 
                             {/* ───── Section 4: Upgrade CTA ───── */}
                             <motion.div variants={itemVariants}>
-                                <div className="p-5 rounded-2xl bg-gradient-to-r from-purple-50 via-pink-50 to-indigo-50 dark:from-purple-950/30 dark:via-pink-950/30 dark:to-indigo-950/30 border border-purple-100 dark:border-purple-800 flex items-center justify-between flex-wrap gap-4">
+                                <div className="p-5 rounded-2xl bg-accent-50 border border-accent-subtle dark:border-accent-strong flex items-center justify-between flex-wrap gap-4">
                                     <div>
                                         <div className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1 flex items-center gap-2">
-                                            <IconCrown size={16} className="text-purple-500" />
+                                            <IconCrown size={16} className="text-accent-primary" />
                                             Cần thêm tài nguyên?
                                         </div>
                                         <div className="text-xs text-gray-500 dark:text-gray-400">Liên hệ để nâng cấp gói dịch vụ và mở khóa tính năng nâng cao.</div>
                                     </div>
-                                    <Button className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:opacity-90 transition-opacity text-sm shadow-sm">
+                                    <Button className="bg-accent-gradient hover:opacity-90 transition-opacity text-sm shadow-sm">
                                         Liên hệ nâng cấp <IconArrowRight className="ml-2 h-4 w-4" />
                                     </Button>
                                 </div>
@@ -809,167 +831,13 @@ export default function SettingsPage() {
                         <PermissionMatrixTab />
                     </TabsContent>
 
-                    {/* System Settings — Grouped by category */}
+                    {/* System Settings — Extracted component */}
                     <TabsContent value="system-settings">
-                        <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-5">
-                            {(() => {
-                                // Setting group configurations
-                                const SETTING_GROUPS = [
-                                    {
-                                        id: 'order',
-                                        title: 'Đơn hàng & Vận hành',
-                                        description: 'Cấu hình tự động hóa khi xử lý đơn hàng',
-                                        icon: IconShoppingCart,
-                                        color: '#6366f1',
-                                        settings: [
-                                            { key: 'order.auto_deduct_inventory', label: 'Tự động trừ kho khi hoàn thành đơn', help: 'Trừ nguyên liệu theo recipe mapping khi đơn hoàn thành' },
-                                            { key: 'order.auto_create_timesheet', label: 'Tự động tạo bảng chấm công', help: 'Tạo timesheet cho nhân viên được phân công' },
-                                            { key: 'order.auto_earn_loyalty', label: 'Tự động cộng điểm tích lũy', help: 'Cộng điểm loyalty cho khách hàng khi đơn hoàn thành' },
-                                            { key: 'order.require_deposit', label: 'Yêu cầu đặt cọc trước xác nhận', help: 'Đơn hàng cần thanh toán đặt cọc trước khi xác nhận' },
-                                        ]
-                                    },
-                                    {
-                                        id: 'crm',
-                                        title: 'Khách hàng & Loyalty',
-                                        description: 'Chương trình tích điểm và chăm sóc khách hàng',
-                                        icon: IconCrown,
-                                        color: '#f59e0b',
-                                        settings: [
-                                            { key: 'crm.loyalty_enabled', label: 'Bật chương trình tích điểm', help: 'Bật/tắt toàn bộ chương trình loyalty' },
-                                            { key: 'crm.loyalty_points_ratio', label: 'Số VND cho 1 điểm', help: 'Tỉ lệ quy đổi: mỗi X VND = 1 điểm loyalty', suffix: 'VND/điểm' },
-                                        ]
-                                    },
-                                    {
-                                        id: 'quote',
-                                        title: 'Báo giá',
-                                        description: 'Cài đặt mặc định cho báo giá',
-                                        icon: IconCalendar,
-                                        color: '#10b981',
-                                        settings: [
-                                            { key: 'quote.default_validity_days', label: 'Thời hạn hiệu lực mặc định', help: 'Số ngày hiệu lực tự động áp dụng cho báo giá mới', suffix: 'ngày' },
-                                            { key: 'quote.expiring_soon_days', label: 'Ngưỡng cảnh báo sắp hết hạn', help: 'Cảnh báo khi báo giá còn dưới X ngày để hết hạn', suffix: 'ngày' },
-                                        ]
-                                    },
-                                    {
-                                        id: 'finance',
-                                        title: 'Tài chính',
-                                        description: 'Cấu hình kế toán và thanh toán',
-                                        icon: IconChartBar,
-                                        color: '#ec4899',
-                                        settings: [
-                                            { key: 'finance.auto_journal_on_payment', label: 'Tự động tạo bút toán khi thanh toán', help: 'Tạo journal entry khi ghi nhận thanh toán' },
-                                            { key: 'finance.default_payment_terms', label: 'Số ngày thanh toán mặc định', help: 'Hạn thanh toán mặc định cho đơn hàng mới', suffix: 'ngày' },
-                                            { key: 'finance.tax_rate', label: 'Thuế GTGT mặc định', help: 'Tỉ lệ thuế giá trị gia tăng', suffix: '%' },
-                                        ]
-                                    },
-                                    {
-                                        id: 'system',
-                                        title: 'Hệ thống chung',
-                                        description: 'Tự động hóa liên module',
-                                        icon: IconDatabase,
-                                        color: '#64748b',
-                                        settings: [
-                                            { key: 'hr.sync_order_assignments', label: 'Đồng bộ phân công nhân viên', help: 'Đồng bộ phân công giữa Order và HR' },
-                                            { key: 'inventory.auto_import_from_po', label: 'Tự động nhập kho từ PO', help: 'Import hàng vào kho khi Purchase Order được duyệt' },
-                                        ]
-                                    }
-                                ];
-
-                                const getSettingValue = (key: string) => {
-                                    const found = s.find(st => st.key === key);
-                                    return found?.value ?? '';
-                                };
-                                const getSettingType = (key: string) => {
-                                    const found = s.find(st => st.key === key);
-                                    return found?.type ?? 'STRING';
-                                };
-
-                                return settingsLoading ? (
-                                    <div className="flex flex-col gap-4">
-                                        {[1, 2, 3, 4, 5].map(i => (
-                                            <div key={i} className="h-36 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
-                                        ))}
-                                    </div>
-                                ) : (
-                                    SETTING_GROUPS.map(group => {
-                                        const GroupIcon = group.icon;
-                                        return (
-                                            <motion.div key={group.id} variants={itemVariants}>
-                                                <Card className="border-0 shadow-sm overflow-hidden">
-                                                    {/* Group Header */}
-                                                    <div className="px-5 py-3.5 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                                                        <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${group.color}14` }}>
-                                                            <GroupIcon size={18} stroke={1.5} style={{ color: group.color }} />
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{group.title}</div>
-                                                            <div className="text-xs text-gray-400 dark:text-gray-500">{group.description}</div>
-                                                        </div>
-                                                    </div>
-                                                    {/* Settings List */}
-                                                    <CardContent className="p-0">
-                                                        <div className="divide-y divide-gray-50 dark:divide-gray-800">
-                                                            {group.settings.map(setting => {
-                                                                const val = getSettingValue(setting.key);
-                                                                const type = getSettingType(setting.key);
-                                                                const isBool = type === 'BOOLEAN';
-                                                                const isOn = val === 'true' || String(val) === 'true';
-
-                                                                return (
-                                                                    <div key={setting.key} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 dark:bg-gray-900/60 dark:hover:bg-gray-800/40 transition-colors group/row">
-                                                                        <div className="flex-1 min-w-0 mr-4">
-                                                                            <div className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover/row:text-gray-900 dark:text-gray-100 dark:group-hover/row:text-gray-100 transition-colors">
-                                                                                {setting.label}
-                                                                            </div>
-                                                                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{setting.help}</div>
-                                                                        </div>
-                                                                        {isBool ? (
-                                                                            <button
-                                                                                onClick={() => handleSettingSave(setting.key, isOn ? 'false' : 'true')}
-                                                                                className="relative w-11 h-6 rounded-full border-none cursor-pointer transition-colors shrink-0"
-                                                                                style={{ background: isOn ? '#22c55e' : '#e2e8f0' }}
-                                                                            >
-                                                                                <div
-                                                                                    className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-[left] duration-200"
-                                                                                    style={{ left: isOn ? '22px' : '2px' }}
-                                                                                />
-                                                                            </button>
-                                                                        ) : (
-                                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                                <input
-                                                                                    type="number"
-                                                                                    defaultValue={val as string}
-                                                                                    onBlur={e => {
-                                                                                        const newVal = e.target.value.trim();
-                                                                                        if (newVal && newVal !== String(val)) {
-                                                                                            handleSettingSave(setting.key, newVal);
-                                                                                        }
-                                                                                    }}
-                                                                                    onKeyDown={e => {
-                                                                                        if (e.key === 'Enter') {
-                                                                                            (e.target as HTMLInputElement).blur();
-                                                                                        }
-                                                                                    }}
-                                                                                    className="w-24 px-3 py-1.5 text-sm text-right font-mono rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 outline-none transition-all"
-                                                                                    min={0}
-                                                                                />
-                                                                                {'suffix' in setting && (
-                                                                                    <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">{(setting as Record<string, string>).suffix}</span>
-                                                                                )}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </CardContent>
-                                                </Card>
-                                            </motion.div>
-                                        );
-                                    })
-                                );
-                            })()}
-                        </motion.div>
+                        <SystemSettingsTab
+                            settings={s}
+                            settingsLoading={settingsLoading}
+                            onSettingSave={handleSettingSave}
+                        />
                     </TabsContent>
 
                     {/* Appearance Settings */}

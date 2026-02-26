@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: am-thuc-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    branch: main
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false  # Set manually in Render Dashboard (Supabase connection string)
+      - key: CORS_ORIGINS
+        value: https://amthucgiaotuyet.vercel.app,http://localhost:3000,http://localhost:4500
+      - key: PYTHONPATH
+        value: /app

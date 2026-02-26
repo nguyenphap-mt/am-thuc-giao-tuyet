@@ -1,6 +1,6 @@
 # Permission Matrix - Ẩm Thực Giáo Tuyết
 > **Mục tiêu**: Đây là bảng phân quyền **BẮT BUỘC** tuân thủ khi phát triển bất kỳ Module/Feature nào.
-> **Cập nhật**: 2026-02-10
+> **Cập nhật**: 2026-02-24
 
 ---
 
@@ -62,37 +62,41 @@
 | Refresh Data | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### 3.2 Menu Module
-| Action | admin | manager | chef | sales | viewer |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| View Menu | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Create Item | ✅ | ✅ | ✅ | ⬜ | ⬜ |
-| Edit Item | ✅ | ✅ | ✅ | ⬜ | ⬜ |
-| Delete Item | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
-| Set Price | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
-| View Cost | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+**Backend Enforcement**: `require_permission("menu", "<action_code>")` via `PermissionChecker`
 
-### 3.3 Quote Module
-| Action | admin | manager | sales | accountant |
-| :--- | :---: | :---: | :---: | :---: |
-| View All Quotes | ✅ | ✅ | ⬜ | ✅ |
-| View Own Quotes | ✅ | ✅ | ✅ | ✅ |
-| Create Quote | ✅ | ✅ | ✅ | ⬜ |
-| Edit Draft | ✅ | ✅ | ✅ | ⬜ |
-| Submit Quote | ✅ | ✅ | ✅ | ⬜ |
-| Approve (≤10%) | ✅ | ✅ | ✅ | ⬜ |
-| Approve (>10%) | ✅ | ✅ | ⬜ | ⬜ |
-| Delete Quote | ✅ | ⬜ | ⬜ | ⬜ |
+| Action | Code | admin | manager | chef | sales | viewer |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| Xem thực đơn / Stats / Recipes | `view` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Tạo món / Danh mục / Set Menu | `create` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| Sửa món / Công thức / Toggle | `edit` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| Xóa món / Danh mục / Bulk | `delete` | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
+| Đặt giá bán | `set_price` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
+| Xem giá vốn / Menu Engineering | `view_cost` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+
+### 3.3 Quote Module (`quote`)
+| Action | Code | admin | manager | sales | accountant | viewer |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| View/List Quotes | `quote:read` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Create Quote | `quote:create` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| Edit/Update Quote | `quote:update` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| Delete Quote | `quote:delete` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
+| Convert to Order | `quote:convert` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| Clone Quote | `quote:clone` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| Export Quote | `quote:export` | ✅ | ✅ | ✅ | ✅ | ✅ |
+
 
 ### 3.4 Order Module
-| Action | admin | manager | chef | sales | staff | accountant |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| View All | ✅ | ✅ | ✅ | ⬜ | ⬜ | ✅ |
-| View Assigned | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Create Order | ✅ | ✅ | ⬜ | ✅ | ⬜ | ⬜ |
-| Confirm Order | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
-| Cancel Order | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
-| Update Status | ✅ | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
-| Reopen Order | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
+**Backend Enforcement**: `require_permission("order", "<action_code>")` via `PermissionChecker`
+
+| Action | Code | admin | manager | chef | sales | staff | accountant |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| Xem đơn hàng | `view` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Tạo đơn hàng / TT / Chi phí | `create` | ✅ | ✅ | ⬜ | ✅ | ⬜ | ⬜ |
+| Sửa đơn hàng / Items / Staff | `edit` | ✅ | ✅ | ⬜ | ✅ | ⬜ | ⬜ |
+| Xóa thanh toán / Ghi chú | `delete` | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
+| Xác nhận / Mark Paid / Staff | `confirm` | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
+| Hủy đơn hàng | `cancel` | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
+| Đổi trạng thái (Start/Complete/Reopen/Hold/Resume) | `update_status` | ✅ | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
 
 ### 3.5 Calendar Module
 | Action | admin | manager | chef | sales | staff |
@@ -105,56 +109,88 @@
 | Check-in | ✅ | ✅ | ✅ | ⬜ | ✅ |
 
 ### 3.6 Procurement Module
-| Action | admin | manager | chef | accountant |
-| :--- | :---: | :---: | :---: | :---: |
-| View Suppliers | ✅ | ✅ | ✅ | ✅ |
-| View Supplier Detail | ✅ | ✅ | ✅ | ✅ |
-| View Supplier Stats | ✅ | ✅ | ✅ | ✅ |
-| Create Supplier | ✅ | ✅ | ⬜ | ⬜ |
-| Edit Supplier | ✅ | ✅ | ⬜ | ⬜ |
-| Delete Supplier | ✅ | ⬜ | ⬜ | ⬜ |
-| Bulk Delete Suppliers | ✅ | ⬜ | ⬜ | ⬜ |
-| Create PO | ✅ | ✅ | ✅ | ⬜ |
-| Approve PO | ✅ | ✅ | ⬜ | ⬜ |
-| Record Payment | ✅ | ⬜ | ⬜ | ✅ |
+| Action | Code | admin | manager | chef | accountant | Backend Guard |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
+| Xem | `view` | ✅ | ✅ | ✅ | ✅ | `require_permission("procurement", "view")` |
+| Tạo | `create` | ✅ | ✅ | ⬜ | ⬜ | `require_permission("procurement", "create")` |
+| Sửa | `edit` | ✅ | ✅ | ⬜ | ⬜ | `require_permission("procurement", "edit")` |
+| Xóa | `delete` | ✅ | ⬜ | ⬜ | ⬜ | `require_permission("procurement", "delete")` |
+| Duyệt PO | `approve_po` | ✅ | ✅ | ⬜ | ⬜ | `require_permission("procurement", "approve_po")` |
+| Thanh toán | `record_payment` | ✅ | ⬜ | ⬜ | ✅ | `require_permission("procurement", "record_payment")` |
+| Nhận hàng | `receive_goods` | ✅ | ✅ | ✅ | ⬜ | `require_permission("procurement", "receive_goods")` |
+| Duyệt YCMH | `approve_pr` | ✅ | ✅ | ⬜ | ⬜ | `require_permission("procurement", "approve_pr")` |
+| Từ chối YCMH | `reject_pr` | ✅ | ✅ | ⬜ | ⬜ | `require_permission("procurement", "reject_pr")` |
+| Chuyển PR→PO | `convert_pr` | ✅ | ✅ | ⬜ | ⬜ | `require_permission("procurement", "convert_pr")` |
+| Xem thống kê | `view_stats` | ✅ | ✅ | ⬜ | ✅ | `require_permission("procurement", "view_stats")` |
+
+**SoD Rules:**
+- `create` ↔ `approve_po`: Người tạo PO không nên tự duyệt
+- `approve_po` ↔ `record_payment`: Người duyệt PO không nên tự thanh toán
+- `approve_pr` ↔ `convert_pr`: Người duyệt PR không nên tự chuyển PO
+
+**Presets:** Quản lý mua hàng (11 actions), Nhân viên mua hàng (4), Kế toán mua hàng (3), Bếp nhận hàng (2)
 
 ### 3.7 HR Module
 | Action | super_admin | admin | manager | accountant |
 | :--- | :---: | :---: | :---: | :---: |
 | **Nhân viên** | | | | |
-| View Employees | ✅ | ✅ | ✅ | ✅ |
-| Create Employee | ✅ | ✅ | ✅ | ⬜ |
-| Edit Employee | ✅ | ✅ | ✅ | ⬜ |
-| Delete Employee | ✅ | ✅ | ⬜ | ⬜ |
-| View Salary Info | ✅ | ✅ | ⬜ | ✅ |
+| View Employees (`view`) | ✅ | ✅ | ✅ | ✅ |
+| Create Employee (`create`) | ✅ | ✅ | ✅ | ⬜ |
+| Edit Employee (`edit`) | ✅ | ✅ | ✅ | ⬜ |
+| Delete Employee (`delete`) | ✅ | ✅ | ⬜ | ⬜ |
+| View Salary Info (`view_salary`) | ✅ | ✅ | ⬜ | ✅ |
+| View Detail (`view_detail`) | ✅ | ✅ | ✅ | ✅ |
+| **Phân công** | | | | |
+| View Assignments (`view`) | ✅ | ✅ | ✅ | ✅ |
+| Create Assignment (`create`) | ✅ | ✅ | ✅ | ⬜ |
+| Edit Assignment (`edit`) | ✅ | ✅ | ✅ | ⬜ |
+| Delete Assignment (`delete`) | ✅ | ✅ | ⬜ | ⬜ |
 | **Chấm công** | | | | |
-| View Timesheets | ✅ | ✅ | ✅ | ✅ |
-| View Timesheet Detail | ✅ | ✅ | ✅ | ✅ |
-| Create Timesheet | ✅ | ✅ | ✅ | ⬜ |
-| Edit Timesheet | ✅ | ✅ | ✅ | ⬜ |
-| Delete Timesheet | ✅ | ✅ | ⬜ | ⬜ |
-| Check-in/Check-out | ✅ | ✅ | ✅ | ⬜ |
-| Approve Timesheet | ✅ | ✅ | ✅ | ⬜ |
-| Reject Timesheet | ✅ | ✅ | ✅ | ⬜ |
+| View Timesheets (`view`) | ✅ | ✅ | ✅ | ✅ |
+| Create Timesheet (`create`) | ✅ | ✅ | ✅ | ⬜ |
+| Edit Timesheet (`edit`) | ✅ | ✅ | ✅ | ⬜ |
+| Delete Timesheet (`delete`) | ✅ | ✅ | ⬜ | ⬜ |
+| Check-in/Check-out (`check_in_out`) | ✅ | ✅ | ✅ | ⬜ |
+| Approve/Reject/Unlock (`approve`) | ✅ | ✅ | ✅ | ⬜ |
 | **Nghỉ phép** | | | | |
-| View Leave Requests | ✅ | ✅ | ✅ | ⬜ |
-| Approve Leave | ✅ | ✅ | ✅ | ⬜ |
+| View Leave (`view_leave`) | ✅ | ✅ | ✅ | ⬜ |
+| Approve/Reject Leave (`approve_leave`) | ✅ | ✅ | ✅ | ⬜ |
 | **Lương** | | | | |
-| View Payroll | ✅ | ✅ | ⬜ | ✅ |
-| Process Payroll | ✅ | ✅ | ⬜ | ⬜ |
-| Approve Payroll | ✅ | ✅ | ⬜ | ⬜ |
+| View Payroll (`view_payroll`) | ✅ | ✅ | ⬜ | ✅ |
+| Process Payroll (`process_payroll`) | ✅ | ✅ | ⬜ | ⬜ |
+| Approve Payroll (`approve_payroll`) | ✅ | ✅ | ⬜ | ⬜ |
+| Reopen Payroll (`reopen_payroll`) | ✅ | ✅ | ⬜ | ⬜ |
+| **Lịch & Tiện ích** | | | | |
+| Calendar/Availability (`view`) | ✅ | ✅ | ✅ | ✅ |
+| Holidays (`view`) | ✅ | ✅ | ✅ | ✅ |
+| Unified Assignments (`view`) | ✅ | ✅ | ✅ | ✅ |
+
+> 📝 **Self-Service Endpoints (GAP-4)**: Các endpoint sau **không cần action check**, chỉ cần đăng nhập:
+> - `GET /payroll/my-payslips` — Xem phiếu lương cá nhân
+> - `GET /leave/my/balances` — Xem số ngày nghỉ còn lại
+> - `GET /leave/my/requests` — Xem đơn nghỉ phép cá nhân
+> - `POST /leave/requests/{id}/cancel` — Hủy đơn nghỉ phép (chỉ PENDING)
+> - `GET /notifications` — Xem thông báo cá nhân
+> - `PUT /notifications/{id}/read` — Đánh dấu đã đọc
+>
+> Được bảo vệ bởi module-level `require_permission("hr")` + RLS.
 
 ### 3.8 Finance Module
 | Action | admin | manager | accountant |
 | :--- | :---: | :---: | :---: |
 | View COA | ✅ | ✅ | ✅ |
 | Create Account | ✅ | ⬜ | ✅ |
+| Edit (Payment Terms) | ✅ | ⬜ | ✅ |
+| Delete Period | ✅ | ⬜ | ⬜ |
 | View Journals | ✅ | ✅ | ✅ |
 | Create Journal | ✅ | ⬜ | ✅ |
-| Post Journal | ✅ | ⬜ | ✅ |
-| Reverse Journal | ✅ | ⬜ | ⬜ |
+| Post Journal (`post_journal`) | ✅ | ⬜ | ✅ |
+| Reverse Journal (`reverse_journal`) | ✅ | ⬜ | ⬜ |
+| Record Payment (`record_payment`) | ✅ | ⬜ | ✅ |
 | View Reports | ✅ | ✅ | ✅ |
-| Close Period | ✅ | ⬜ | ⬜ |
+| Export Reports (`export`) | ✅ | ✅ | ✅ |
+| Close Period (`close_period`) | ✅ | ⬜ | ⬜ |
+| Reopen Period (`reopen_period`) | ✅ | ⬜ | ⬜ |
 
 ### 3.9 CRM Module
 | Action | admin | manager | sales |
@@ -177,13 +213,22 @@
 | Calculate Cost | ✅ | ✅ | ✅ |
  
  ### 3.11 User Management Module
- | Action | super_admin | admin |
- | :--- | :---: | :---: |
- | View Users | ✅ | ✅ |
- | Create User | ✅ | ✅ |
- | Edit User | ✅ | ✅ |
- | Delete User | ✅ | ❌ |
- | Assign Role | ✅ | ✅ |
+ **Backend Enforcement**: `require_permission("user", "<action_code>")` via `PermissionChecker`
+
+ | Action | Code | super_admin | admin |
+ | :--- | :--- | :---: | :---: |
+ | Xem user | `view` | ✅ | ✅ |
+ | Tạo user | `create` | ✅ | ✅ |
+ | Sửa user | `edit` | ✅ | ✅ |
+ | Xóa user | `delete` | ✅ | ✅ |
+ | Vô hiệu hóa | `deactivate` | ✅ | ✅ |
+ | Reset mật khẩu | `reset_password` | ✅ | ✅ |
+ | Xem hoạt động (audit trail) | `view_activity` | ✅ | ✅ |
+ | Quản lý vai trò | `manage_roles` | ✅ | ✅ |
+
+ > 📝 **SoD Rules**: Hệ thống cảnh báo khi bật đồng thời: `create`+`manage_roles`, `delete`+`create`, `reset_password`+`view_activity`
+ > 
+ > 📝 **Presets**: 3 mẫu có sẵn — Quản trị User (full), Helpdesk (hỗ trợ), Giám sát (chỉ xem)
 
 ### 3.12 Invoice Module
 | Action | admin | manager | sales | accountant |
@@ -201,6 +246,61 @@
 | Reset Own to Defaults | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 > 📝 Notification Preferences là cài đặt cá nhân — mỗi user chỉ xem/sửa preferences của chính mình.
+
+### 3.14 Settings Module
+| Action | Code | super_admin | admin | manager |
+| :--- | :--- | :---: | :---: | :---: |
+| Xem cài đặt | `view` | ✅ | ✅ | ✅ |
+| Sửa (chung) | `edit` | ✅ | ✅ | ⬜ |
+| Sửa thông tin công ty | `edit_company` | ✅ | ✅ | ⬜ |
+| Sửa cấu hình hệ thống | `edit_system` | ✅ | ✅ | ⬜ |
+| Quản lý logo | `upload_logo` | ✅ | ✅ | ⬜ |
+| Quản lý gói dịch vụ | `manage_subscription` | ✅ | ⬜ | ⬜ |
+
+> 📝 `manage_subscription` chỉ super_admin vì ảnh hưởng billing. `edit_system` ảnh hưởng cấu hình nghiệp vụ toàn tenant.
+
+**SoD Rules:**
+- `settings:edit_system` + `settings:upload_logo` → ⚠️ Kiểm soát quá rộng
+- `settings:edit_system` + `settings:manage_subscription` → ⚠️ Có thể thay đổi giới hạn hệ thống
+
+**Presets:**
+| Mẫu | Actions |
+| :--- | :--- |
+| ⚙️ Admin Cài đặt | `view, edit, edit_company, edit_system, upload_logo, manage_subscription` |
+| 🏢 Quản lý công ty | `view, edit, edit_company, upload_logo` |
+| 👁️ Xem cài đặt | `view` |
+
+### 3.15 Inventory Module
+**Backend Enforcement**: `require_permission("inventory", "<action_code>")` via `dependencies=[Depends()]` on 32 endpoint decorators
+
+| Action | Code | super_admin | admin | manager | chef | staff |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| Xem kho | `view` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Tạo item/warehouse | `create` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| Sửa item | `edit` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| Xóa item | `delete` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
+| Xuất/Nhập kho | `stock_transfer` | ✅ | ✅ | ✅ | ✅ | ⬜ |
+| Hoàn tác giao dịch | `reverse_transaction` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
+| Quản lý lô hàng | `manage_lots` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| Đặt hàng tự động | `auto_reorder` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
+| Quản lý thiết bị | `manage_equipment` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| Xuất báo cáo | `export` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| Xem phân tích | `view_analytics` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+
+> 📝 `reverse_transaction` và `auto_reorder` chỉ admin trở lên vì ảnh hưởng tài chính trực tiếp.
+
+**SoD Rules:**
+- `inventory:stock_transfer` + `inventory:reverse_transaction` → ⚠️ Cần kiểm soát chéo
+- `inventory:stock_transfer` + `inventory:auto_reorder` → ⚠️ Tránh conflict of interest
+- `inventory:delete` + `inventory:reverse_transaction` → ⚠️ Kiểm soát dữ liệu toàn diện
+
+**Presets:**
+| Mẫu | Actions |
+| :--- | :--- |
+| 📦 Quản lý kho toàn diện | `view, create, edit, delete, stock_transfer, reverse_transaction, manage_lots, auto_reorder, manage_equipment, export, view_analytics` |
+| 🔄 Thủ kho | `view, create, edit, stock_transfer, manage_lots, manage_equipment, export` |
+| 📊 Giám sát kho | `view, view_analytics, export` |
+| 🍳 Bếp trưởng | `view, stock_transfer` |
 
 ---
 

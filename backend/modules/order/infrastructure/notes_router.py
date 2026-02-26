@@ -15,6 +15,7 @@ import logging
 
 from backend.core.database import get_db
 from backend.core.dependencies import get_current_tenant
+from backend.core.auth.permissions import require_permission
 from backend.modules.order.domain.models import OrderModel
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,8 @@ class OrderNoteResponse(BaseModel):
 
 # ============ ENDPOINTS ============
 
-@router.get("/{order_id}/notes", response_model=List[OrderNoteResponse])
+@router.get("/{order_id}/notes", response_model=List[OrderNoteResponse],
+              dependencies=[Depends(require_permission("order", "view"))])
 async def get_order_notes(
     order_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant),
@@ -75,7 +77,8 @@ async def get_order_notes(
     ]
 
 
-@router.post("/{order_id}/notes", response_model=OrderNoteResponse)
+@router.post("/{order_id}/notes", response_model=OrderNoteResponse,
+              dependencies=[Depends(require_permission("order", "create"))])
 async def add_order_note(
     order_id: UUID,
     data: OrderNoteCreate,
@@ -132,7 +135,8 @@ async def add_order_note(
     )
 
 
-@router.delete("/{order_id}/notes/{note_id}")
+@router.delete("/{order_id}/notes/{note_id}",
+              dependencies=[Depends(require_permission("order", "delete"))])
 async def delete_order_note(
     order_id: UUID,
     note_id: UUID,

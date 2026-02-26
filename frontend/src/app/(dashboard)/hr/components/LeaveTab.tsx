@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -22,9 +22,15 @@ import {
     IconHistory,
     IconUserCircle,
     IconUsers,
+    IconSearch,
+    IconChevronDown,
+    IconChevronUp,
 } from '@tabler/icons-react';
 import CreateLeaveRequestModal from './CreateLeaveRequestModal';
 import ApprovalHistoryModal from './ApprovalHistoryModal';
+import RejectReasonDialog from './RejectReasonDialog';
+import TeamLeaveCalendar from './TeamLeaveCalendar';
+import LeavePolicyCard from './LeavePolicyCard';
 
 interface LeaveTypeResponse {
     id: string;
@@ -74,14 +80,6 @@ interface LeaveStatsResponse {
 export default function LeaveTab() {
     const queryClient = useQueryClient();
     const { user } = useAuthStore();
-    const [statusFilter, setStatusFilter] = useState<string>('PENDING');
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [activeView, setActiveView] = useState<'my' | 'all'>('all');
-
-    // History modal state
-    const [historyModalOpen, setHistoryModalOpen] = useState(false);
-    const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
-    const [selectedEmployeeName, setSelectedEmployeeName] = useState<string>('');
 
     // Check if user is HR/Admin (can view all and approve/reject)
     // Handle role as both string and object (backend may return Role object with code property)
@@ -90,11 +88,31 @@ export default function LeaveTab() {
         : user?.role;
     const isHrAdmin = userRole === 'super_admin' || userRole === 'admin' || userRole === 'hr_manager';
 
-    // Query: Leave types
+    const [statusFilter, setStatusFilter] = useState<string>('PENDING');
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    // Non-HR users default to 'my' view (self-service)
+    const [activeView, setActiveView] = useState<'my' | 'all'>(isHrAdmin ? 'all' : 'my');
+
+    // History modal state
+    const [historyModalOpen, setHistoryModalOpen] = useState(false);
+    const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+    const [selectedEmployeeName, setSelectedEmployeeName] = useState<string>('');
+
+    // Reject dialog state
+    const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+    const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
+    const [rejectTargetName, setRejectTargetName] = useState<string>('');
+
+    // Balance panel state
+    const [balanceSearch, setBalanceSearch] = useState('');
+    const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(new Set());
+
+    // Query: Leave types — use self-service endpoint for non-HR users
     const { data: leaveTypes } = useQuery({
-        queryKey: ['hr', 'leave', 'types'],
+        queryKey: ['hr', 'leave', 'types', isHrAdmin],
         queryFn: async () => {
-            return await api.get<LeaveTypeResponse[]>('/hr/leave/types');
+            const endpoint = isHrAdmin ? '/hr/leave/types' : '/hr/leave/self/types';
+            return await api.get<LeaveTypeResponse[]>(endpoint);
         },
     });
 
@@ -109,17 +127,19 @@ export default function LeaveTab() {
 
     // Query: My Leave requests (Employee self-service)
     const { data: myRequests, isLoading: myRequestsLoading } = useQuery({
-        queryKey: ['hr', 'leave', 'my-requests'],
+        queryKey: ['hr', 'leave', 'my-requests', isHrAdmin],
         queryFn: async () => {
-            return await api.get<LeaveRequestResponse[]>('/hr/leave/my-requests');
+            const endpoint = isHrAdmin ? '/hr/leave/my-requests' : '/hr/leave/self/my-requests';
+            return await api.get<LeaveRequestResponse[]>(endpoint);
         },
     });
 
-    // Query: My Leave balances
+    // Query: My Leave balances — use self-service endpoint for non-HR
     const { data: myBalances } = useQuery({
-        queryKey: ['hr', 'leave', 'my-balances'],
+        queryKey: ['hr', 'leave', 'my-balances', isHrAdmin],
         queryFn: async () => {
-            return await api.get<LeaveBalanceResponse[]>('/hr/leave/my-balances');
+            const endpoint = isHrAdmin ? '/hr/leave/my-balances' : '/hr/leave/self/my-balances';
+            return await api.get<LeaveBalanceResponse[]>(endpoint);
         },
     });
 
@@ -133,12 +153,13 @@ export default function LeaveTab() {
         enabled: isHrAdmin,
     });
 
-    // Query: Leave stats (Dashboard metrics)
+    // Query: Leave stats (Dashboard metrics) — HR admin only
     const { data: stats } = useQuery({
         queryKey: ['hr', 'leave', 'stats'],
         queryFn: async () => {
             return await api.get<LeaveStatsResponse>('/hr/leave/stats');
         },
+        enabled: isHrAdmin,
     });
 
     // Mutation: Approve leave request
@@ -157,19 +178,35 @@ export default function LeaveTab() {
         },
     });
 
-    // Mutation: Reject leave request
+    // Mutation: Reject leave request (with custom reason)
     const rejectMutation = useMutation({
-        mutationFn: async (requestId: string) => {
-            return await api.put(`/hr/leave/requests/${requestId}/reject?reason=Không phù hợp`, {});
+        mutationFn: async ({ requestId, reason }: { requestId: string; reason: string }) => {
+            return await api.put(`/hr/leave/requests/${requestId}/reject?reason=${encodeURIComponent(reason)}`, {});
         },
         onSuccess: () => {
             toast.success('Đã từ chối đơn nghỉ phép');
+            setRejectDialogOpen(false);
             queryClient.invalidateQueries({ queryKey: ['hr', 'leave'] });
             queryClient.invalidateQueries({ queryKey: ['notifications'] });
             queryClient.invalidateQueries({ queryKey: ['notifications-count'] });
         },
         onError: () => {
             toast.error('Từ chối thất bại');
+        },
+    });
+
+    // Mutation: Cancel leave request (self-service)
+    const cancelMutation = useMutation({
+        mutationFn: async (requestId: string) => {
+            const endpoint = isHrAdmin ? `/hr/leave/requests/${requestId}/cancel` : `/hr/leave/self/my-requests/${requestId}/cancel`;
+            return await api.put(endpoint, {});
+        },
+        onSuccess: () => {
+            toast.success('Đã hủy đơn nghỉ phép');
+            queryClient.invalidateQueries({ queryKey: ['hr', 'leave'] });
+        },
+        onError: () => {
+            toast.error('Hủy đơn thất bại');
         },
     });
 
@@ -189,15 +226,24 @@ export default function LeaveTab() {
         }
     };
 
-    const getLeaveIcon = (code: string) => {
+    const getLeaveIcon = (code: string, size: string = 'h-4 w-4') => {
         switch (code) {
             case 'ANNUAL':
-                return <IconBeach className="h-4 w-4 text-blue-600" />;
+                return <IconBeach className={`${size} text-blue-600`} />;
             case 'SICK':
-                return <IconMoodSick className="h-4 w-4 text-red-600" />;
+                return <IconMoodSick className={`${size} text-red-600`} />;
             default:
-                return <IconUser className="h-4 w-4 text-purple-600" />;
+                return <IconUser className={`${size} text-accent-primary`} />;
         }
+    };
+
+    // Color-coding for remaining days (synced from EmployeeLeaveView)
+    const getBalanceColor = (remaining: number, total: number) => {
+        if (total === 0) return 'text-gray-400';
+        const ratio = remaining / total;
+        if (ratio > 0.5) return 'text-green-600';
+        if (ratio > 0.2) return 'text-amber-600';
+        return 'text-red-600';
     };
 
     const openHistoryModal = (requestId: string, employeeName: string) => {
@@ -206,10 +252,53 @@ export default function LeaveTab() {
         setHistoryModalOpen(true);
     };
 
+    const openRejectDialog = (requestId: string, employeeName: string) => {
+        setRejectTargetId(requestId);
+        setRejectTargetName(employeeName);
+        setRejectDialogOpen(true);
+    };
+
     // Determine which data to show
     const requests = activeView === 'my' ? myRequests : allRequests;
     const requestsLoading = activeView === 'my' ? myRequestsLoading : allRequestsLoading;
     const balances = activeView === 'my' ? myBalances : allBalances;
+
+    // Group balances by employee for Admin view
+    const groupedBalances = useMemo(() => {
+        if (!balances || balances.length === 0) return [];
+
+        const groups = new Map<string, { name: string; id: string; items: LeaveBalanceResponse[] }>();
+        for (const bal of balances) {
+            const key = bal.employee_id;
+            if (!groups.has(key)) {
+                groups.set(key, { name: bal.employee_name, id: bal.employee_id, items: [] });
+            }
+            groups.get(key)!.items.push(bal);
+        }
+
+        let result = Array.from(groups.values());
+
+        // Filter by search
+        if (balanceSearch.trim()) {
+            const q = balanceSearch.trim().toLowerCase();
+            result = result.filter(g => g.name.toLowerCase().includes(q));
+        }
+
+        return result;
+    }, [balances, balanceSearch]);
+
+    // Toggle employee expanded state
+    const toggleEmployee = (employeeId: string) => {
+        setExpandedEmployees(prev => {
+            const next = new Set(prev);
+            if (next.has(employeeId)) {
+                next.delete(employeeId);
+            } else {
+                next.add(employeeId);
+            }
+            return next;
+        });
+    };
 
     // Stats
     const pendingCount = requests?.filter((r) => r.status === 'PENDING').length || 0;
@@ -231,7 +320,7 @@ export default function LeaveTab() {
                     {requestList.map((req) => (
                         <div key={req.id} className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-900 group">
                             {/* Avatar */}
-                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center text-white font-medium shrink-0">
+                            <div className="h-10 w-10 rounded-full bg-accent-gradient-br to-purple-500 flex items-center justify-center text-white font-medium shrink-0">
                                 {req.employee_name?.charAt(0) || 'N'}
                             </div>
 
@@ -257,7 +346,7 @@ export default function LeaveTab() {
                             {/* Days */}
                             <div className="text-center w-12">
                                 <p className="text-xs text-gray-500 dark:text-gray-400">Ngày</p>
-                                <p className="text-lg font-bold text-purple-600">{req.total_days}</p>
+                                <p className="text-lg font-bold text-accent-primary">{req.total_days}</p>
                             </div>
 
                             {/* Status */}
@@ -291,13 +380,26 @@ export default function LeaveTab() {
                                     <Button
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => rejectMutation.mutate(req.id)}
+                                        onClick={() => openRejectDialog(req.id, req.employee_name)}
                                         disabled={rejectMutation.isPending}
                                         className="text-red-600 border-red-200 hover:bg-red-50"
                                     >
                                         <IconX className="h-4 w-4" />
                                     </Button>
                                 </div>
+                            )}
+
+                            {/* Cancel - Self-service for PENDING requests */}
+                            {!showActions && req.status === 'PENDING' && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => cancelMutation.mutate(req.id)}
+                                    disabled={cancelMutation.isPending}
+                                    className="text-red-500 hover:text-red-700 hover:bg-red-50 text-xs"
+                                >
+                                    Hủy
+                                </Button>
                             )}
                         </div>
                     ))}
@@ -310,65 +412,123 @@ export default function LeaveTab() {
         <div className="space-y-4">
             {/* Dashboard Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                {/* Pending Requests */}
-                <Card className="hover:shadow-sm transition-shadow">
-                    <CardContent className="p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="p-1.5 rounded-lg bg-orange-50">
-                                <IconClock className="h-5 w-5 text-orange-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">Chờ duyệt</p>
-                                <p className="text-lg font-bold">{stats?.pending_requests || 0}</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* On Leave Today */}
-                <Card className="hover:shadow-sm transition-shadow">
-                    <CardContent className="p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="p-1.5 rounded-lg bg-blue-50">
-                                <IconBeach className="h-5 w-5 text-blue-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">Nghỉ hôm nay</p>
-                                <p className="text-lg font-bold">{stats?.on_leave_today || 0}</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Upcoming Leaves */}
-                <Card className="hover:shadow-sm transition-shadow">
-                    <CardContent className="p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="p-1.5 rounded-lg bg-pink-50">
-                                <IconCalendar className="h-5 w-5 text-pink-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">Sắp tới (7 ngày)</p>
-                                <p className="text-lg font-bold">{stats?.upcoming_leaves || 0}</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Leave Types Count (Static Info) */}
-                <Card className="hover:shadow-sm transition-shadow">
-                    <CardContent className="p-3">
-                        <div className="flex items-center gap-2">
-                            <div className="p-1.5 rounded-lg bg-purple-50">
-                                <IconCheck className="h-5 w-5 text-purple-600" />
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">Loại nghỉ phép</p>
-                                <p className="text-lg font-bold">{leaveTypes?.length || 0}</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
+                {isHrAdmin ? (
+                    /* HR Admin: Company-wide stats */
+                    <>
+                        <Card className="hover:shadow-sm transition-shadow">
+                            <CardContent className="p-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-lg bg-orange-50">
+                                        <IconClock className="h-5 w-5 text-orange-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Chờ duyệt</p>
+                                        <p className="text-lg font-bold">{stats?.pending_requests || 0}</p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card className="hover:shadow-sm transition-shadow">
+                            <CardContent className="p-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-lg bg-blue-50">
+                                        <IconBeach className="h-5 w-5 text-blue-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Nghỉ hôm nay</p>
+                                        <p className="text-lg font-bold">{stats?.on_leave_today || 0}</p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card className="hover:shadow-sm transition-shadow">
+                            <CardContent className="p-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-lg bg-pink-50">
+                                        <IconCalendar className="h-5 w-5 text-pink-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Sắp tới (7 ngày)</p>
+                                        <p className="text-lg font-bold">{stats?.upcoming_leaves || 0}</p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card className="hover:shadow-sm transition-shadow">
+                            <CardContent className="p-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-lg bg-accent-50">
+                                        <IconCheck className="h-5 w-5 text-accent-primary" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Loại nghỉ phép</p>
+                                        <p className="text-lg font-bold">{leaveTypes?.length || 0}</p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </>
+                ) : (
+                    /* Employee: Personal stats */
+                    <>
+                        <Card className="hover:shadow-sm transition-shadow">
+                            <CardContent className="p-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-lg bg-orange-50">
+                                        <IconClock className="h-5 w-5 text-orange-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Đơn chờ duyệt</p>
+                                        <p className="text-lg font-bold">{myRequests?.filter(r => r.status === 'PENDING').length || 0}</p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card className="hover:shadow-sm transition-shadow">
+                            <CardContent className="p-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-lg bg-green-50">
+                                        <IconBeach className="h-5 w-5 text-green-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Ngày phép còn</p>
+                                        <p className="text-lg font-bold text-green-600">
+                                            {myBalances?.reduce((sum, b) => sum + b.remaining_days, 0) || 0}
+                                        </p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card className="hover:shadow-sm transition-shadow">
+                            <CardContent className="p-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-lg bg-blue-50">
+                                        <IconCalendar className="h-5 w-5 text-blue-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Đã nghỉ năm nay</p>
+                                        <p className="text-lg font-bold">
+                                            {myBalances?.reduce((sum, b) => sum + b.used_days, 0) || 0}
+                                        </p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card className="hover:shadow-sm transition-shadow">
+                            <CardContent className="p-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-lg bg-accent-50">
+                                        <IconCheck className="h-5 w-5 text-accent-primary" />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">Loại nghỉ phép</p>
+                                        <p className="text-lg font-bold">{leaveTypes?.length || 0}</p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </>
+                )}
             </div>
 
             {/* Role-based view selector */}
@@ -416,7 +576,7 @@ export default function LeaveTab() {
                                 )}
                                 <Button
                                     size="sm"
-                                    className="bg-gradient-to-r from-pink-500 to-purple-500"
+                                    className="bg-accent-gradient to-purple-500"
                                     onClick={() => setShowCreateModal(true)}
                                 >
                                     <IconPlus className="h-4 w-4 mr-1" />
@@ -428,57 +588,176 @@ export default function LeaveTab() {
                     {renderRequestList(requests, requestsLoading, isHrAdmin && activeView === 'all')}
                 </Card>
 
-                {/* Leave Balances */}
+                {/* Leave Balances — Grouped by Employee */}
                 <Card>
                     <CardHeader className="py-3">
                         <CardTitle className="text-lg flex items-center gap-2">
                             <IconClock className="h-5 w-5" />
                             {activeView === 'my' ? 'Số ngày còn lại của tôi' : 'Số ngày còn lại'}
                         </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0 max-h-[400px] overflow-y-auto">
-                        {!balances || balances.length === 0 ? (
-                            <div className="text-center py-12">
-                                <IconClock className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" />
-                                <p className="mt-4 text-gray-500 dark:text-gray-400">Chưa có dữ liệu</p>
-                            </div>
-                        ) : (
-                            <div className="divide-y">
-                                {balances.map((bal) => (
-                                    <div key={bal.id} className="p-3 hover:bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-900">
-                                        <div className="flex items-center justify-between">
-                                            <p className="font-medium text-sm">{bal.employee_name}</p>
-                                            <span className="text-lg font-bold text-green-600">{bal.remaining_days}d</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                            <span>{bal.leave_type_name}</span>
-                                            <span>•</span>
-                                            <span>Đã dùng: {bal.used_days}/{bal.total_days}</span>
-                                            {(bal.pending_days || 0) > 0 && (
-                                                <>
-                                                    <span>•</span>
-                                                    <span className="text-amber-600">Đang chờ: {bal.pending_days}</span>
-                                                </>
-                                            )}
-                                        </div>
-                                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-2">
-                                            <div
-                                                className="bg-gradient-to-r from-pink-500 to-purple-500 h-1.5 rounded-full"
-                                                style={{ width: `${Math.min(100, (bal.used_days / bal.total_days) * 100)}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                ))}
+                        {/* Search filter (Admin mode with > 3 employees) */}
+                        {activeView === 'all' && groupedBalances.length > 3 && (
+                            <div className="relative mt-2">
+                                <IconSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Tìm nhân viên..."
+                                    value={balanceSearch}
+                                    onChange={(e) => setBalanceSearch(e.target.value)}
+                                    className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent-primary/30 transition-colors"
+                                />
                             </div>
                         )}
-                    </CardContent>
+                    </CardHeader>
+                    <div className="relative">
+                        <CardContent className="p-0 max-h-[450px] overflow-y-auto">
+                            {/* Skeleton loading */}
+                            {!balances ? (
+                                <div className="p-3 space-y-3">
+                                    {[1, 2, 3].map((i) => (
+                                        <div key={i} className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <Skeleton className="h-8 w-8 rounded-full" />
+                                                <Skeleton className="h-4 w-32" />
+                                            </div>
+                                            <Skeleton className="h-10 w-full" />
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : balances.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <IconClock className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" />
+                                    <p className="mt-4 text-gray-500 dark:text-gray-400">Chưa có dữ liệu</p>
+                                </div>
+                            ) : groupedBalances.length === 0 ? (
+                                <div className="text-center py-8">
+                                    <IconSearch className="mx-auto h-8 w-8 text-gray-300" />
+                                    <p className="mt-2 text-sm text-gray-500">Không tìm thấy nhân viên</p>
+                                </div>
+                            ) : (
+                                <div className="divide-y">
+                                    {groupedBalances.map((group) => {
+                                        const isExpanded = expandedEmployees.has(group.id) || activeView === 'my';
+                                        const totalRemaining = group.items.reduce((sum, b) => sum + b.remaining_days, 0);
+                                        const totalEntitled = group.items.reduce((sum, b) => sum + b.total_days, 0);
+
+                                        return (
+                                            <div key={group.id}>
+                                                {/* Employee Header */}
+                                                <button
+                                                    onClick={() => activeView === 'all' && toggleEmployee(group.id)}
+                                                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${activeView === 'all' ? 'hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer' : ''
+                                                        }`}
+                                                >
+                                                    {/* Avatar */}
+                                                    <div className="h-8 w-8 rounded-full bg-gradient-to-br from-[#c2185b] to-[#512da8] flex items-center justify-center text-white text-xs font-semibold shrink-0">
+                                                        {group.name?.charAt(0)?.toUpperCase() || 'N'}
+                                                    </div>
+
+                                                    {/* Name + summary */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="font-medium text-sm truncate">{group.name}</p>
+                                                        <p className="text-xs text-gray-400">
+                                                            {group.items.length} loại phép
+                                                        </p>
+                                                    </div>
+
+                                                    {/* Total remaining */}
+                                                    <span className={`text-lg font-bold tabular-nums ${getBalanceColor(totalRemaining, totalEntitled)}`}>
+                                                        {totalRemaining}
+                                                        <span className="text-xs font-normal text-gray-400 ml-0.5">ngày</span>
+                                                    </span>
+
+                                                    {/* Expand icon (Admin only) */}
+                                                    {activeView === 'all' && (
+                                                        isExpanded
+                                                            ? <IconChevronUp className="h-4 w-4 text-gray-400 shrink-0" />
+                                                            : <IconChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
+                                                    )}
+                                                </button>
+
+                                                {/* Expanded balance details */}
+                                                {isExpanded && (
+                                                    <div className="px-3 pb-3 pl-14 space-y-2">
+                                                        {group.items.map((bal) => {
+                                                            const usedPct = bal.total_days > 0 ? Math.min(100, (bal.used_days / bal.total_days) * 100) : 0;
+                                                            return (
+                                                                <div
+                                                                    key={`${bal.employee_id}-${bal.leave_type_code}-${bal.year}`}
+                                                                    className="flex items-center gap-2 group/item"
+                                                                >
+                                                                    {/* Leave type icon */}
+                                                                    <div className="shrink-0">
+                                                                        {getLeaveIcon(bal.leave_type_code, 'h-3.5 w-3.5')}
+                                                                    </div>
+
+                                                                    {/* Leave type name + progress */}
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center justify-between mb-0.5">
+                                                                            <span className="text-xs text-gray-600 dark:text-gray-300 truncate">
+                                                                                {bal.leave_type_name}
+                                                                            </span>
+                                                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                                                {/* Pending badge */}
+                                                                                {(bal.pending_days || 0) > 0 && (
+                                                                                    <Badge className="bg-amber-50 text-amber-600 border-amber-200 text-[10px] px-1.5 py-0 h-4">
+                                                                                        {bal.pending_days} chờ
+                                                                                    </Badge>
+                                                                                )}
+                                                                                <span className={`text-sm font-semibold tabular-nums ${getBalanceColor(bal.remaining_days, bal.total_days)}`}>
+                                                                                    {bal.remaining_days}
+                                                                                    <span className="text-[10px] font-normal text-gray-400">/{bal.total_days}</span>
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Progress bar */}
+                                                                        <div
+                                                                            className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2"
+                                                                            role="progressbar"
+                                                                            aria-valuenow={bal.used_days}
+                                                                            aria-valuemin={0}
+                                                                            aria-valuemax={bal.total_days}
+                                                                            aria-label={`${bal.leave_type_name}: đã dùng ${bal.used_days}/${bal.total_days} ngày`}
+                                                                        >
+                                                                            <div
+                                                                                className="bg-gradient-to-r from-[#c2185b] to-[#512da8] h-2 rounded-full transition-all duration-300"
+                                                                                style={{ width: `${usedPct}%` }}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </CardContent>
+                        {/* Scroll fade gradient */}
+                        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-white dark:from-gray-900 to-transparent rounded-b-lg" />
+                    </div>
                 </Card>
             </div>
+
+            {/* Leave Policy Card (for all users) */}
+            {leaveTypes && leaveTypes.length > 0 && (
+                <LeavePolicyCard leaveTypes={leaveTypes} />
+            )}
+
+            {/* Team Leave Calendar (HR admin only) */}
+            {isHrAdmin && (
+                <TeamLeaveCalendar />
+            )}
 
             {/* Create Leave Request Modal */}
             <CreateLeaveRequestModal
                 open={showCreateModal}
                 onOpenChange={setShowCreateModal}
+                isEmployeeSelfService={!isHrAdmin}
             />
 
             {/* Approval History Modal */}
@@ -487,6 +766,19 @@ export default function LeaveTab() {
                 onOpenChange={setHistoryModalOpen}
                 requestId={selectedRequestId}
                 employeeName={selectedEmployeeName}
+            />
+
+            {/* Reject Reason Dialog */}
+            <RejectReasonDialog
+                open={rejectDialogOpen}
+                onOpenChange={setRejectDialogOpen}
+                employeeName={rejectTargetName}
+                onConfirm={(reason) => {
+                    if (rejectTargetId) {
+                        rejectMutation.mutate({ requestId: rejectTargetId, reason });
+                    }
+                }}
+                isPending={rejectMutation.isPending}
             />
         </div>
     );

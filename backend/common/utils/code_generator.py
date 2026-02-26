@@ -1,110 +1,172 @@
 """
 Code generation utilities for Quote and Order modules.
 
-BUGFIX: BUG-20260202-004
-Root Cause: RC-BUG-20260202-004 - Duplicate code generation logic across multiple endpoints
-Solution: Centralized code generation with configurable prefix and year
+UPDATED: 2026-02-22
+Format Change: 
+- Quote: BG-ddmmyy*** (e.g. BG-220226001)
+- Order: ĐH-ddmmyy*** (e.g. ĐH-220226001)
+Where *** is sequential 001-999 per day, queried from DB.
 
 This module provides utilities for generating unique codes for various entities
-in the Catering ERP system following the pattern: {PREFIX}-YYYYNNNNNN
+in the Catering ERP system.
 
 Supported Prefixes:
 - BG: Báo giá (Quote)
-- DH: Đơn hàng (Order)
+- ĐH: Đơn hàng (Order)
 - HD: Hóa đơn (Invoice)
 - PN: Phiếu nhập (Receipt)
 """
 from datetime import datetime
-import random
-from typing import Literal
+from typing import Literal, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+
+import pytz
+
+# Vietnam timezone
+VN_TZ = pytz.timezone('Asia/Ho_Chi_Minh')
 
 # Type alias for supported entity prefixes
-EntityPrefix = Literal["BG", "DH", "HD", "PN"]
+EntityPrefix = Literal["BG", "ĐH", "HD", "PN"]
+
+# Mapping prefix to table name for sequence lookup
+PREFIX_TABLE_MAP = {
+    "BG": "quotes",
+    "ĐH": "orders",
+}
 
 
-def generate_entity_code(
+async def _get_next_sequence(db: AsyncSession, table_name: str, prefix: str, date_str: str) -> int:
+    """
+    Query DB to find the next sequence number for the given prefix and date.
+    
+    Args:
+        db: Async database session
+        table_name: Table to query (quotes or orders)
+        prefix: Code prefix (BG or ĐH)
+        date_str: Date string in ddmmyy format
+    
+    Returns:
+        Next sequence number (1-999)
+    """
+    # Pattern to match: PREFIX-ddmmyy followed by digits
+    pattern = f"{prefix}-{date_str}%"
+    
+    result = await db.execute(
+        text(f"SELECT code FROM {table_name} WHERE code LIKE :pattern ORDER BY code DESC LIMIT 1"),
+        {"pattern": pattern}
+    )
+    row = result.first()
+    
+    if row is None:
+        return 1
+    
+    # Extract sequence number from code
+    # e.g. "BG-220226005" -> "005" -> 5
+    existing_code = row[0]
+    # The date part is 6 chars (ddmmyy), prefix varies, dash is 1 char
+    # So sequence starts after PREFIX- + ddmmyy = len(prefix) + 1 + 6
+    seq_start = len(prefix) + 1 + 6  # PREFIX- = len+1, ddmmyy = 6
+    seq_str = existing_code[seq_start:]
+    
+    try:
+        current_max = int(seq_str)
+        return current_max + 1
+    except (ValueError, IndexError):
+        return 1
+
+
+async def generate_entity_code(
     prefix: EntityPrefix,
-    year: int | None = None
+    db: Optional[AsyncSession] = None
 ) -> str:
     """
-    Generate unique entity code with format: {PREFIX}-YYYYNNNNNN
+    Generate unique entity code with date-based sequential format.
+    
+    New Format: {PREFIX}-ddmmyy{SEQ:03d}
     
     Args:
         prefix: Entity type code
             - BG: Báo giá (Quote)
-            - DH: Đơn hàng (Order)  
+            - ĐH: Đơn hàng (Order)
             - HD: Hóa đơn (Invoice)
             - PN: Phiếu nhập (Receipt)
-        year: Year to use in code (defaults to current year)
+        db: AsyncSession for querying sequence (required for BG, ĐH)
     
     Returns:
-        Unique code string in format {PREFIX}-YYYYNNNNNN
+        Unique code string
         
     Examples:
-        >>> generate_entity_code("BG")
-        'BG-2026123456'
-        >>> generate_entity_code("DH", 2025)
-        'DH-2025654321'
-        
-    Notes:
-        - Random suffix is 6 digits (100000-999999)
-        - Not guaranteed unique across multiple concurrent calls
-        - Database unique constraint should be enforced separately
+        >>> await generate_entity_code("BG", db)
+        'BG-220226001'
+        >>> await generate_entity_code("ĐH", db)
+        'ĐH-220226001'
     """
-    if year is None:
-        year = datetime.now().year
+    now = datetime.now(VN_TZ)
+    date_str = now.strftime('%d%m%y')  # ddmmyy format (no slashes)
     
-    # Generate 6-digit random suffix
-    random_suffix = random.randint(100000, 999999)
+    if db is not None and prefix in PREFIX_TABLE_MAP:
+        table_name = PREFIX_TABLE_MAP[prefix]
+        seq = await _get_next_sequence(db, table_name, prefix, date_str)
+    else:
+        # Fallback for types without DB lookup (HD, PN) or when db not provided
+        import random
+        seq = random.randint(1, 999)
     
-    return f"{prefix}-{year}{random_suffix}"
+    return f"{prefix}-{date_str}{seq:03d}"
 
 
-def generate_quote_code() -> str:
+async def generate_quote_code(db: AsyncSession) -> str:
     """
-    Generate unique quote code: BG-YYYYNNNNNN
+    Generate unique quote code: BG-ddmmyy***
     
-    Returns:
-        Quote code with format BG-2026123456
-        
-    Example:
-        >>> code = generate_quote_code()
-        >>> code.startswith("BG-2026")
-        True
-    """
-    return generate_entity_code("BG")
-
-
-def generate_order_code() -> str:
-    """
-    Generate unique order code: DH-YYYYNNNNNN
+    Args:
+        db: AsyncSession for querying sequence
     
     Returns:
-        Order code with format DH-2026123456
+        Quote code with format BG-220226001
         
     Example:
-        >>> code = generate_order_code()
-        >>> code.startswith("DH-2026")
+        >>> code = await generate_quote_code(db)
+        >>> code.startswith("BG-")
         True
     """
-    return generate_entity_code("DH")
+    return await generate_entity_code("BG", db)
 
 
-def generate_invoice_code() -> str:
+async def generate_order_code(db: AsyncSession) -> str:
     """
-    Generate unique invoice code: HD-YYYYNNNNNN
+    Generate unique order code: ĐH-ddmmyy***
+    
+    Args:
+        db: AsyncSession for querying sequence
     
     Returns:
-        Invoice code with format HD-2026123456
+        Order code with format ĐH-220226001
+        
+    Example:
+        >>> code = await generate_order_code(db)
+        >>> code.startswith("ĐH-")
+        True
     """
-    return generate_entity_code("HD")
+    return await generate_entity_code("ĐH", db)
 
 
-def generate_receipt_code() -> str:
+async def generate_invoice_code(db: Optional[AsyncSession] = None) -> str:
     """
-    Generate unique receipt code: PN-YYYYNNNNNN
+    Generate unique invoice code: HD-ddmmyy***
     
     Returns:
-        Receipt code with format PN-2026123456
+        Invoice code with format HD-220226001
     """
-    return generate_entity_code("PN")
+    return await generate_entity_code("HD", db)
+
+
+async def generate_receipt_code(db: Optional[AsyncSession] = None) -> str:
+    """
+    Generate unique receipt code: PN-ddmmyy***
+    
+    Returns:
+        Receipt code with format PN-220226001
+    """
+    return await generate_entity_code("PN", db)

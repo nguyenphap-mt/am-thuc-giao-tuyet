@@ -37,6 +37,7 @@ import { AssignedStaffCard } from '../components/AssignedStaffCard';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { OrderNotesSection } from '../components/OrderNotesSection';
 import { StatusConfirmationModal } from '../components/StatusConfirmationModal';
+import { PermissionGate } from '@/components/shared/PermissionGate';
 import {
     IconArrowLeft,
     IconPrinter,
@@ -67,7 +68,7 @@ import {
 const statusColors: Record<string, string> = {
     PENDING: 'bg-yellow-100 text-yellow-700',
     CONFIRMED: 'bg-blue-100 text-blue-700',
-    IN_PROGRESS: 'bg-purple-100 text-purple-700',
+    IN_PROGRESS: 'bg-accent-100 text-accent-strong',
     ON_HOLD: 'bg-orange-100 text-orange-700',
     COMPLETED: 'bg-green-100 text-green-700',
     PAID: 'bg-emerald-100 text-emerald-700',
@@ -264,18 +265,20 @@ export default function OrderDetailPage({ params }: PageProps) {
                         </DropdownMenuContent>
                     </DropdownMenu>
                     {/* Revision Quote Button (CONFIRMED/IN_PROGRESS orders only) */}
-                    {(order.status === 'CONFIRMED' || order.status === 'IN_PROGRESS') && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-orange-500 text-orange-600 hover:bg-orange-50"
-                            onClick={() => setShowRevisionModal(true)}
-                            aria-label="Sửa đơn"
-                        >
-                            <IconFileDescription className="h-4 w-4 mr-1" />
-                            Sửa Đơn
-                        </Button>
-                    )}
+                    <PermissionGate module="order" action="edit">
+                        {(order.status === 'CONFIRMED' || order.status === 'IN_PROGRESS') && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-orange-500 text-orange-600 hover:bg-orange-50"
+                                onClick={() => setShowRevisionModal(true)}
+                                aria-label="Sửa đơn"
+                            >
+                                <IconFileDescription className="h-4 w-4 mr-1" />
+                                Sửa Đơn
+                            </Button>
+                        )}
+                    </PermissionGate>
 
                     {/* Divider for status actions */}
                     {(order.status === 'CONFIRMED' || order.status === 'IN_PROGRESS' || order.status === 'ON_HOLD') && (
@@ -283,78 +286,88 @@ export default function OrderDetailPage({ params }: PageProps) {
                     )}
 
                     {/* Hold Button - CONFIRMED/IN_PROGRESS orders */}
-                    {(order.status === 'CONFIRMED' || order.status === 'IN_PROGRESS') && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-amber-400 text-amber-600 hover:bg-amber-50"
-                            onClick={() => setShowHoldModal(true)}
-                            disabled={orderAction.isPending}
-                            aria-label="Tạm hoãn"
-                        >
-                            <IconPlayerPause className="h-4 w-4 mr-1" />
-                            Tạm hoãn
-                        </Button>
-                    )}
+                    <PermissionGate module="order" action="update_status">
+                        {(order.status === 'CONFIRMED' || order.status === 'IN_PROGRESS') && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-amber-400 text-amber-600 hover:bg-amber-50"
+                                onClick={() => setShowHoldModal(true)}
+                                disabled={orderAction.isPending}
+                                aria-label="Tạm hoãn"
+                            >
+                                <IconPlayerPause className="h-4 w-4 mr-1" />
+                                Tạm hoãn
+                            </Button>
+                        )}
+                    </PermissionGate>
 
                     {/* Resume Button - ON_HOLD orders */}
-                    {order.status === 'ON_HOLD' && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-blue-400 text-blue-600 hover:bg-blue-50"
-                            onClick={() => setShowResumeModal(true)}
-                            disabled={orderAction.isPending}
-                            aria-label="Tiếp tục"
-                        >
-                            <IconPlayerPlay className="h-4 w-4 mr-1" />
-                            Tiếp tục
-                        </Button>
-                    )}
+                    <PermissionGate module="order" action="update_status">
+                        {order.status === 'ON_HOLD' && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-blue-400 text-blue-600 hover:bg-blue-50"
+                                onClick={() => setShowResumeModal(true)}
+                                disabled={orderAction.isPending}
+                                aria-label="Tiếp tục"
+                            >
+                                <IconPlayerPlay className="h-4 w-4 mr-1" />
+                                Tiếp tục
+                            </Button>
+                        )}
+                    </PermissionGate>
 
                     {/* Complete Button - CONFIRMED/IN_PROGRESS orders */}
-                    {(order.status === 'CONFIRMED' || order.status === 'IN_PROGRESS') && (
-                        <Button
-                            size="sm"
-                            className="bg-green-500 hover:bg-green-600 text-white"
-                            onClick={() => setShowCompleteModal(true)}
-                            disabled={orderAction.isPending}
-                            aria-label="Hoàn thành đơn"
-                        >
-                            <IconCheck className="h-4 w-4 mr-1" />
-                            Hoàn thành
-                        </Button>
-                    )}
+                    <PermissionGate module="order" action="update_status">
+                        {(order.status === 'CONFIRMED' || order.status === 'IN_PROGRESS') && (
+                            <Button
+                                size="sm"
+                                className="bg-green-500 hover:bg-green-600 text-white"
+                                onClick={() => setShowCompleteModal(true)}
+                                disabled={orderAction.isPending}
+                                aria-label="Hoàn thành đơn"
+                            >
+                                <IconCheck className="h-4 w-4 mr-1" />
+                                Hoàn thành
+                            </Button>
+                        )}
+                    </PermissionGate>
 
                     {/* Cancel Button */}
-                    {order.status !== 'CANCELLED' && order.status !== 'PAID' && order.status !== 'COMPLETED' && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => setShowCancelModal(true)}
-                            disabled={orderAction.isPending}
-                            aria-label="Hủy đơn"
-                        >
-                            <IconX className="h-4 w-4 mr-1" />
-                            Hủy
-                        </Button>
-                    )}
+                    <PermissionGate module="order" action="cancel">
+                        {order.status !== 'CANCELLED' && order.status !== 'PAID' && order.status !== 'COMPLETED' && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => setShowCancelModal(true)}
+                                disabled={orderAction.isPending}
+                                aria-label="Hủy đơn"
+                            >
+                                <IconX className="h-4 w-4 mr-1" />
+                                Hủy
+                            </Button>
+                        )}
+                    </PermissionGate>
 
                     {/* Reopen Button - COMPLETED orders only */}
-                    {order.status === 'COMPLETED' && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-orange-400 text-orange-600 hover:bg-orange-50"
-                            onClick={() => setShowReopenModal(true)}
-                            disabled={orderAction.isPending || reopenOrder.isPending}
-                            aria-label="Mở lại đơn hàng"
-                        >
-                            <IconRotate className="h-4 w-4 mr-1" />
-                            Mở lại
-                        </Button>
-                    )}
+                    <PermissionGate module="order" action="update_status">
+                        {order.status === 'COMPLETED' && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-orange-400 text-orange-600 hover:bg-orange-50"
+                                onClick={() => setShowReopenModal(true)}
+                                disabled={orderAction.isPending || reopenOrder.isPending}
+                                aria-label="Mở lại đơn hàng"
+                            >
+                                <IconRotate className="h-4 w-4 mr-1" />
+                                Mở lại
+                            </Button>
+                        )}
+                    </PermissionGate>
                 </div>
             </motion.div>
 
@@ -565,16 +578,18 @@ export default function OrderDetailPage({ params }: PageProps) {
                                 <IconCreditCard className="h-4 w-4" />
                                 THANH TOÁN
                             </CardTitle>
-                            {order.status !== 'CANCELLED' && order.status !== 'PAID' && (
-                                <Button
-                                    size="sm"
-                                    onClick={() => setShowPaymentModal(true)}
-                                    className="bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700"
-                                >
-                                    <IconPlus className="h-4 w-4 mr-1" />
-                                    Thêm thanh toán
-                                </Button>
-                            )}
+                            <PermissionGate module="order" action="confirm">
+                                {order.status !== 'CANCELLED' && order.status !== 'PAID' && (
+                                    <Button
+                                        size="sm"
+                                        onClick={() => setShowPaymentModal(true)}
+                                        className="bg-accent-gradient to-purple-600 hover:from-pink-700 hover:to-purple-700"
+                                    >
+                                        <IconPlus className="h-4 w-4 mr-1" />
+                                        Thêm thanh toán
+                                    </Button>
+                                )}
+                            </PermissionGate>
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -586,7 +601,7 @@ export default function OrderDetailPage({ params }: PageProps) {
                             </div>
                             <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                                 <div
-                                    className="h-full bg-gradient-to-r from-pink-500 to-purple-500 transition-all duration-500"
+                                    className="h-full bg-accent-gradient to-purple-500 transition-all duration-500"
                                     style={{ width: `${paymentPercentage}%` }}
                                 />
                             </div>
@@ -620,7 +635,7 @@ export default function OrderDetailPage({ params }: PageProps) {
                                                     <div className="hidden group-hover:flex items-center gap-1 absolute right-3 top-1/2 -translate-y-1/2 bg-white dark:bg-gray-900 shadow-sm border rounded-md px-1 py-0.5">
                                                         <button
                                                             onClick={() => setEditingPayment(payment)}
-                                                            className="p-1.5 rounded hover:bg-purple-50 text-gray-500 hover:text-purple-600 transition-colors"
+                                                            className="p-1.5 rounded hover:bg-accent-50 text-gray-500 hover:text-accent-primary transition-colors"
                                                             title="Sửa thanh toán"
                                                         >
                                                             <IconEdit className="h-3.5 w-3.5" />
@@ -683,9 +698,9 @@ export default function OrderDetailPage({ params }: PageProps) {
                                 </p>
                             </div>
                             {/* Margin */}
-                            <div className="text-center p-3 bg-purple-50 rounded-lg">
+                            <div className="text-center p-3 bg-accent-50 rounded-lg">
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Biên lợi nhuận</p>
-                                <p className="text-lg font-bold text-purple-600">
+                                <p className="text-lg font-bold text-accent-primary">
                                     {order.paid_amount > 0
                                         ? Math.round(((order.paid_amount - (order.expenses_amount || 0)) / order.paid_amount) * 100)
                                         : 0}%
@@ -819,7 +834,7 @@ export default function OrderDetailPage({ params }: PageProps) {
                     <Button
                         onClick={() => handleAction('mark-paid')}
                         disabled={orderAction.isPending}
-                        className="bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700"
+                        className="bg-accent-gradient to-purple-600 hover:from-pink-700 hover:to-purple-700"
                     >
                         <IconCreditCard className="h-4 w-4 mr-1" />
                         Đánh dấu đã thanh toán

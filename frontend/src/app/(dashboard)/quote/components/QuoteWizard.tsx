@@ -62,7 +62,7 @@ export function QuoteWizard({ mode, state, isPending, onSubmit, onSaveDraft }: Q
                                 {currentStep === 1 ? 'Hủy' : 'Quay lại'}
                             </Button>
                             <Button type="button"
-                                className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:from-pink-600 hover:via-purple-600 hover:to-indigo-600 transition-all duration-200 hover:shadow-lg"
+                                className="bg-accent-gradient transition-all duration-200 hover:shadow-lg"
                                 onClick={handleNext} aria-label="Tiếp tục bước tiếp theo">
                                 Tiếp tục
                                 <IconArrowRight className="ml-2 h-4 w-4" />
@@ -78,8 +78,8 @@ export function QuoteWizard({ mode, state, isPending, onSubmit, onSaveDraft }: Q
                     <div key={step.id} className="flex items-center">
                         <div className="flex flex-col items-center">
                             <div className={`flex items-center justify-center w-10 h-10 rounded-full text-sm font-medium transition-colors
-                                ${step.id < currentStep ? 'bg-green-500 text-white' :
-                                    step.id === currentStep ? 'bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 text-white' :
+ ${step.id < currentStep ? 'bg-green-500 text-white' :
+                                    step.id === currentStep ? 'bg-accent-gradient text-white' :
                                         'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>
                                 {step.id < currentStep ? <IconCheck className="h-5 w-5" /> : <step.icon className="h-5 w-5" />}
                             </div>
@@ -100,7 +100,7 @@ export function QuoteWizard({ mode, state, isPending, onSubmit, onSaveDraft }: Q
                     <CardTitle className="flex items-center gap-2">
                         {(() => {
                             const StepIcon = WIZARD_STEPS[currentStep - 1].icon;
-                            return <StepIcon className="h-5 w-5 text-purple-600" />;
+                            return <StepIcon className="h-5 w-5 text-accent-primary" />;
                         })()}
                         {WIZARD_STEPS[currentStep - 1].title}
                     </CardTitle>

@@ -1,6 +1,6 @@
 # =========================================
 # Dockerfile for Ẩm Thực Giao Tuyết Backend
-# Target: Google Cloud Run
+# Target: Render.com (Web Service)
 # =========================================
 FROM python:3.12-slim
 
@@ -22,12 +22,12 @@ COPY backend/ ./backend/
 # Set Python path for module imports (from backend.xxx import yyy)
 ENV PYTHONPATH=/app
 
-# Cloud Run injects PORT env var (default 8080)
-EXPOSE 8080
+# Render injects PORT env var (default 10000)
+EXPOSE 10000
 
 # Start uvicorn server
-# --proxy-headers: Trust X-Forwarded-Proto header from reverse proxy (Vercel/Cloud Run)
-# --forwarded-allow-ips='*': Allow proxy headers from any IP (Cloud Run load balancer)
+# --proxy-headers: Trust X-Forwarded-Proto header from reverse proxy (Vercel/Render)
+# --forwarded-allow-ips='*': Allow proxy headers from any IP (Render load balancer)
 # BUGFIX: BUG-20260216-004 - Without these, FastAPI's trailing slash redirects use
 #         http:// scheme internally, causing Mixed Content blocking on HTTPS frontends.
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-10000} --proxy-headers --forwarded-allow-ips='*'"]

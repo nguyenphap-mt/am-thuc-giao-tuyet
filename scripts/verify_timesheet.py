@@ -2,7 +2,7 @@
 import requests
 import json
 
-BASE = "https://am-thuc-api-321822391174.asia-southeast1.run.app/api/v1"
+BASE = "https://am-thuc-api.onrender.com/api/v1"
 OUT = open("scripts/verify_output.txt", "w", encoding="utf-8")
 
 def log(msg):

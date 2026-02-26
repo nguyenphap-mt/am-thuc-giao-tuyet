@@ -156,6 +156,84 @@ async def get_own_sessions(
     ]
 
 
+class PreferencesUpdateRequest(BaseModel):
+    """Request schema for updating user preferences"""
+    preferences: dict  # e.g. {"appearance.accent_color": "#e11d48", ...}
+
+
+@router.get("/me/preferences")
+async def get_my_preferences(
+    current_user: UserSchema = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all preferences for the current logged-in user"""
+    from backend.modules.user.domain.preference_model import UserPreferenceModel
+    
+    stmt = (
+        select(UserPreferenceModel)
+        .where(UserPreferenceModel.user_id == current_user.id)
+        .order_by(UserPreferenceModel.preference_key)
+    )
+    result = await db.execute(stmt)
+    prefs = result.scalars().all()
+    
+    return [
+        {
+            "key": p.preference_key,
+            "value": p.preference_value,
+        }
+        for p in prefs
+    ]
+
+
+@router.put("/me/preferences")
+async def update_my_preferences(
+    data: PreferencesUpdateRequest,
+    current_user: UserSchema = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update user preferences (upsert per key). No admin permission needed."""
+    from backend.modules.user.domain.preference_model import UserPreferenceModel
+    
+    # Validate appearance values
+    VALID_KEYS = {
+        "appearance.accent_color",
+        "appearance.font_size",
+        "appearance.density",
+        "appearance.theme",
+    }
+    
+    for key, value in data.preferences.items():
+        if key not in VALID_KEYS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid preference key: {key}. Allowed: {', '.join(sorted(VALID_KEYS))}"
+            )
+    
+    for key, value in data.preferences.items():
+        # Try to find existing preference
+        stmt = select(UserPreferenceModel).where(
+            UserPreferenceModel.user_id == current_user.id,
+            UserPreferenceModel.preference_key == key
+        )
+        result = await db.execute(stmt)
+        pref = result.scalar_one_or_none()
+        
+        if pref:
+            pref.preference_value = str(value)
+        else:
+            new_pref = UserPreferenceModel(
+                user_id=current_user.id,
+                tenant_id=current_user.tenant_id,
+                preference_key=key,
+                preference_value=str(value),
+            )
+            db.add(new_pref)
+    
+    await db.commit()
+    return {"success": True, "message": "Preferences updated"}
+
+
 @router.get("/stats", dependencies=[Depends(require_permission("user", "view"))])
 async def get_user_stats(
     current_user: UserSchema = Depends(get_current_user),
@@ -195,7 +273,45 @@ async def get_user_stats(
     }
 
 
-@router.get("/{user_id}/activity", dependencies=[Depends(require_permission("user", "view"))])
+@router.get("/unlinked", dependencies=[Depends(require_permission("user", "view"))])
+async def list_unlinked_users(
+    current_user: UserSchema = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get users not linked to any employee (for HR employee-user linking)"""
+    from backend.modules.hr.domain.models import EmployeeModel
+    
+    # Subquery: all user_ids already linked to employees
+    linked_ids = select(EmployeeModel.user_id).where(
+        EmployeeModel.user_id.isnot(None),
+        EmployeeModel.tenant_id == current_user.tenant_id
+    )
+    
+    stmt = (
+        select(User)
+        .where(
+            User.tenant_id == current_user.tenant_id,
+            User.is_active == True,
+            User.id.notin_(linked_ids)
+        )
+        .order_by(User.full_name)
+    )
+    
+    result = await db.execute(stmt)
+    users = result.scalars().all()
+    
+    return [
+        {
+            "id": str(u.id),
+            "email": u.email,
+            "full_name": u.full_name,
+            "role": u.role,
+        }
+        for u in users
+    ]
+
+
+@router.get("/{user_id}/activity", dependencies=[Depends(require_permission("user", "view_activity"))])
 async def get_user_activity(
     user_id: UUID,
     skip: int = 0,
@@ -283,6 +399,113 @@ async def change_password(
         print(f"[WARN] Failed to log password change activity: {e}")
     
     return {"success": True, "message": "Đổi mật khẩu thành công"}
+
+
+@router.post("/{user_id}/reset-password", dependencies=[Depends(require_permission("user", "reset_password"))])
+async def admin_reset_password(
+    user_id: UUID,
+    request: Request,
+    current_user: UserSchema = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Admin resets another user's password. Returns temporary password."""
+    import secrets
+    import bcrypt
+
+    # Cannot reset own password via this endpoint
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Dùng endpoint đổi mật khẩu cá nhân thay vì reset")
+
+    # Find target user
+    stmt = select(User).where(User.id == user_id, User.tenant_id == current_user.tenant_id)
+    result = await db.execute(stmt)
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy user")
+
+    # Generate temporary password
+    temp_password = secrets.token_urlsafe(12)
+    hashed = bcrypt.hashpw(temp_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    target_user.hashed_password = hashed
+
+    await db.commit()
+
+    # Audit log
+    try:
+        activity_service = ActivityService(db, current_user.tenant_id)
+        await activity_service.log(
+            user_id=current_user.id,
+            action=ActivityAction.RESET_PASSWORD,
+            entity_type="User",
+            entity_id=user_id,
+            metadata={"target_email": target_user.email},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+    except Exception as e:
+        print(f"[WARN] Failed to log password reset activity: {e}")
+
+    return {
+        "success": True,
+        "temp_password": temp_password,
+        "message": f"Mật khẩu tạm thời cho {target_user.email}: {temp_password}"
+    }
+
+
+@router.post("/{user_id}/toggle-status", dependencies=[Depends(require_permission("user", "deactivate"))])
+async def toggle_user_status(
+    user_id: UUID,
+    request: Request,
+    current_user: UserSchema = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Toggle user status between ACTIVE and INACTIVE."""
+    # Cannot deactivate yourself
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Không thể vô hiệu hóa chính mình")
+
+    # Find target user
+    stmt = select(User).where(User.id == user_id, User.tenant_id == current_user.tenant_id)
+    result = await db.execute(stmt)
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy user")
+
+    # Cannot deactivate super_admin
+    if hasattr(target_user, 'role_rel') and target_user.role_rel and target_user.role_rel.code == 'super_admin':
+        raise HTTPException(status_code=403, detail="Không thể vô hiệu hóa Super Admin")
+
+    # Toggle status
+    old_status = target_user.status or "ACTIVE"
+    new_status = "INACTIVE" if old_status == "ACTIVE" else "ACTIVE"
+    target_user.status = new_status
+
+    await db.commit()
+    await db.refresh(target_user)
+
+    # Audit log
+    action = ActivityAction.DEACTIVATE_USER if new_status == "INACTIVE" else ActivityAction.ACTIVATE_USER
+    try:
+        activity_service = ActivityService(db, current_user.tenant_id)
+        await activity_service.log(
+            user_id=current_user.id,
+            action=action,
+            entity_type="User",
+            entity_id=user_id,
+            metadata={"email": target_user.email, "old_status": old_status, "new_status": new_status},
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent")
+        )
+    except Exception as e:
+        print(f"[WARN] Failed to log status toggle activity: {e}")
+
+    return {
+        "success": True,
+        "user_id": str(user_id),
+        "old_status": old_status,
+        "new_status": new_status,
+        "message": f"Đã {'vô hiệu hóa' if new_status == 'INACTIVE' else 'kích hoạt lại'} tài khoản {target_user.email}"
+    }
 
 
 @router.put("/{user_id}", response_model=UserSchema, dependencies=[Depends(require_permission("user", "edit"))])

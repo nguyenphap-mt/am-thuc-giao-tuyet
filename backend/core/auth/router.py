@@ -68,6 +68,9 @@ async def login(
         await db.commit()
     except Exception as e:
         # Session record creation is non-critical — don't block login
+        # BUGFIX: BUG-20260220-001 — Must rollback to prevent PendingRollbackError
+        # which would poison the session and cause 500 when serializing the user object
+        await db.rollback()
         print(f"[WARN] Failed to create login session record: {e}")
     
     print(f"User {user.email} logged in successfully")
@@ -81,7 +84,7 @@ async def login(
         full_name=user.full_name,
         phone_number=user.phone_number,
         is_active=user.is_active,
-        role={"id": user.id, "code": user.role, "name": user.role.upper(), "permissions": []}, # Mock Role structure compatibility
+        role={"id": user.id, "code": user.role, "name": user.role.upper(), "permissions": []},
         created_at=user.created_at,
         updated_at=user.updated_at
     )
@@ -90,7 +93,7 @@ async def login(
         "access_token": access_token,
         "refresh_token": "not_implemented_yet",
         "token_type": "bearer",
-        "expires_in": 3600 * 24 * 30, # 30 days
+        "expires_in": 3600 * 24 * 30,  # 30 days
         "user": user_schema
     }
 

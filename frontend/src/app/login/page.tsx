@@ -33,13 +33,13 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-100 via-purple-50 to-indigo-100 p-4">
+        <div className="min-h-screen flex items-center justify-center bg-accent-100 p-4">
             <Card className="w-full max-w-md shadow-2xl border-0">
                 <CardHeader className="text-center space-y-2 pb-2">
-                    <div className="mx-auto w-20 h-20 bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
+                    <div className="mx-auto w-20 h-20 bg-accent-gradient rounded-2xl flex items-center justify-center mb-4 shadow-lg">
                         <span className="text-3xl font-bold text-white">GT</span>
                     </div>
-                    <CardTitle className="text-2xl font-bold bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                    <CardTitle className="text-2xl font-bold bg-accent-gradient bg-clip-text text-transparent">
                         Ẩm Thực Giao Tuyết
                     </CardTitle>
                     <CardDescription className="text-gray-500">
@@ -79,7 +79,7 @@ export default function LoginPage() {
                                 <Label htmlFor="password">Mật khẩu</Label>
                                 <Link
                                     href="/forgot-password"
-                                    className="text-sm text-purple-600 hover:text-purple-700 hover:underline transition-colors"
+                                    className="text-sm text-accent-primary hover:text-accent-strong hover:underline transition-colors"
                                 >
                                     Quên mật khẩu?
                                 </Link>
@@ -127,7 +127,7 @@ export default function LoginPage() {
                         {/* Submit Button */}
                         <Button
                             type="submit"
-                            className="w-full bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 hover:from-pink-600 hover:via-purple-600 hover:to-indigo-600 transition-all duration-200 hover:shadow-lg"
+                            className="w-full bg-accent-gradient transition-all duration-200 hover:shadow-lg"
                             disabled={isLoading}
                         >
                             {isLoading ? (

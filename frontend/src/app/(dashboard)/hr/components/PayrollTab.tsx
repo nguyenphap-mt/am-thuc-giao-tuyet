@@ -33,6 +33,7 @@ import { ExportDialog } from '@/components/analytics/export-dialog';
 import type { ReportSheet, KpiCard, ColumnDef } from '@/lib/excel-report-engine';
 import { PermissionGate } from '@/components/shared/PermissionGate';
 import { generateBatchPayrollSlipPdf, type PayrollSlipData } from '@/lib/payroll-slip-pdf';
+import SalaryAdvanceSection from './SalaryAdvanceSection';
 
 interface PayrollPeriodResponse {
     id: string;
@@ -185,7 +186,7 @@ export default function PayrollTab() {
             case 'APPROVED':
                 return <Badge className="bg-blue-100 text-blue-700">Đã duyệt</Badge>;
             case 'CALCULATED':
-                return <Badge className="bg-purple-100 text-purple-700">Đã tính</Badge>;
+                return <Badge className="bg-accent-100 text-accent-strong">Đã tính</Badge>;
             default:
                 return <Badge className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">Nháp</Badge>;
         }
@@ -314,7 +315,7 @@ export default function PayrollTab() {
                         variant="outline"
                         size="sm"
                         onClick={() => setShowSettingsModal(true)}
-                        className="border-purple-200 text-purple-600 hover:bg-purple-50"
+                        className="border-accent-subtle text-accent-primary hover:bg-accent-50"
                     >
                         <IconSettings className="h-4 w-4 mr-1" />
                         Cài đặt lương
@@ -327,7 +328,7 @@ export default function PayrollTab() {
                         { label: 'Kỳ lương', value: stats?.total_periods || 0, icon: IconCalendar, bgColor: 'bg-blue-50', iconColor: 'text-blue-600' },
                         { label: 'Đã trả (năm)', value: formatCurrency(stats?.total_paid_this_year || 0), icon: IconCash, bgColor: 'bg-green-50', iconColor: 'text-green-600', isValue: true },
                         { label: 'Tạm ứng chờ', value: stats?.pending_advances || 0, icon: IconClock, bgColor: 'bg-amber-50', iconColor: 'text-amber-600' },
-                        { label: 'Kỳ hiện tại', value: stats?.current_period || '--', icon: IconUsers, bgColor: 'bg-purple-50', iconColor: 'text-purple-600', isText: true },
+                        { label: 'Kỳ hiện tại', value: stats?.current_period || '--', icon: IconUsers, bgColor: 'bg-accent-50', iconColor: 'text-accent-primary', isText: true },
                     ].map((stat, i) => (
                         <Card key={i} className="hover:shadow-sm transition-shadow">
                             <CardContent className="p-3">
@@ -356,7 +357,7 @@ export default function PayrollTab() {
                                 </CardTitle>
                                 <Button
                                     size="sm"
-                                    className="bg-gradient-to-r from-pink-500 to-purple-500"
+                                    className="bg-accent-gradient to-purple-500"
                                     onClick={() => setShowCreateModal(true)}
                                 >
                                     <IconPlus className="h-4 w-4 mr-1" />
@@ -416,7 +417,7 @@ export default function PayrollTab() {
                                                 size="sm"
                                                 onClick={() => calculateMutation.mutate(selectedPeriod.id)}
                                                 disabled={calculateMutation.isPending}
-                                                className="bg-purple-600 hover:bg-purple-700"
+                                                className="bg-accent-solid "
                                             >
                                                 <IconCalculator className="h-4 w-4 mr-1" />
                                                 Tính lương
@@ -438,7 +439,7 @@ export default function PayrollTab() {
                                                 size="sm"
                                                 onClick={() => payMutation.mutate(selectedPeriod.id)}
                                                 disabled={payMutation.isPending}
-                                                className="bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500"
+                                                className="bg-accent-gradient"
                                             >
                                                 <IconCreditCard className="h-4 w-4 mr-1" />
                                                 Trả lương
@@ -551,7 +552,7 @@ export default function PayrollTab() {
                                                     <td className="text-center px-2 py-2">{item.regular_hours.toFixed(1)}</td>
                                                     <td className="text-center px-2 py-2">
                                                         {item.overtime_hours > 0 && (
-                                                            <span className="text-purple-600">{item.overtime_hours.toFixed(1)}</span>
+                                                            <span className="text-accent-primary">{item.overtime_hours.toFixed(1)}</span>
                                                         )}
                                                         {item.overtime_hours === 0 && '--'}
                                                     </td>
@@ -600,6 +601,9 @@ export default function PayrollTab() {
                         </div>
                     </CardContent>
                 </Card>
+
+                {/* Salary Advance Section */}
+                <SalaryAdvanceSection />
             </div>
 
             {/* Create Payroll Period Modal */}

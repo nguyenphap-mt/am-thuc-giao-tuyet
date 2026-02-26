@@ -115,6 +115,184 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* ============================================
+   ACCENT COLOR SYSTEM
+   Driven by CSS variables set by useAppearance()
+   ============================================ */
+
+/* Gradient backgrounds */
+.bg-accent-gradient {
+  background: linear-gradient(to right, var(--accent-from, #ec4899), var(--accent-via, #a855f7), var(--accent-to, #6366f1)) !important;
+  color: white !important;
+}
+
+.bg-accent-gradient-br {
+  background: linear-gradient(to bottom right, var(--accent-from, #ec4899), var(--accent-via, #a855f7), var(--accent-to, #6366f1)) !important;
+  color: white !important;
+}
+
+.bg-accent-gradient-2stop {
+  background: linear-gradient(to right, var(--accent-from, #ec4899), var(--accent-via, #a855f7)) !important;
+  color: white !important;
+}
+
+/* Hover: darken gradient */
+.bg-accent-gradient:hover,
+.bg-accent-gradient-br:hover,
+.bg-accent-gradient-2stop:hover {
+  filter: brightness(0.92);
+}
+
+/* Subtle gradient for active/selected states (10% opacity) */
+.bg-accent-gradient-subtle {
+  background: linear-gradient(to right, var(--accent-from-10, #ec489a1a), var(--accent-via-10, #a855f71a), var(--accent-to-10, #6366f11a)) !important;
+}
+
+/* Gradient text (clip) */
+.text-accent-gradient {
+  background: linear-gradient(to right, var(--accent-from, #ec4899), var(--accent-via, #a855f7), var(--accent-to, #6366f1));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Active text color (sidebar active items etc.) */
+.text-accent-active {
+  color: var(--accent-active-text, #7c3aed);
+}
+
+.dark .text-accent-active {
+  color: var(--accent-active-text-dark, #c4b5fd);
+}
+
+/* Icon accent color */
+.text-accent-icon {
+  color: var(--accent-icon, #8b5cf6);
+}
+
+.dark .text-accent-icon {
+  color: var(--accent-icon-dark, #a78bfa);
+}
+
+/* Progress bar gradient */
+.bg-accent-gradient-progress {
+  background: linear-gradient(to right, var(--accent-from, #ec4899), var(--accent-via, #a855f7)) !important;
+}
+
+/* Ring color for focus states matching accent */
+.ring-accent-subtle {
+  --tw-ring-color: var(--accent-from-10, #ec48991a) !important;
+}
+
+/* ---- Accent Solid Backgrounds ---- */
+.bg-accent-solid {
+  background-color: var(--app-accent, #7c3aed) !important;
+  color: white !important;
+}
+
+.bg-accent-solid:hover {
+  filter: brightness(0.88);
+}
+
+/* ---- Accent Light Backgrounds (derived shades) ---- */
+.bg-accent-50 {
+  background-color: color-mix(in srgb, var(--app-accent, #7c3aed) 6%, white) !important;
+}
+
+.bg-accent-100 {
+  background-color: color-mix(in srgb, var(--app-accent, #7c3aed) 12%, white) !important;
+}
+
+.bg-accent-200 {
+  background-color: color-mix(in srgb, var(--app-accent, #7c3aed) 20%, white) !important;
+}
+
+/* ---- Accent Text Colors ---- */
+.text-accent-primary {
+  color: var(--app-accent, #7c3aed) !important;
+}
+
+.text-accent-muted {
+  color: color-mix(in srgb, var(--app-accent, #7c3aed) 60%, gray) !important;
+}
+
+.text-accent-strong {
+  color: color-mix(in srgb, var(--app-accent, #7c3aed), black 25%) !important;
+}
+
+/* ---- Accent Borders ---- */
+.border-accent-subtle {
+  border-color: color-mix(in srgb, var(--app-accent, #7c3aed) 20%, white) !important;
+}
+
+.border-accent-medium {
+  border-color: color-mix(in srgb, var(--app-accent, #7c3aed) 40%, white) !important;
+}
+
+.border-accent-strong {
+  border-color: var(--app-accent, #7c3aed) !important;
+}
+
+/* ---- Accent Ring/Focus ---- */
+.ring-accent {
+  --tw-ring-color: var(--app-accent, #7c3aed) !important;
+}
+
+.ring-accent-light {
+  --tw-ring-color: color-mix(in srgb, var(--app-accent, #7c3aed) 30%, white) !important;
+}
+
+/* ---- Accent Hover States ---- */
+.hover\:bg-accent-50:hover {
+  background-color: color-mix(in srgb, var(--app-accent, #7c3aed) 6%, white) !important;
+}
+
+.hover\:bg-accent-100:hover {
+  background-color: color-mix(in srgb, var(--app-accent, #7c3aed) 12%, white) !important;
+}
+
+/* ---- Dark Mode Overrides ---- */
+.dark .bg-accent-50 {
+  background-color: color-mix(in srgb, var(--app-accent, #7c3aed) 8%, #1a1a2e) !important;
+}
+
+.dark .bg-accent-100 {
+  background-color: color-mix(in srgb, var(--app-accent, #7c3aed) 15%, #1a1a2e) !important;
+}
+
+.dark .bg-accent-200 {
+  background-color: color-mix(in srgb, var(--app-accent, #7c3aed) 22%, #1a1a2e) !important;
+}
+
+.dark .text-accent-primary {
+  color: color-mix(in srgb, var(--app-accent, #7c3aed) 80%, white) !important;
+}
+
+.dark .text-accent-muted {
+  color: color-mix(in srgb, var(--app-accent, #7c3aed) 50%, #94a3b8) !important;
+}
+
+.dark .text-accent-strong {
+  color: color-mix(in srgb, var(--app-accent, #7c3aed) 85%, white) !important;
+}
+
+.dark .border-accent-subtle {
+  border-color: color-mix(in srgb, var(--app-accent, #7c3aed) 15%, #1e293b) !important;
+}
+
+.dark .border-accent-medium {
+  border-color: color-mix(in srgb, var(--app-accent, #7c3aed) 30%, #1e293b) !important;
+}
+
+.dark .hover\:bg-accent-50:hover {
+  background-color: color-mix(in srgb, var(--app-accent, #7c3aed) 10%, #1a1a2e) !important;
+}
+
+.dark .hover\:bg-accent-100:hover {
+  background-color: color-mix(in srgb, var(--app-accent, #7c3aed) 18%, #1a1a2e) !important;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

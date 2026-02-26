@@ -119,6 +119,7 @@ class ActivityAction:
     LOGOUT = "LOGOUT"
     LOGIN_FAILED = "LOGIN_FAILED"
     PASSWORD_CHANGED = "PASSWORD_CHANGED"
+    RESET_PASSWORD = "RESET_PASSWORD"
     
     # User Management
     CREATE_USER = "CREATE_USER"

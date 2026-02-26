@@ -9,31 +9,31 @@ import { QuoteWizard, useQuoteWizardState } from '../components';
  * Before refactoring: 1,698 LOC. After: ~30 LOC.
  */
 export default function QuoteCreatePage() {
-    const router = useRouter();
-    const createMutation = useCreateQuote();
-    const state = useQuoteWizardState();
+ const router = useRouter();
+ const createMutation = useCreateQuote();
+ const state = useQuoteWizardState();
 
-    const handleSubmit = () => {
-        createMutation.mutate(
-            state.buildPayload('NEW') as any,
-            { onSuccess: () => router.push('/quote') }
-        );
-    };
+ const handleSubmit = () => {
+ createMutation.mutate(
+ state.buildPayload('NEW') as any,
+ { onSuccess: () => router.push('/quote') }
+ );
+ };
 
-    const handleSaveDraft = () => {
-        createMutation.mutate(
-            state.buildPayload('DRAFT') as any,
-            { onSuccess: () => router.push('/quote') }
-        );
-    };
+ const handleSaveDraft = () => {
+ createMutation.mutate(
+ state.buildPayload('DRAFT') as any,
+ { onSuccess: () => router.push('/quote') }
+ );
+ };
 
-    return (
-        <QuoteWizard
-            mode="create"
-            state={state}
-            isPending={createMutation.isPending}
-            onSubmit={handleSubmit}
-            onSaveDraft={handleSaveDraft}
-        />
-    );
+ return (
+ <QuoteWizard
+ mode="create"
+ state={state}
+ isPending={createMutation.isPending}
+ onSubmit={handleSubmit}
+ onSaveDraft={handleSaveDraft}
+ />
+ );
 }

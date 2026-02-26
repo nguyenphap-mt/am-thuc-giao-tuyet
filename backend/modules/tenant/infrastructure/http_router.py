@@ -35,9 +35,7 @@ router = APIRouter(prefix="/tenants", tags=["Tenant Management"])
 
 # BUGFIX: BUG-20260218-003
 # Separate public router for endpoints that don't require auth.
-# The main `router` is mounted with `dependencies=[require_permission("tenant")]`
-# in main.py, which forces auth on ALL routes. <img> tags can't send JWT tokens,
-# so the logo serve endpoint must be truly public.
+# <img> tags can't send JWT tokens, so the logo serve endpoint must be truly public.
 public_router = APIRouter(prefix="/tenants", tags=["Tenant Public"])
 
 
@@ -211,7 +209,7 @@ async def get_tenant_logo(
     """Serve logo file for a tenant (public endpoint — no auth required).
     
     BUGFIX: BUG-20260218-003
-    Cloud Run filesystem is ephemeral — files are lost on redeploy.
+    Render filesystem is ephemeral — files are lost on redeploy.
     Read logo bytes directly from PostgreSQL (logo_data BYTEA column).
     """
     from sqlalchemy import text
@@ -282,7 +280,7 @@ async def upload_tenant_logo(
         f.write(contents)
 
     # Update tenant: logo_url + logo_data in DB
-    # BUGFIX: BUG-20260218-003 — Cloud Run filesystem is ephemeral
+    # BUGFIX: BUG-20260218-003 — Render filesystem is ephemeral
     # Store image bytes directly in PostgreSQL BYTEA column
     logo_url = f"/api/v1/tenants/{tenant_id}/logo?v={int(time.time())}"
     service = TenantService(db)

@@ -3,7 +3,7 @@ SQLAlchemy ORM Model for User Sessions
 Database: PostgreSQL (catering_db)
 """
 
-from sqlalchemy import Column, String, Text, Boolean, ForeignKey, DateTime
+from sqlalchemy import Column, String, Text, Boolean, DateTime
 from sqlalchemy.dialects.postgresql import UUID, INET
 from sqlalchemy.sql import func
 import uuid
@@ -18,11 +18,15 @@ class UserSessionModel(Base):
     # Primary Key
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     
-    # Tenant ID (RLS - MANDATORY)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
+    # BUGFIX: BUG-20260220-001
+    # Removed tenant_id FK - column does not exist in actual DB schema.
+    # The original definition caused NoReferencedTableError on login,
+    # resulting in 500 error masked as CORS error in the browser.
     
     # User reference
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # NOTE: DB-level FK constraint still enforces integrity.
+    # ORM-level ForeignKey removed to avoid NoReferencedTableError (import order issue).
+    user_id = Column(UUID(as_uuid=True), nullable=False)
     
     # Token info (store hash, not actual token)
     token_hash = Column(String(64), nullable=False)

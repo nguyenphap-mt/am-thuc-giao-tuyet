@@ -159,6 +159,7 @@ Follow `.agent/GIT_WORKFLOW.md`.
 - [ ] No behavior changes
 - [ ] Code cleaner than before
 - [ ] Imports/references correct
+- [ ] ⭐ No orphaned components (moved/extracted files still imported in parent)
 - [ ] Documentation updated
 
 ---
