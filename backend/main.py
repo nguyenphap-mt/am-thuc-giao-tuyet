@@ -190,6 +190,87 @@ app.include_router(tenant_public_router, prefix="/api/v1")
 async def health_check():
     return {"status": "ok", "service": "AI Workforce Orchestrator"}
 
+# TEMPORARY: Diagnostic endpoint to debug login 500 on Render
+# TODO: Remove after fixing login issue
+@app.get("/debug/db")
+async def debug_db():
+    from backend.core.database import AsyncSessionLocal
+    from sqlalchemy import text
+    results = {}
+    try:
+        async with AsyncSessionLocal() as session:
+            # 1. Check DB connection
+            r = await session.execute(text("SELECT 1"))
+            results["db_connection"] = "OK"
+            
+            # 2. Check search_path
+            r = await session.execute(text("SHOW search_path"))
+            results["search_path"] = r.scalar()
+            
+            # 3. Check if users table exists
+            r = await session.execute(text(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='users'"
+            ))
+            results["users_table_exists"] = r.scalar() > 0
+            
+            # 4. Check user count
+            r = await session.execute(text("SELECT COUNT(*) FROM public.users"))
+            results["user_count"] = r.scalar()
+            
+            # 5. Check specific user
+            r = await session.execute(text(
+                "SELECT id, email, tenant_id, role, is_active FROM public.users WHERE email='nguyenphap.mt@gmail.com'"
+            ))
+            row = r.fetchone()
+            if row:
+                results["user_found"] = True
+                results["user_id"] = str(row[0])
+                results["tenant_id"] = str(row[2])
+                results["role"] = row[3]
+                results["is_active"] = row[4]
+            else:
+                results["user_found"] = False
+            
+            # 6. Check tenants table
+            r = await session.execute(text(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='tenants'"
+            ))
+            results["tenants_table_exists"] = r.scalar() > 0
+            
+            # 7. Check user_sessions table
+            r = await session.execute(text(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='user_sessions'"
+            ))
+            results["user_sessions_table_exists"] = r.scalar() > 0
+            
+            # 8. Check bypass_rls setting
+            try:
+                await session.execute(text("SET app.bypass_rls = 'on'"))
+                results["bypass_rls"] = "OK"
+            except Exception as e:
+                results["bypass_rls"] = f"FAIL: {str(e)}"
+            
+            # 9. Try login simulation
+            try:
+                r = await session.execute(text(
+                    "SELECT id, hashed_password FROM public.users WHERE email='nguyenphap.mt@gmail.com'"
+                ))
+                row = r.fetchone()
+                if row:
+                    results["hashed_password_length"] = len(str(row[1])) if row[1] else 0
+                    results["login_query"] = "OK"
+                else:
+                    results["login_query"] = "user not found"
+            except Exception as e:
+                results["login_query"] = f"FAIL: {str(e)}"
+
+    except Exception as e:
+        results["error"] = str(e)
+        import traceback
+        results["traceback"] = traceback.format_exc()
+    
+    return results
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
