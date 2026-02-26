@@ -112,6 +112,12 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Se
     except JWTError:
         raise credentials_exception
     
+    # BUGFIX: BUG-20260226-003 — Bypass RLS for user lookup during token validation
+    # RLS policies on Supabase block the users table query if app.current_tenant
+    # is not set, causing get_current_user to return None → 401 Unauthorized.
+    # The login endpoint already does this, but get_current_user was missing it.
+    await db.execute(text("SET app.bypass_rls = 'on'"))
+    
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     

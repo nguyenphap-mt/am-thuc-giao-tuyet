@@ -41,16 +41,17 @@ async def get_current_user(
         
         if user_id is None:
             raise credentials_exception
-            
-        # Set RLS context if tenant_id is available in token
-        if tenant_id:
-            from backend.core.dependencies import set_tenant_context
-            # Note: We need to use valid UUID or handle string safely
-            # set_tenant_context expects UUID or string that can be cast
-            await db.execute(text(f"SET app.current_tenant = '{tenant_id}'"))
-            
     except JWTError:
         raise credentials_exception
+    
+    # BUGFIX: BUG-20260226-003 — Bypass RLS for user lookup during token validation
+    # Must bypass RLS before querying users table, because Supabase RLS policies
+    # may block the query if app.current_tenant doesn't match.
+    await db.execute(text("SET app.bypass_rls = 'on'"))
+    
+    # Set RLS context if tenant_id is available in token (for subsequent queries)
+    if tenant_id:
+        await db.execute(text(f"SET app.current_tenant = '{tenant_id}'"))
     
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
