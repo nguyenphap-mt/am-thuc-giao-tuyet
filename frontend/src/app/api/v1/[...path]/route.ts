@@ -122,9 +122,9 @@ async function doFetch(
 async function buildResponse(response: Response): Promise<NextResponse> {
     const responseHeaders = new Headers();
     response.headers.forEach((value, key) => {
-        // Skip hop-by-hop headers
+        // Skip hop-by-hop headers AND content-length (will be recalculated)
         if (
-            !['transfer-encoding', 'content-encoding', 'connection'].includes(
+            !['transfer-encoding', 'content-encoding', 'connection', 'content-length'].includes(
                 key.toLowerCase()
             )
         ) {
@@ -132,6 +132,10 @@ async function buildResponse(response: Response): Promise<NextResponse> {
         }
     });
 
+    // BUGFIX: BUG-20260226-005 — Response truncation
+    // Using response.body stream could cause issues with Vercel serverless functions.
+    // Instead, read full body with arrayBuffer but don't forward the backend's
+    // content-length header — let NextResponse calculate it from actual body.
     const responseBody = await response.arrayBuffer();
 
     return new NextResponse(responseBody, {
