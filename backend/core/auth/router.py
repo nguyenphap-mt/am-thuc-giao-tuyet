@@ -97,26 +97,44 @@ async def login(
     
     print(f"User {user.email} logged in successfully")
     
-    # 5. Return Response
-    user_schema = UserSchema(
-        id=user.id,
-        tenant_id=user.tenant_id,
-        email=user.email,
-        full_name=user.full_name,
-        phone_number=user.phone_number,
-        is_active=user.is_active,
-        role={"id": user.id, "code": user.role, "name": user.role.upper() if user.role else "", "permissions": []},
-        created_at=user.created_at,
-        updated_at=user.updated_at
-    )
-
-    return {
-        "access_token": access_token,
-        "refresh_token": "not_implemented_yet",
-        "token_type": "bearer",
-        "expires_in": 3600 * 24 * 30,  # 30 days
-        "user": user_schema
-    }
+    # 5. Return Response — use JSONResponse directly to avoid response_model serialization issues
+    try:
+        from fastapi.responses import JSONResponse
+        response_data = {
+            "access_token": access_token,
+            "refresh_token": "not_implemented_yet",
+            "token_type": "bearer",
+            "expires_in": 3600 * 24 * 30,
+            "user": {
+                "id": str(user.id),
+                "tenant_id": str(user.tenant_id),
+                "email": str(user.email),
+                "full_name": str(user.full_name) if user.full_name else None,
+                "phone_number": str(user.phone_number) if user.phone_number else None,
+                "is_active": bool(user.is_active),
+                "role": {
+                    "id": str(user.id),
+                    "code": str(user.role) if user.role else "user",
+                    "name": str(user.role).upper() if user.role else "USER",
+                    "permissions": []
+                },
+                "created_at": user.created_at.isoformat() if user.created_at else None,
+                "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+            }
+        }
+        return JSONResponse(content=response_data)
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Login response serialization failed: {e}")
+        print(traceback.format_exc())
+        # Minimal fallback response
+        return JSONResponse(content={
+            "access_token": access_token,
+            "refresh_token": "not_implemented_yet",
+            "token_type": "bearer",
+            "expires_in": 2592000,
+            "user": {"id": str(user.id), "email": str(user.email), "role": {"code": str(user.role) if user.role else "user"}}
+        })
 
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Session = Depends(get_db)):
