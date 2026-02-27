@@ -2,12 +2,14 @@
 
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import {
     IconCheck, IconSend, IconPrinter, IconFileText,
-    IconFileSpreadsheet, IconLoader2,
+    IconFileSpreadsheet, IconLoader2, IconSettings,
 } from '@tabler/icons-react';
 import { formatCurrency } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -32,7 +34,8 @@ export function StepSubmit({ state, mode, isPending, onSubmit, onSaveDraft }: Pr
         tableCount, menuTotal, menuTotalWithTables, serviceTotal,
         furnitureDiscountAmount, staffDiscountAmount, orderDiscountAmount,
         subtotal, includeVat, vatAmount, grandTotal,
-        menuPriceDisplay, servicePriceDisplay,
+        menuPriceDisplay, setMenuPriceDisplay,
+        servicePriceDisplay, setServicePriceDisplay,
     } = state;
 
     const { user } = useAuthStore();
@@ -103,6 +106,44 @@ export function StepSubmit({ state, mode, isPending, onSubmit, onSaveDraft }: Pr
                     </p>
                     <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
                         Đơn giá: <strong>{formatCurrency(tableCount > 0 ? Math.round(grandTotal / tableCount) : 0)}/bàn</strong> ({tableCount} bàn)
+                    </p>
+                </div>
+
+                {/* Display Settings Panel */}
+                <div className="border rounded-lg p-4 bg-gray-50/50 text-left max-w-lg mx-auto">
+                    <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2 text-sm">
+                        <IconSettings className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                        Tùy chọn hiển thị (trên bản in)
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <Label className="text-xs text-gray-600 dark:text-gray-400 mb-1.5 block">Giá thực đơn</Label>
+                            <Select value={menuPriceDisplay} onValueChange={(v) => setMenuPriceDisplay(v as any)}>
+                                <SelectTrigger className="h-8 text-sm">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="detailed">🔓 Chi tiết (đơn giá)</SelectItem>
+                                    <SelectItem value="name_only">📋 Chỉ tên (ẩn giá)</SelectItem>
+                                    <SelectItem value="summary">🔒 Tổng gộp</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <Label className="text-xs text-gray-600 dark:text-gray-400 mb-1.5 block">Giá dịch vụ</Label>
+                            <Select value={servicePriceDisplay} onValueChange={(v) => setServicePriceDisplay(v as any)}>
+                                <SelectTrigger className="h-8 text-sm">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="detailed">🔓 Chi tiết</SelectItem>
+                                    <SelectItem value="summary">🔒 Tổng gộp</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 italic">
+                        💡 Chỉ ảnh hưởng bản PDF/Excel gửi khách.
                     </p>
                 </div>
 

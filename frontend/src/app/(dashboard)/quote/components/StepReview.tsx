@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { IconToolsKitchen2, IconNotes, IconDiscount, IconPercentage, IconSettings } from '@tabler/icons-react';
+import { IconToolsKitchen2, IconNotes, IconDiscount, IconPercentage } from '@tabler/icons-react';
 import { formatCurrency } from '@/lib/utils';
 import { WizardState, EVENT_TYPES } from './quote-wizard-types';
 
@@ -26,8 +26,6 @@ export function StepReview({ state, onGoToStep }: Props) {
         includeVat, setIncludeVat,
         selectedQuoteNote, setSelectedQuoteNote,
         notePresets, notesLoading,
-        menuPriceDisplay, setMenuPriceDisplay,
-        servicePriceDisplay, setServicePriceDisplay,
         tableCount, menuTotalWithTables,
         profitAnalysis,
         serviceTotal, furnitureDiscountAmount, staffDiscountAmount, orderDiscountAmount,
@@ -41,43 +39,6 @@ export function StepReview({ state, onGoToStep }: Props) {
 
     return (
         <div className="space-y-6">
-            {/* Display Settings Panel */}
-            <div className="border rounded-lg p-4 bg-gray-50/50">
-                <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
-                    <IconSettings className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                    Tùy chọn hiển thị (trên bản in)
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <Label className="text-xs text-gray-600 dark:text-gray-400 mb-1.5 block">Giá thực đơn</Label>
-                        <Select value={menuPriceDisplay} onValueChange={(v) => setMenuPriceDisplay(v as any)}>
-                            <SelectTrigger className="h-8 text-sm">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="detailed">🔓 Chi tiết (đơn giá)</SelectItem>
-                                <SelectItem value="name_only">📋 Chỉ tên (ẩn giá)</SelectItem>
-                                <SelectItem value="summary">🔒 Tổng gộp</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div>
-                        <Label className="text-xs text-gray-600 dark:text-gray-400 mb-1.5 block">Giá dịch vụ</Label>
-                        <Select value={servicePriceDisplay} onValueChange={(v) => setServicePriceDisplay(v as any)}>
-                            <SelectTrigger className="h-8 text-sm">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="detailed">🔓 Chi tiết</SelectItem>
-                                <SelectItem value="summary">🔒 Tổng gộp</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                </div>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 italic">
-                    💡 Chỉ ảnh hưởng bản PDF/Excel gửi khách. Bảng nội bộ bên dưới luôn hiện đầy đủ.
-                </p>
-            </div>
             {/* Event Summary */}
             <div className="border rounded-lg p-4">
                 <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-4 flex items-center justify-between">
