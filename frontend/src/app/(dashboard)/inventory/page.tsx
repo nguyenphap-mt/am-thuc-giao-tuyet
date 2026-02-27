@@ -394,6 +394,11 @@ export default function InventoryPage() {
             min_stock: Number(formData.min_stock) || 0,
             cost_price: Number(formData.cost_price) || 0,
             warranty_months: Number(formData.warranty_months) || 0,
+            // BUGFIX: BUG-20260227-001 — clean empty strings for Optional fields
+            // Backend Pydantic rejects '' as invalid date/null value → 422
+            purchase_date: formData.purchase_date || undefined,
+            category: formData.category || undefined,
+            notes: formData.notes || undefined,
         };
         if (editItem) {
             updateItem.mutate({ id: editItem.id, ...submitData }, {
