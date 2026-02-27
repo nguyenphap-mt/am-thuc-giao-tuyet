@@ -34,9 +34,11 @@ interface LeaveAnalyticsData {
 export default function LeaveAnalytics() {
     const year = new Date().getFullYear();
 
-    const { data: analytics, isLoading } = useQuery({
+    const { data: analytics, isLoading, isError } = useQuery({
         queryKey: ['leave', 'analytics', year],
         queryFn: () => api.get<LeaveAnalyticsData>(`/hr/leave/analytics?year=${year}`),
+        retry: false,
+        staleTime: 5 * 60 * 1000, // 5 minutes
     });
 
     if (isLoading) {
@@ -50,7 +52,8 @@ export default function LeaveAnalytics() {
         );
     }
 
-    if (!analytics) return null;
+    // Gracefully hide if endpoint is unavailable or returns error
+    if (isError || !analytics) return null;
 
     // Find max days for chart scaling
     const maxDays = Math.max(1, ...analytics.monthly_trend.map(m => m.days));
@@ -146,10 +149,10 @@ export default function LeaveAnalytics() {
                                     {/* Bar */}
                                     <div
                                         className={`w-full rounded-t transition-all ${isCurrentMonth
-                                                ? 'bg-gradient-to-t from-pink-500 to-purple-500'
-                                                : m.days > 0
-                                                    ? 'bg-gradient-to-t from-blue-400 to-blue-300'
-                                                    : 'bg-gray-100'
+                                            ? 'bg-gradient-to-t from-pink-500 to-purple-500'
+                                            : m.days > 0
+                                                ? 'bg-gradient-to-t from-blue-400 to-blue-300'
+                                                : 'bg-gray-100'
                                             }`}
                                         style={{
                                             height: `${Math.max(heightPercent, 4)}%`,
