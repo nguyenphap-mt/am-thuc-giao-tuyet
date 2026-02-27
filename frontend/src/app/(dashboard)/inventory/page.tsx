@@ -142,7 +142,7 @@ export default function InventoryPage() {
 
     // Form state for Create/Edit
     const [formData, setFormData] = useState({
-        sku: '', name: '', category: '', uom: 'kg', min_stock: 0, cost_price: 0, notes: '',
+        sku: '', name: '', category: '', uom: 'kg', min_stock: 0, cost_price: 0, notes: '', item_type: 'MATERIAL' as 'MATERIAL' | 'EQUIPMENT',
     });
 
     // Stock Adjust form
@@ -294,7 +294,12 @@ export default function InventoryPage() {
     };
 
     const openCreateModal = () => {
-        setFormData({ sku: '', name: '', category: '', uom: 'kg', min_stock: 0, cost_price: 0, notes: '' });
+        setFormData({ sku: '', name: '', category: '', uom: 'kg', min_stock: 0, cost_price: 0, notes: '', item_type: 'MATERIAL' });
+        setShowCreateModal(true);
+    };
+
+    const openCreateEquipmentModal = () => {
+        setFormData({ sku: '', name: '', category: 'Dụng cụ', uom: 'cái', min_stock: 0, cost_price: 0, notes: '', item_type: 'EQUIPMENT' });
         setShowCreateModal(true);
     };
 
@@ -302,6 +307,7 @@ export default function InventoryPage() {
         setFormData({
             sku: item.sku, name: item.name, category: item.category || '',
             uom: item.uom, min_stock: item.min_stock, cost_price: item.cost_price, notes: item.notes || '',
+            item_type: (item as any).item_type || 'MATERIAL',
         });
         setEditItem(item);
     };
@@ -1943,7 +1949,7 @@ export default function InventoryPage() {
 
                     {/* ========== TAB: EQUIPMENT (CCDC) ========== */}
                     <TabsContent value="equipment" className="mt-4">
-                        <EquipmentTab onCreateItem={openCreateModal} />
+                        <EquipmentTab onCreateItem={openCreateEquipmentModal} />
                     </TabsContent>
                 </Tabs>
             </motion.div>
@@ -1952,18 +1958,18 @@ export default function InventoryPage() {
             <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
                 <DialogContent className="sm:max-w-lg">
                     <DialogHeader>
-                        <DialogTitle>Thêm sản phẩm mới</DialogTitle>
-                        <DialogDescription>Điền thông tin sản phẩm nguyên vật liệu</DialogDescription>
+                        <DialogTitle>{formData.item_type === 'EQUIPMENT' ? 'Thêm dụng cụ mới' : 'Thêm sản phẩm mới'}</DialogTitle>
+                        <DialogDescription>{formData.item_type === 'EQUIPMENT' ? 'Điền thông tin dụng cụ / CCDC' : 'Điền thông tin sản phẩm nguyên vật liệu'}</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-2">
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <Label htmlFor="create-name">Tên sản phẩm *</Label>
-                                <Input id="create-name" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} placeholder="Bột mì..." />
+                                <Input id="create-name" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} placeholder={formData.item_type === 'EQUIPMENT' ? 'Chén sứ, Nồi lẩu...' : 'Bột mì...'} />
                             </div>
                             <div>
                                 <Label htmlFor="create-sku">Mã SKU *</Label>
-                                <Input id="create-sku" value={formData.sku} onChange={(e) => setFormData(p => ({ ...p, sku: e.target.value }))} placeholder="BM-001" />
+                                <Input id="create-sku" value={formData.sku} onChange={(e) => setFormData(p => ({ ...p, sku: e.target.value }))} placeholder={formData.item_type === 'EQUIPMENT' ? 'DC-001' : 'BM-001'} />
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -1973,7 +1979,7 @@ export default function InventoryPage() {
                             </div>
                             <div>
                                 <Label htmlFor="create-category">Danh mục</Label>
-                                <Input id="create-category" value={formData.category} onChange={(e) => setFormData(p => ({ ...p, category: e.target.value }))} placeholder="Bột, Gia vị..." />
+                                <Input id="create-category" value={formData.category} onChange={(e) => setFormData(p => ({ ...p, category: e.target.value }))} placeholder={formData.item_type === 'EQUIPMENT' ? 'Dụng cụ, Thiết bị...' : 'Bột, Gia vị...'} />
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -1998,7 +2004,7 @@ export default function InventoryPage() {
                             disabled={createItem.isPending}
                             className="bg-accent-gradient text-white"
                         >
-                            {createItem.isPending ? 'Đang lưu...' : 'Thêm sản phẩm'}
+                            {createItem.isPending ? 'Đang lưu...' : formData.item_type === 'EQUIPMENT' ? 'Thêm dụng cụ' : 'Thêm sản phẩm'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
