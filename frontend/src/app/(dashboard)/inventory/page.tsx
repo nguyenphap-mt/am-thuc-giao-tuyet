@@ -2,7 +2,7 @@
 
 import { PermissionGate } from '@/components/shared/PermissionGate';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTabPersistence } from '@/hooks/useTabPersistence';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -157,6 +157,21 @@ export default function InventoryPage() {
     // Detail drawer state
     const [detailItem, setDetailItem] = useState<InventoryItemData | null>(null);
 
+    // Autocomplete state for name input
+    const [showNameSuggestions, setShowNameSuggestions] = useState(false);
+    const nameInputRef = useRef<HTMLDivElement>(null);
+
+    // Click outside handler for name suggestions dropdown
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (nameInputRef.current && !nameInputRef.current.contains(e.target as Node)) {
+                setShowNameSuggestions(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     // Dialog state
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -245,6 +260,22 @@ export default function InventoryPage() {
     const totalItems = paginatedData?.total || 0;
     const totalPages = Math.ceil(totalItems / PAGE_SIZE);
     const allItems = useMemo(() => allItemsData?.items || [], [allItemsData]);
+
+    // Compute name suggestions from all items based on typed name
+    const nameSuggestions = useMemo(() => {
+        const query = formData.name.trim().toLowerCase();
+        if (!query || query.length < 1) return [];
+        return allItems
+            .filter(item => item.name.toLowerCase().includes(query))
+            .slice(0, 6); // Max 6 suggestions
+    }, [formData.name, allItems]);
+
+    // Check for exact duplicate name
+    const duplicateItem = useMemo(() => {
+        const query = formData.name.trim().toLowerCase();
+        if (!query) return null;
+        return allItems.find(item => item.name.toLowerCase() === query) || null;
+    }, [formData.name, allItems]);
 
     const transactionsList = useMemo(() => {
         let list = transactions || [];
@@ -2030,10 +2061,65 @@ export default function InventoryPage() {
                     <div className="space-y-4 py-2" onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveItem(); }}>
                         {/* Row 1: Name + SKU */}
                         <div className="grid grid-cols-2 gap-4">
-                            <div>
+                            <div ref={nameInputRef} className="relative">
                                 <Label htmlFor="create-name">{formData.item_type === 'EQUIPMENT' ? 'Tên dụng cụ' : 'Tên sản phẩm'} <span className="text-red-500">*</span></Label>
-                                <Input id="create-name" value={formData.name} onChange={(e) => { setFormData(p => ({ ...p, name: e.target.value })); setFormErrors(p => ({ ...p, name: false })); }} placeholder={formData.item_type === 'EQUIPMENT' ? 'Chén sứ, Nồi lẩu...' : 'Bột mì...'} className={formErrors.name ? 'border-red-500 focus-visible:ring-red-500' : ''} />
+                                <Input
+                                    id="create-name"
+                                    value={formData.name}
+                                    onChange={(e) => {
+                                        setFormData(p => ({ ...p, name: e.target.value }));
+                                        setFormErrors(p => ({ ...p, name: false }));
+                                        setShowNameSuggestions(true);
+                                    }}
+                                    onFocus={() => { if (formData.name.trim().length > 0) setShowNameSuggestions(true); }}
+                                    placeholder={formData.item_type === 'EQUIPMENT' ? 'Chén sứ, Nồi lẩu...' : 'Bột mì...'}
+                                    className={formErrors.name ? 'border-red-500 focus-visible:ring-red-500' : ''}
+                                    autoComplete="off"
+                                />
                                 {formErrors.name && <p className="text-xs text-red-500 mt-1">Bắt buộc</p>}
+
+                                {/* Suggestions dropdown */}
+                                {showNameSuggestions && nameSuggestions.length > 0 && !duplicateItem && (
+                                    <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                        <div className="px-3 py-1.5 text-[11px] font-medium text-gray-400 uppercase tracking-wider border-b border-gray-100">
+                                            Sản phẩm đã có
+                                        </div>
+                                        {nameSuggestions.map(item => (
+                                            <button
+                                                key={item.id}
+                                                type="button"
+                                                className="w-full text-left px-3 py-2 hover:bg-gray-50 cursor-pointer flex items-center justify-between gap-2 transition-colors"
+                                                onClick={() => {
+                                                    setFormData(p => ({
+                                                        ...p,
+                                                        name: item.name,
+                                                        sku: item.sku,
+                                                        uom: item.uom || 'kg',
+                                                        category: item.category || '',
+                                                    }));
+                                                    setShowNameSuggestions(false);
+                                                }}
+                                            >
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
+                                                    <p className="text-xs text-gray-500">{item.sku}{item.category ? ` • ${item.category}` : ''}</p>
+                                                </div>
+                                                <Badge variant="outline" className="text-[10px] shrink-0">{item.uom}</Badge>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Duplicate warning */}
+                                {duplicateItem && (
+                                    <div className="mt-1.5 flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5">
+                                        <IconAlertTriangle className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
+                                        <div className="text-xs text-amber-700">
+                                            <span className="font-medium">Sản phẩm đã tồn tại</span>
+                                            <span className="text-amber-600"> — {duplicateItem.sku}, tồn kho: {duplicateItem.current_stock} {duplicateItem.uom}</span>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <Label htmlFor="create-sku">{formData.item_type === 'EQUIPMENT' ? 'Mã dụng cụ' : 'Mã SKU'} <span className="text-red-500">*</span></Label>
