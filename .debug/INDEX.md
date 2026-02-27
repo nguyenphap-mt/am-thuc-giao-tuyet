@@ -77,6 +77,7 @@
 | BUG-20260227-001 | HR/Leave | High | L2 | `schema-mismatch` | leave_requests, is_half_day, half_day_period, UndefinedColumnError, Supabase | Supabase SQL migration | ✅ | 2026-02-27 |
 | BUG-20260227-002 | Inventory/Equipment | High | L1 | `orphaned-component` | EquipmentTab, CCDC, dung-cu, missing-tab, INVENTORY_TABS | `page.tsx` | ✅ | 2026-02-27 |
 | BUG-20260227-003 | HR/Leave Analytics | Medium | L1 | `api-mismatch` | leave, analytics, 500, retry, graceful-fallback, react-query | `LeaveAnalytics.tsx` | ✅ | 2026-02-27 |
+| BUG-20260227-004 | HR/Leave Analytics | High | L1 | `api-mismatch` | leave, analytics, 500, EmployeeModel, status, is_active, AttributeError | `http_router.py` | ✅ | 2026-02-27 |
 
 ---
 

@@ -4331,6 +4331,51 @@ async def list_all_leave_balances(
     result = await db.execute(query)
     rows = result.all()
     
+    # BUGFIX: Auto-initialize balances if none exist for this year
+    # Prevents recurring "Chưa có dữ liệu" issue after DB migration or new year
+    if len(rows) == 0 and year == date.today().year:
+        logger.info(f"No leave balances found for year {year}, auto-initializing...")
+        
+        # Get all active employees
+        emp_result = await db.execute(
+            select(EmployeeModel).where(
+                EmployeeModel.tenant_id == tenant_id,
+                EmployeeModel.is_active == True
+            )
+        )
+        employees = emp_result.scalars().all()
+        
+        # Get all active leave types
+        types_result = await db.execute(
+            select(LeaveTypeModel).where(
+                LeaveTypeModel.tenant_id == tenant_id,
+                LeaveTypeModel.is_active == True
+            )
+        )
+        leave_types = types_result.scalars().all()
+        
+        # Create balances
+        for emp in employees:
+            for lt in leave_types:
+                balance = LeaveBalanceModel(
+                    tenant_id=tenant_id,
+                    employee_id=emp.id,
+                    leave_type_id=lt.id,
+                    year=year,
+                    entitled_days=lt.days_per_year,
+                    used_days=0,
+                    pending_days=0,
+                    carry_over_days=0
+                )
+                db.add(balance)
+        
+        await db.commit()
+        logger.info(f"Auto-initialized {len(employees) * len(leave_types)} leave balances")
+        
+        # Re-query after initialization
+        result = await db.execute(query)
+        rows = result.all()
+    
     return [
         AllEmployeeLeaveBalanceResponse(
             id=row[0].id,
