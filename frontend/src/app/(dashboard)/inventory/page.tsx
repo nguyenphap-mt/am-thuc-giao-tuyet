@@ -629,10 +629,10 @@ export default function InventoryPage() {
                     <PermissionGate module="inventory" action="create">
                         <Button
                             className="bg-accent-gradient text-white"
-                            onClick={openCreateModal}
+                            onClick={activeTab === 'equipment' ? openCreateEquipmentModal : openCreateModal}
                         >
-                            <IconPlus className="mr-2 h-4 w-4" />
-                            Thêm mới
+                            {activeTab === 'equipment' ? <IconTool className="mr-2 h-4 w-4" /> : <IconPlus className="mr-2 h-4 w-4" />}
+                            {activeTab === 'equipment' ? 'Thêm dụng cụ' : 'Thêm mới'}
                         </Button>
                     </PermissionGate>
                 </div>
@@ -2012,7 +2012,7 @@ export default function InventoryPage() {
 
                     {/* ========== TAB: EQUIPMENT (CCDC) ========== */}
                     <TabsContent value="equipment" className="mt-4">
-                        <EquipmentTab onCreateItem={openCreateEquipmentModal} />
+                        <EquipmentTab />
                     </TabsContent>
                 </Tabs>
             </motion.div>
