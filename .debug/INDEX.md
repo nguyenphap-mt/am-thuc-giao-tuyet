@@ -74,6 +74,7 @@
 | BUG-20260226-003 | HR/Leave Tab | Medium | L2 | `api-mismatch` | 403, forbidden, chef, leave, isHrAdmin, query-guard | `LeaveTab.tsx`, `page.tsx` | ✅ | 2026-02-26 |
 | BUG-20260226-004 | HR/Leave Modal | Medium | L1 | `api-mismatch` | 403, chef, create-leave, modal, self-service, employees, infinite-loop | `CreateLeaveRequestModal.tsx` | ✅ | 2026-02-26 |
 | BUG-20260226-005 | HR/Leave Tab | Medium | L1 | `data-missing` | leave-balances, admin, only-one-employee, initialize, is_fulltime | `http_router.py` | ✅ | 2026-02-26 |
+| BUG-20260227-001 | HR/Leave | High | L2 | `schema-mismatch` | leave_requests, is_half_day, half_day_period, UndefinedColumnError, Supabase | Supabase SQL migration | ✅ | 2026-02-27 |
 
 ---
 
@@ -91,4 +92,4 @@
 
 ---
 
-*Last updated: 2026-02-26 14:50 (BUG-20260226-003 added — Chef 403 errors on HR Leave Tab: missing isHrAdmin guards)*
+*Last updated: 2026-02-27 07:40 (BUG-20260227-001 added — leave_requests missing is_half_day, half_day_period columns in Supabase)*
