@@ -86,12 +86,22 @@ Start-Process "http://localhost:3000"
 ---
 
 ## URLs Reference
+
+### Local Development
 | Service | URL |
 | :--- | :--- |
 | Frontend (Next.js) | http://localhost:3000 |
 | Backend API (FastAPI) | http://localhost:8000 |
 | API Docs (Swagger) | http://localhost:8000/docs |
 | Health Check | http://localhost:8000/health |
+
+### Production
+| Service | URL |
+| :--- | :--- |
+| Frontend (Vercel) | https://amthucgiaotuyet.vercel.app |
+| Backend (Render) | https://am-thuc-api-b9so.onrender.com |
+| Database (Supabase) | https://supabase.com/dashboard/project/udgtiyflupuxpmrtvnet |
+| Git Remote (deploy) | `git push vercel main` (**KHÔNG** dùng `origin`) |
 
 ---
 

@@ -87,7 +87,30 @@ import { ExportDialog } from '@/components/analytics/export-dialog';
 import { useReportExport, type ExportFormat, type ExportConfig } from '@/hooks/use-report-export';
 import type { ReportSheet, ColumnDef, KpiCard } from '@/lib/excel-report-engine';
 import { EquipmentTab } from '@/components/inventory/EquipmentTab';
-import { IconTool } from '@tabler/icons-react';
+import { IconTool, IconShieldCheck } from '@tabler/icons-react';
+
+// ========== CONSTANTS ==========
+const UOM_OPTIONS = [
+    { value: 'kg', label: 'kg' },
+    { value: 'g', label: 'g' },
+    { value: 'lít', label: 'lít' },
+    { value: 'ml', label: 'ml' },
+    { value: 'cái', label: 'cái' },
+    { value: 'bộ', label: 'bộ' },
+    { value: 'hộp', label: 'hộp' },
+    { value: 'chai', label: 'chai' },
+    { value: 'gói', label: 'gói' },
+    { value: 'thùng', label: 'thùng' },
+    { value: 'lon', label: 'lon' },
+    { value: 'tấm', label: 'tấm' },
+];
+
+const CONDITION_OPTIONS = [
+    { value: 'GOOD', label: 'Tốt' },
+    { value: 'FAIR', label: 'Trung bình' },
+    { value: 'POOR', label: 'Kém' },
+    { value: 'DAMAGED', label: 'Hỏng' },
+];
 
 // ========== HELPERS ==========
 
@@ -142,8 +165,11 @@ export default function InventoryPage() {
 
     // Form state for Create/Edit
     const [formData, setFormData] = useState({
-        sku: '', name: '', category: '', uom: 'kg', min_stock: 0, cost_price: 0, notes: '', item_type: 'MATERIAL' as 'MATERIAL' | 'EQUIPMENT',
+        sku: '', name: '', category: '', uom: 'kg', min_stock: '' as string | number, cost_price: '' as string | number, notes: '', item_type: 'MATERIAL' as 'MATERIAL' | 'EQUIPMENT',
+        // Equipment-specific fields
+        condition_status: 'GOOD', purchase_date: '', warranty_months: '' as string | number, reusable: false,
     });
+    const [formErrors, setFormErrors] = useState<Record<string, boolean>>({});
 
     // Stock Adjust form
     const [adjustType, setAdjustType] = useState<'IMPORT' | 'EXPORT'>('IMPORT');
@@ -294,12 +320,14 @@ export default function InventoryPage() {
     };
 
     const openCreateModal = () => {
-        setFormData({ sku: '', name: '', category: '', uom: 'kg', min_stock: 0, cost_price: 0, notes: '', item_type: 'MATERIAL' });
+        setFormData({ sku: '', name: '', category: '', uom: 'kg', min_stock: '', cost_price: '', notes: '', item_type: 'MATERIAL', condition_status: 'GOOD', purchase_date: '', warranty_months: '', reusable: false });
+        setFormErrors({});
         setShowCreateModal(true);
     };
 
     const openCreateEquipmentModal = () => {
-        setFormData({ sku: '', name: '', category: 'Dụng cụ', uom: 'cái', min_stock: 0, cost_price: 0, notes: '', item_type: 'EQUIPMENT' });
+        setFormData({ sku: '', name: '', category: 'Dụng cụ', uom: 'cái', min_stock: '', cost_price: '', notes: '', item_type: 'EQUIPMENT', condition_status: 'GOOD', purchase_date: '', warranty_months: '', reusable: false });
+        setFormErrors({});
         setShowCreateModal(true);
     };
 
@@ -308,22 +336,57 @@ export default function InventoryPage() {
             sku: item.sku, name: item.name, category: item.category || '',
             uom: item.uom, min_stock: item.min_stock, cost_price: item.cost_price, notes: item.notes || '',
             item_type: (item as any).item_type || 'MATERIAL',
+            condition_status: (item as any).condition_status || 'GOOD',
+            purchase_date: (item as any).purchase_date || '',
+            warranty_months: (item as any).warranty_months || '',
+            reusable: (item as any).reusable || false,
         });
         setEditItem(item);
     };
 
-    const handleSaveItem = () => {
-        if (!formData.name || !formData.sku || !formData.uom) {
-            toast.error('Vui lòng điền đầy đủ thông tin bắt buộc');
+    const validateForm = () => {
+        const errors: Record<string, boolean> = {};
+        if (!formData.name.trim()) errors.name = true;
+        if (!formData.sku.trim()) errors.sku = true;
+        if (!formData.uom.trim()) errors.uom = true;
+        setFormErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
+    const handleSaveItem = (continueAdding = false) => {
+        if (!validateForm()) {
+            toast.error('Vui lòng điền đầy đủ các trường bắt buộc');
             return;
         }
+        const submitData = {
+            ...formData,
+            min_stock: Number(formData.min_stock) || 0,
+            cost_price: Number(formData.cost_price) || 0,
+            warranty_months: Number(formData.warranty_months) || 0,
+        };
         if (editItem) {
-            updateItem.mutate({ id: editItem.id, ...formData }, {
-                onSuccess: () => setEditItem(null),
+            updateItem.mutate({ id: editItem.id, ...submitData }, {
+                onSuccess: () => {
+                    toast.success(`✅ Đã cập nhật ${formData.name}`);
+                    setEditItem(null);
+                },
             });
         } else {
-            createItem.mutate(formData, {
-                onSuccess: () => setShowCreateModal(false),
+            createItem.mutate(submitData, {
+                onSuccess: () => {
+                    const itemLabel = formData.item_type === 'EQUIPMENT' ? 'dụng cụ' : 'sản phẩm';
+                    toast.success(`✅ Đã thêm ${itemLabel} "${formData.name}"`);
+                    if (continueAdding) {
+                        // Reset form but keep modal open
+                        const keepType = formData.item_type;
+                        const keepUom = formData.uom;
+                        const keepCategory = formData.category;
+                        setFormData(prev => ({ ...prev, sku: '', name: '', notes: '', min_stock: '', cost_price: '', warranty_months: '', purchase_date: '', condition_status: 'GOOD', reusable: false, item_type: keepType, uom: keepUom, category: keepCategory }));
+                        setFormErrors({});
+                    } else {
+                        setShowCreateModal(false);
+                    }
+                },
             });
         }
     };
@@ -1955,52 +2018,135 @@ export default function InventoryPage() {
             </motion.div>
 
             {/* ========== MODAL: CREATE ITEM ========== */}
-            <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-                <DialogContent className="sm:max-w-lg">
+            <Dialog open={showCreateModal} onOpenChange={(open) => { setShowCreateModal(open); if (!open) setFormErrors({}); }}>
+                <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle>{formData.item_type === 'EQUIPMENT' ? 'Thêm dụng cụ mới' : 'Thêm sản phẩm mới'}</DialogTitle>
+                        <DialogTitle className="flex items-center gap-2">
+                            {formData.item_type === 'EQUIPMENT' ? <IconTool className="w-5 h-5 text-purple-600" /> : <IconPackage className="w-5 h-5 text-blue-600" />}
+                            {formData.item_type === 'EQUIPMENT' ? 'Thêm dụng cụ mới' : 'Thêm sản phẩm mới'}
+                        </DialogTitle>
                         <DialogDescription>{formData.item_type === 'EQUIPMENT' ? 'Điền thông tin dụng cụ / CCDC' : 'Điền thông tin sản phẩm nguyên vật liệu'}</DialogDescription>
                     </DialogHeader>
-                    <div className="space-y-4 py-2">
+                    <div className="space-y-4 py-2" onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveItem(); }}>
+                        {/* Row 1: Name + SKU */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <Label htmlFor="create-name">Tên sản phẩm *</Label>
-                                <Input id="create-name" value={formData.name} onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))} placeholder={formData.item_type === 'EQUIPMENT' ? 'Chén sứ, Nồi lẩu...' : 'Bột mì...'} />
+                                <Label htmlFor="create-name">{formData.item_type === 'EQUIPMENT' ? 'Tên dụng cụ' : 'Tên sản phẩm'} <span className="text-red-500">*</span></Label>
+                                <Input id="create-name" value={formData.name} onChange={(e) => { setFormData(p => ({ ...p, name: e.target.value })); setFormErrors(p => ({ ...p, name: false })); }} placeholder={formData.item_type === 'EQUIPMENT' ? 'Chén sứ, Nồi lẩu...' : 'Bột mì...'} className={formErrors.name ? 'border-red-500 focus-visible:ring-red-500' : ''} />
+                                {formErrors.name && <p className="text-xs text-red-500 mt-1">Bắt buộc</p>}
                             </div>
                             <div>
-                                <Label htmlFor="create-sku">Mã SKU *</Label>
-                                <Input id="create-sku" value={formData.sku} onChange={(e) => setFormData(p => ({ ...p, sku: e.target.value }))} placeholder={formData.item_type === 'EQUIPMENT' ? 'DC-001' : 'BM-001'} />
+                                <Label htmlFor="create-sku">{formData.item_type === 'EQUIPMENT' ? 'Mã dụng cụ' : 'Mã SKU'} <span className="text-red-500">*</span></Label>
+                                <Input id="create-sku" value={formData.sku} onChange={(e) => { setFormData(p => ({ ...p, sku: e.target.value })); setFormErrors(p => ({ ...p, sku: false })); }} placeholder={formData.item_type === 'EQUIPMENT' ? 'DC-001' : 'BM-001'} className={formErrors.sku ? 'border-red-500 focus-visible:ring-red-500' : ''} />
+                                {formErrors.sku && <p className="text-xs text-red-500 mt-1">Bắt buộc</p>}
                             </div>
                         </div>
+                        {/* Row 2: UOM (Select) + Category (Select+Input) */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <Label htmlFor="create-uom">Đơn vị tính *</Label>
-                                <Input id="create-uom" value={formData.uom} onChange={(e) => setFormData(p => ({ ...p, uom: e.target.value }))} placeholder="kg, lít, cái..." />
+                                <Label>Đơn vị tính <span className="text-red-500">*</span></Label>
+                                <Select value={formData.uom} onValueChange={(val) => { setFormData(p => ({ ...p, uom: val })); setFormErrors(p => ({ ...p, uom: false })); }}>
+                                    <SelectTrigger className={formErrors.uom ? 'border-red-500' : ''}>
+                                        <SelectValue placeholder="Chọn ĐVT" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {UOM_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                                {formErrors.uom && <p className="text-xs text-red-500 mt-1">Bắt buộc</p>}
                             </div>
                             <div>
                                 <Label htmlFor="create-category">Danh mục</Label>
-                                <Input id="create-category" value={formData.category} onChange={(e) => setFormData(p => ({ ...p, category: e.target.value }))} placeholder={formData.item_type === 'EQUIPMENT' ? 'Dụng cụ, Thiết bị...' : 'Bột, Gia vị...'} />
+                                {categories.length > 0 ? (
+                                    <Select value={formData.category || '__custom__'} onValueChange={(val) => setFormData(p => ({ ...p, category: val === '__custom__' ? '' : val }))}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Chọn danh mục" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                            <SelectItem value="__custom__">+ Nhập mới...</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                ) : (
+                                    <Input id="create-category" value={formData.category} onChange={(e) => setFormData(p => ({ ...p, category: e.target.value }))} placeholder={formData.item_type === 'EQUIPMENT' ? 'Dụng cụ, Thiết bị...' : 'Bột, Gia vị...'} />
+                                )}
+                                {formData.category === '' && categories.length > 0 && (
+                                    <Input className="mt-1" value={formData.category} onChange={(e) => setFormData(p => ({ ...p, category: e.target.value }))} placeholder="Nhập danh mục mới..." />
+                                )}
                             </div>
                         </div>
+                        {/* Row 3: Min Stock + Cost */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <Label htmlFor="create-min-stock">Tồn kho tối thiểu</Label>
-                                <Input id="create-min-stock" type="number" value={formData.min_stock} onChange={(e) => setFormData(p => ({ ...p, min_stock: Number(e.target.value) }))} />
+                                <Input id="create-min-stock" type="number" value={formData.min_stock} onChange={(e) => setFormData(p => ({ ...p, min_stock: e.target.value }))} placeholder="0" />
                             </div>
                             <div>
                                 <Label htmlFor="create-cost">Giá vốn (đ)</Label>
-                                <Input id="create-cost" type="number" value={formData.cost_price} onChange={(e) => setFormData(p => ({ ...p, cost_price: Number(e.target.value) }))} />
+                                <Input id="create-cost" type="number" value={formData.cost_price} onChange={(e) => setFormData(p => ({ ...p, cost_price: e.target.value }))} placeholder="0" />
                             </div>
                         </div>
+
+                        {/* Equipment-specific fields */}
+                        {formData.item_type === 'EQUIPMENT' && (
+                            <>
+                                <div className="border-t pt-3">
+                                    <p className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
+                                        <IconShieldCheck className="w-4 h-4" />
+                                        Thông tin dụng cụ
+                                    </p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <Label>Tình trạng</Label>
+                                        <Select value={formData.condition_status} onValueChange={(val) => setFormData(p => ({ ...p, condition_status: val }))}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Chọn tình trạng" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {CONDITION_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <Label htmlFor="create-purchase-date">Ngày mua</Label>
+                                        <Input id="create-purchase-date" type="date" value={formData.purchase_date} onChange={(e) => setFormData(p => ({ ...p, purchase_date: e.target.value }))} />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <Label htmlFor="create-warranty">Bảo hành (tháng)</Label>
+                                        <Input id="create-warranty" type="number" value={formData.warranty_months} onChange={(e) => setFormData(p => ({ ...p, warranty_months: e.target.value }))} placeholder="0" />
+                                    </div>
+                                    <div className="flex items-end pb-2">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <Checkbox checked={formData.reusable} onCheckedChange={(checked) => setFormData(p => ({ ...p, reusable: !!checked }))} />
+                                            <span className="text-sm">Tái sử dụng được</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Notes */}
                         <div>
                             <Label htmlFor="create-notes">Ghi chú</Label>
-                            <Textarea id="create-notes" value={formData.notes} onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))} rows={2} />
+                            <Textarea id="create-notes" value={formData.notes} onChange={(e) => setFormData(p => ({ ...p, notes: e.target.value }))} rows={2} placeholder="Ghi chú thêm (không bắt buộc)" />
                         </div>
                     </div>
-                    <DialogFooter className="gap-2">
+                    <DialogFooter className="gap-2 flex-wrap">
                         <Button variant="outline" onClick={() => setShowCreateModal(false)}>Hủy</Button>
+                        {!editItem && (
+                            <Button
+                                variant="outline"
+                                onClick={() => handleSaveItem(true)}
+                                disabled={createItem.isPending}
+                            >
+                                {formData.item_type === 'EQUIPMENT' ? 'Thêm & Tiếp tục' : 'Thêm & Tiếp tục'}
+                            </Button>
+                        )}
                         <Button
-                            onClick={handleSaveItem}
+                            onClick={() => handleSaveItem()}
                             disabled={createItem.isPending}
                             className="bg-accent-gradient text-white"
                         >
@@ -2056,7 +2202,7 @@ export default function InventoryPage() {
                     <DialogFooter className="gap-2">
                         <Button variant="outline" onClick={() => setEditItem(null)}>Hủy</Button>
                         <Button
-                            onClick={handleSaveItem}
+                            onClick={() => handleSaveItem()}
                             disabled={updateItem.isPending}
                             className="bg-accent-gradient text-white"
                         >

@@ -75,6 +75,7 @@
 | BUG-20260226-004 | HR/Leave Modal | Medium | L1 | `api-mismatch` | 403, chef, create-leave, modal, self-service, employees, infinite-loop | `CreateLeaveRequestModal.tsx` | ✅ | 2026-02-26 |
 | BUG-20260226-005 | HR/Leave Tab | Medium | L1 | `data-missing` | leave-balances, admin, only-one-employee, initialize, is_fulltime | `http_router.py` | ✅ | 2026-02-26 |
 | BUG-20260227-001 | HR/Leave | High | L2 | `schema-mismatch` | leave_requests, is_half_day, half_day_period, UndefinedColumnError, Supabase | Supabase SQL migration | ✅ | 2026-02-27 |
+| BUG-20260227-002 | Inventory/Equipment | High | L1 | `orphaned-component` | EquipmentTab, CCDC, dung-cu, missing-tab, INVENTORY_TABS | `page.tsx` | ✅ | 2026-02-27 |
 
 ---
 
