@@ -3715,6 +3715,32 @@ async def mark_advance_paid(advance_id: UUID, tenant_id: UUID = Depends(get_curr
     return {"message": "Advance marked as paid", "id": str(advance_id)}
 
 
+@router.put("/payroll/advances/{advance_id}/reject",
+             dependencies=[Depends(require_permission("hr", "approve_payroll"))])
+async def reject_salary_advance(advance_id: UUID, tenant_id: UUID = Depends(get_current_tenant), db: AsyncSession = Depends(get_db)):
+    """Reject/cancel salary advance request"""
+    await set_tenant_context(db, str(tenant_id))
+    
+    query = select(SalaryAdvanceModel).where(
+        SalaryAdvanceModel.id == advance_id,
+        SalaryAdvanceModel.tenant_id == tenant_id
+    )
+    result = await db.execute(query)
+    advance = result.scalar_one_or_none()
+    
+    if not advance:
+        raise HTTPException(status_code=404, detail="Advance request not found")
+    
+    if advance.status != 'PENDING':
+        raise HTTPException(status_code=400, detail="Can only reject pending advances")
+    
+    advance.status = 'REJECTED'
+    
+    await db.commit()
+    
+    return {"message": "Advance rejected", "id": str(advance_id)}
+
+
 # --- Payroll Stats ---
 
 @router.get("/payroll/stats",
