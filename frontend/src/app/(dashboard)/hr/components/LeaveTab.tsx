@@ -31,6 +31,7 @@ import ApprovalHistoryModal from './ApprovalHistoryModal';
 import RejectReasonDialog from './RejectReasonDialog';
 import TeamLeaveCalendar from './TeamLeaveCalendar';
 import LeavePolicyCard from './LeavePolicyCard';
+import LeaveAnalytics from './LeaveAnalytics';
 
 interface LeaveTypeResponse {
     id: string;
@@ -751,6 +752,11 @@ export default function LeaveTab() {
             {/* Team Leave Calendar (HR admin only) */}
             {isHrAdmin && (
                 <TeamLeaveCalendar />
+            )}
+
+            {/* Leave Analytics (HR admin only) */}
+            {isHrAdmin && (
+                <LeaveAnalytics />
             )}
 
             {/* Create Leave Request Modal */}

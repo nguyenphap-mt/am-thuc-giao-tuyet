@@ -5166,6 +5166,136 @@ async def check_leave_overlap(
     }
 
 
+# --- Phase 3: Leave Analytics (GAP-L8) ---
+
+@router.get("/leave/analytics",
+             dependencies=[Depends(require_permission("hr", "view_leave"))])
+async def get_leave_analytics(
+    year: int = Query(None),
+    tenant_id: UUID = Depends(get_current_tenant),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Leave analytics dashboard data for HR managers.
+    Returns: avg usage rate, burnout risk count, top leave types, monthly trend.
+    """
+    await set_tenant_context(db, str(tenant_id))
+    
+    if not year:
+        year = date.today().year
+    
+    # 1. Get all balances for this year
+    balances_result = await db.execute(
+        select(
+            LeaveBalanceModel.employee_id,
+            func.sum(LeaveBalanceModel.entitled_days).label("total_entitled"),
+            func.sum(LeaveBalanceModel.used_days).label("total_used"),
+        ).where(
+            LeaveBalanceModel.tenant_id == tenant_id,
+            LeaveBalanceModel.year == year
+        ).group_by(LeaveBalanceModel.employee_id)
+    )
+    balance_rows = balances_result.all()
+    
+    total_entitled_all = 0
+    total_used_all = 0
+    employee_count = len(balance_rows)
+    
+    for row in balance_rows:
+        total_entitled_all += float(row.total_entitled or 0)
+        total_used_all += float(row.total_used or 0)
+    
+    avg_usage_rate = round((total_used_all / total_entitled_all * 100), 1) if total_entitled_all > 0 else 0.0
+    
+    # 2. Burnout risk: employees with 0 approved leave in the last 90 days
+    cutoff_date = date.today() - timedelta(days=90)
+    
+    # Get active employees
+    active_emps_result = await db.execute(
+        select(EmployeeModel.id).where(
+            EmployeeModel.tenant_id == tenant_id,
+            EmployeeModel.status == 'ACTIVE'
+        )
+    )
+    active_emp_ids = set(row[0] for row in active_emps_result.all())
+    
+    # Get employees who had approved leave in the last 90 days
+    recent_leave_result = await db.execute(
+        select(LeaveRequestModel.employee_id).where(
+            LeaveRequestModel.tenant_id == tenant_id,
+            LeaveRequestModel.status == 'APPROVED',
+            LeaveRequestModel.start_date >= cutoff_date
+        ).distinct()
+    )
+    recent_leave_emp_ids = set(row[0] for row in recent_leave_result.all())
+    
+    burnout_risk_count = len(active_emp_ids - recent_leave_emp_ids)
+    
+    # 3. Top leave types
+    top_types_result = await db.execute(
+        select(
+            LeaveTypeModel.name,
+            LeaveTypeModel.code,
+            func.count(LeaveRequestModel.id).label("request_count"),
+            func.sum(LeaveRequestModel.total_days).label("total_days")
+        ).join(
+            LeaveTypeModel, LeaveRequestModel.leave_type_id == LeaveTypeModel.id
+        ).where(
+            LeaveRequestModel.tenant_id == tenant_id,
+            LeaveRequestModel.status.in_(['APPROVED', 'PENDING']),
+            func.extract('year', LeaveRequestModel.start_date) == year
+        ).group_by(
+            LeaveTypeModel.name, LeaveTypeModel.code
+        ).order_by(func.count(LeaveRequestModel.id).desc()).limit(5)
+    )
+    
+    top_leave_types = [
+        {
+            "name": row.name,
+            "code": row.code,
+            "request_count": int(row.request_count),
+            "total_days": float(row.total_days or 0)
+        }
+        for row in top_types_result.all()
+    ]
+    
+    # 4. Monthly trend (approved leave days per month)
+    monthly_result = await db.execute(
+        select(
+            func.extract('month', LeaveRequestModel.start_date).label("month"),
+            func.count(LeaveRequestModel.id).label("request_count"),
+            func.sum(LeaveRequestModel.total_days).label("total_days")
+        ).where(
+            LeaveRequestModel.tenant_id == tenant_id,
+            LeaveRequestModel.status == 'APPROVED',
+            func.extract('year', LeaveRequestModel.start_date) == year
+        ).group_by(
+            func.extract('month', LeaveRequestModel.start_date)
+        ).order_by(func.extract('month', LeaveRequestModel.start_date))
+    )
+    
+    monthly_data = {int(row.month): {"requests": int(row.request_count), "days": float(row.total_days or 0)} for row in monthly_result.all()}
+    
+    monthly_trend = []
+    month_names_vn = ["", "Th1", "Th2", "Th3", "Th4", "Th5", "Th6", "Th7", "Th8", "Th9", "Th10", "Th11", "Th12"]
+    for m in range(1, 13):
+        data = monthly_data.get(m, {"requests": 0, "days": 0})
+        monthly_trend.append({
+            "month": m,
+            "month_name": month_names_vn[m],
+            "requests": data["requests"],
+            "days": data["days"]
+        })
+    
+    return {
+        "year": year,
+        "total_employees": employee_count,
+        "avg_usage_rate": avg_usage_rate,
+        "burnout_risk_count": burnout_risk_count,
+        "top_leave_types": top_leave_types,
+        "monthly_trend": monthly_trend
+    }
+
 @router.get("/holidays",
              dependencies=[Depends(require_permission("hr", "view"))])
 async def get_holidays(
