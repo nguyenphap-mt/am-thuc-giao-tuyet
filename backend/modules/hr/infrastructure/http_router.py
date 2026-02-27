@@ -5214,7 +5214,7 @@ async def get_leave_analytics(
     active_emps_result = await db.execute(
         select(EmployeeModel.id).where(
             EmployeeModel.tenant_id == tenant_id,
-            EmployeeModel.status == 'ACTIVE'
+            EmployeeModel.is_active == True
         )
     )
     active_emp_ids = set(row[0] for row in active_emps_result.all())
