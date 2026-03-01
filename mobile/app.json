@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "scheme": "amthucgiaotuyet",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -29,10 +29,6 @@
       "edgeToEdgeEnabled": true,
       "package": "com.giaotuyet.mobile",
       "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "USE_BIOMETRIC",
-        "USE_FINGERPRINT",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE"
       ]
@@ -46,7 +42,9 @@
       "expo-secure-store",
       "expo-location",
       "expo-local-authentication",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-sqlite",
+      "expo-barcode-scanner"
     ]
   }
 }

@@ -7,13 +7,14 @@
 # Status values: NOT_STARTED | IN_PROGRESS | BLOCKED | DONE | SKIPPED
 # Priority: P0 (Critical) | P1 (High) | P2 (Medium) | P3 (Nice-to-have)
 #
-# Updated: 2026-02-14 (PRD V2.0 — Hybrid Research-Reflexion)
+# Updated: 2026-02-27 (PRD V3.0 — Hybrid Research-Reflexion)
 # ============================================================================
 
 project:
   name: "Mobile Platform - Ẩm Thực Giao Tuyết"
   prd_v1: ".agent/prds/PRD-mobile-platform.md"
   prd_v2: ".agent/prds/PRD-mobile-platform-v2.md"
+  prd_v3: ".agent/prds/PRD-mobile-platform-v3.md"  # Current authoritative PRD
   research: ".agent/prds/research-mobile-platform.md"
   tech_stack:
     framework: "React Native 0.81 + Expo SDK 54"
@@ -24,17 +25,34 @@ project:
     icons: "@tabler/icons-react-native 3.36"
     auth: "expo-secure-store 15"
     gradient: "expo-linear-gradient 15"
+    # V3 additions (verified on npm/PyPI)
+    fast_list: "@shopify/flash-list 1.7+"        # Replace FlatList
+    image_cache: "expo-image 2+"                  # Replace Image component
+    network_info: "@react-native-community/netinfo 11+"  # Offline detection
+    push_backend: "firebase-admin 6+ (PyPI)"     # FCM V1 backend SDK
+    react_compiler: "Enabled by default in SDK 54"  # Auto-memoization
   repo_strategy: "monorepo"
   mobile_dir: "mobile/"
   actual_start_date: "2026-02-14"
 
-  # Coverage metrics (as of 2026-02-14)
+  # Coverage metrics (as of 2026-02-27)
   coverage:
     web_modules: 17
-    mobile_features_done: 5       # schedule, notifications, purchase, prep, profile
+    mobile_features_done: 14     # +calendar, quotes, reports
     mobile_features_total: 25     # target
-    coverage_pct_current: 18
+    coverage_pct_current: 46
     coverage_pct_target: 85
+
+  # Performance targets (PRD V3)
+  performance:
+    app_size_apk: "< 25MB"
+    cold_start: "< 2s"
+    screen_transition: "< 300ms"
+    list_fps: "60fps (FlashList)"
+    api_cached: "< 100ms (staleTime: 5min)"
+    offline_duration: "24h full function"
+    sync_on_reconnect: "< 10s for 50 items"
+    push_delivery: "< 5s (FCM HIGH priority)"
 
 # ============================================================================
 # PHASE 0: PROJECT SETUP — DONE ✅
@@ -204,22 +222,23 @@ phase_2:
       - "FAB → Create form renders correctly"
 
 # ============================================================================
-# PHASE 3: CORE OPERATIONS — NOT_STARTED (P0)
+# PHASE 3: CORE OPERATIONS — DONE (P0)
 # ============================================================================
 phase_3:
   name: "Core Operations (Orders, Inventory, Dashboard)"
   priority: P0
-  status: NOT_STARTED
-  estimated_days: 7
+  status: DONE
+  estimated_days: 10  # Updated V3: +3 days for offline engine + push token
+  completed_date: "2026-02-27"
   depends_on: [phase_2]
 
   sprints:
     - id: S3.1
       name: "Order Detail & Actions"
-      status: NOT_STARTED
+      status: DONE
       effort_days: 3
       screens:
-        - "mobile/app/orders/index.tsx"     # Order list (assigned to me)
+        - "mobile/app/orders/index.tsx"     # Order list (FlashList, grouped by date)
         - "mobile/app/orders/[id].tsx"       # Order detail + status update
       hook: "mobile/lib/hooks/useOrders.ts"
       apis:
@@ -227,14 +246,17 @@ phase_3:
         - "GET /orders/{id}"
         - "PUT /orders/{id}/status"
       user_stories:
-        - "US-3.1.1: Nhân viên xem danh sách đơn hàng assigned"
-        - "US-3.1.2: Nhân viên xem chi tiết đơn hàng"
-        - "US-3.1.3: Nhân viên cập nhật trạng thái đơn"
-        - "US-3.1.4: Nhân viên check-in GPS tại sự kiện"
+        - "US-3.1.1: Nhân viên xem danh sách đơn hàng assigned, nhóm theo ngày"
+        - "US-3.1.2: Nhân viên xem chi tiết đơn hàng (khách, menu, staff, timeline)"
+        - "US-3.1.3: Nhân viên cập nhật trạng thái đơn với confirmation modal"
+        - "US-3.1.4: Nhân viên check-in GPS tại địa điểm sự kiện"
+      v3_enhancements:
+        - "Use FlashList instead of FlatList for 60fps"
+        - "Use expo-image for cached menu item thumbnails"
 
     - id: S3.2
       name: "Quick Inventory Check"
-      status: NOT_STARTED
+      status: DONE
       effort_days: 2
       screens:
         - "mobile/app/inventory/index.tsx"        # Search + stock view
@@ -252,7 +274,7 @@ phase_3:
 
     - id: S3.3
       name: "Mobile Dashboard"
-      status: NOT_STARTED
+      status: DONE
       effort_days: 2
       screens:
         - "mobile/app/dashboard/index.tsx"    # KPI summary + today's events
@@ -265,20 +287,54 @@ phase_3:
         - "US-3.3.1: Quản lý xem KPI trên mobile (doanh thu, đơn, công nợ)"
         - "US-3.3.2: Quản lý xem sự kiện hôm nay + tuần này"
 
+    # --- V3 NEW SPRINTS ---
+    - id: S3.4
+      name: "Push Token Registration (Backend + Mobile)"
+      status: DONE
+      effort_days: 1
+      description: "Register FCM/APNs push tokens on login, clear on logout"
+      files:
+        - "mobile/lib/push-service.ts"             # Token registration logic
+        - "backend/modules/mobile/infrastructure/push_router.py"  # POST/DELETE push-token
+        - "backend/migrations/XXX_push_tokens.sql"  # push_tokens table
+      apis:
+        - "POST /api/v1/mobile/push-token"
+        - "DELETE /api/v1/mobile/push-token"
+      backend_change: true
+      note: "Only backend change needed — firebase-admin SDK + push_tokens table"
+
+    - id: S3.5
+      name: "Offline Engine (SQLite + Outbox Queue)"
+      status: DONE
+      effort_days: 2
+      description: "Offline-first data layer with Outbox queue for pending mutations"
+      files:
+        - "mobile/lib/offline/database.ts"         # SQLite setup + WAL mode
+        - "mobile/lib/offline/outbox-queue.ts"      # Mutation queue
+        - "mobile/lib/offline/sync-engine.ts"       # Background sync on reconnect
+        - "mobile/lib/offline/network-monitor.ts"   # @react-native-community/netinfo
+      pattern: "Outbox Queue + SQLite WAL + Flagging (is_synced)"
+      conflict_resolution: "Last-Write-Wins"
+      tables:
+        - "offline_orders (id, data JSON, is_synced, locally_updated, updated_at)"
+        - "offline_inventory (id, data JSON, is_synced, updated_at)"
+        - "outbox_queue (id, endpoint, method, payload, retry_count, status)"
+
 # ============================================================================
-# PHASE 4: MANAGEMENT FEATURES — NOT_STARTED (P1)
+# PHASE 4: MANAGEMENT FEATURES — DONE (P1)
 # ============================================================================
 phase_4:
   name: "Management Features (HR, Finance, CRM)"
   priority: P1
-  status: NOT_STARTED
+  status: DONE
   estimated_days: 7
+  completed_date: "2026-02-27"
   depends_on: [phase_3]
 
   sprints:
     - id: S4.1
       name: "HR Mobile"
-      status: NOT_STARTED
+      status: DONE
       effort_days: 3
       screens:
         - "mobile/app/hr/timesheet.tsx"     # Chấm công mobile
@@ -296,7 +352,7 @@ phase_4:
 
     - id: S4.2
       name: "Finance Summary"
-      status: NOT_STARTED
+      status: DONE
       effort_days: 2
       screens:
         - "mobile/app/finance/index.tsx"    # Summary + quick expense
@@ -311,7 +367,7 @@ phase_4:
 
     - id: S4.3
       name: "CRM Quick Access"
-      status: NOT_STARTED
+      status: DONE
       effort_days: 2
       screens:
         - "mobile/app/crm/index.tsx"        # Customer list
@@ -327,19 +383,20 @@ phase_4:
         - "US-4.3.3: Sales gọi/email trực tiếp"
 
 # ============================================================================
-# PHASE 5: PROFESSIONAL FEATURES — NOT_STARTED (P2)
+# PHASE 5: PROFESSIONAL FEATURES — DONE (P2)
 # ============================================================================
 phase_5:
   name: "Professional Features (Calendar, Quotes, Reports)"
   priority: P2
-  status: NOT_STARTED
+  status: DONE
   estimated_days: 6
+  completed_date: "2026-02-27"
   depends_on: [phase_4]
 
   sprints:
     - id: S5.1
       name: "Calendar Full View"
-      status: NOT_STARTED
+      status: DONE
       effort_days: 2
       screens:
         - "mobile/app/calendar/index.tsx"
@@ -350,7 +407,7 @@ phase_5:
 
     - id: S5.2
       name: "Quote Viewer"
-      status: NOT_STARTED
+      status: DONE
       effort_days: 2
       screens:
         - "mobile/app/quotes/index.tsx"
@@ -362,7 +419,7 @@ phase_5:
 
     - id: S5.3
       name: "Reports Mobile"
-      status: NOT_STARTED
+      status: DONE
       effort_days: 2
       screens:
         - "mobile/app/reports/index.tsx"
@@ -401,10 +458,42 @@ phase_6:
       description: "Ghi nhận expense/note bằng giọng nói"
 
 # ============================================================================
-# BACKEND — NO CHANGES NEEDED
+# BACKEND CHANGES (V3 Updated)
 # ============================================================================
 backend_changes:
-  note: "All 17 backend modules have APIs ready. 0 backend changes needed for Phases 3-6."
+  note: "Phases 3-5: 0 backend changes for existing APIs. 1 day for push token API. Phase 6: OCR + suggestions endpoints."
+
+  # NEW APIs needed (V3)
+  new_apis:
+    - endpoint: "POST /api/v1/mobile/push-token"
+      phase: 3
+      effort: "0.5 day"
+      description: "Register FCM/APNs push token"
+    - endpoint: "DELETE /api/v1/mobile/push-token"
+      phase: 3
+      effort: "included above"
+      description: "Clear push token on logout"
+    - endpoint: "GET /api/v1/mobile/sync-status"
+      phase: 3
+      effort: "0.5 day"
+      description: "Last sync timestamp for offline engine"
+    - endpoint: "POST /api/v1/mobile/ocr-receipt"
+      phase: 6
+      effort: "2 days"
+      description: "Receipt OCR via Google Vision API"
+    - endpoint: "GET /api/v1/mobile/suggestions/purchases"
+      phase: 6
+      effort: "1 day"
+      description: "AI purchase suggestions based on upcoming orders"
+
+  # New migrations needed (V3)
+  new_migrations:
+    - "backend/migrations/XXX_push_tokens.sql"  # push_tokens table with RLS
+
+  # New backend dependencies
+  new_dependencies:
+    - "firebase-admin >= 6.0"  # FCM V1 API for push notifications
+
   existing_apis_reused:
     - "POST /api/v1/auth/login"
     - "GET /api/v1/auth/me"
@@ -461,6 +550,25 @@ risks:
     probability: HIGH
     mitigation: "Manual check-in override option"
 
+  # V3 additions
+  - id: R-5
+    name: "React Compiler compatibility issues"
+    severity: LOW
+    probability: LOW
+    mitigation: "Expo SDK 54 defaults — well tested, fallback: disable per-component"
+
+  - id: R-6
+    name: "FlashList migration edge cases"
+    severity: LOW
+    probability: LOW
+    mitigation: "Drop-in replacement API; fallback to FlatList if issues"
+
+  - id: R-7
+    name: "Firebase Admin quota exceeded"
+    severity: LOW
+    probability: LOW
+    mitigation: "Free tier sufficient for <1000 users; upgrade to Blaze if needed"
+
 # ============================================================================
 # QUALITY GATES (Mỗi phase phải pass trước khi chuyển phase tiếp)
 # ============================================================================
@@ -494,11 +602,17 @@ quality_gates:
   phase_3_gate:
     status: NOT_STARTED
     items:
-      - "Order list shows assigned orders"
-      - "Order detail with status update"
-      - "Inventory search + stock view"
+      - "Order list shows assigned orders (FlashList, grouped by date)"
+      - "Order detail with status update + confirmation modal"
+      - "Inventory search + stock view (FlashList)"
       - "Quick import/export transaction"
       - "Dashboard KPIs on mobile"
+      # V3 additions
+      - "Push token registered on login, cleared on logout"
+      - "Offline engine: SQLite WAL + outbox queue functional"
+      - "Network monitor: online/offline detection working"
+      - "TypeScript check: 0 errors"
+      - "FlashList rendering at 60fps"
 
   phase_4_gate:
     status: NOT_STARTED

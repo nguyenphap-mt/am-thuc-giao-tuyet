@@ -1,25 +1,36 @@
-// Order List — "Đơn hàng của tôi"
-import { useState, useCallback } from 'react';
+// Order List — Material Design 3
+import { useState, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
-    FlatList,
-    TouchableOpacity,
+    Pressable,
     StyleSheet,
     RefreshControl,
 } from 'react-native';
+import { FlatList } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, FontSize, Spacing, BorderRadius } from '../../constants/colors';
 import { useOrderList, type Order } from '../../lib/hooks/useOrders';
+import { hapticLight } from '../../lib/haptics';
+import { OfflineBanner } from '../../components/OfflineBanner';
 
-const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string; icon: string }> = {
-    DRAFT: { bg: '#f1f5f9', text: Colors.textSecondary, label: 'Nháp', icon: '📝' },
-    PENDING: { bg: '#fff7ed', text: Colors.warning, label: 'Chờ xác nhận', icon: '⏳' },
-    CONFIRMED: { bg: '#eff6ff', text: Colors.info, label: 'Đã xác nhận', icon: '✅' },
-    IN_PROGRESS: { bg: '#fef3c7', text: '#d97706', label: 'Đang thực hiện', icon: '🔥' },
-    COMPLETED: { bg: '#f0fdf4', text: Colors.success, label: 'Hoàn thành', icon: '🎉' },
-    CANCELLED: { bg: '#fef2f2', text: Colors.error, label: 'Đã hủy', icon: '❌' },
+const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string; icon: keyof typeof MaterialIcons.glyphMap }> = {
+    DRAFT: { bg: '#f1f5f9', text: Colors.textSecondary, label: 'Nháp', icon: 'edit' },
+    PENDING: { bg: '#fff7ed', text: Colors.warning, label: 'Chờ xác nhận', icon: 'schedule' },
+    CONFIRMED: { bg: '#eff6ff', text: Colors.info, label: 'Đã xác nhận', icon: 'check-circle' },
+    IN_PROGRESS: { bg: '#fef3c7', text: '#d97706', label: 'Đang thực hiện', icon: 'play-circle-filled' },
+    COMPLETED: { bg: '#f0fdf4', text: Colors.success, label: 'Hoàn thành', icon: 'verified' },
+    CANCELLED: { bg: '#fef2f2', text: Colors.error, label: 'Đã hủy', icon: 'cancel' },
 };
+
+// Stat card color tokens
+const STAT_COLORS = {
+    today: { bg: '#eff6ff', accent: Colors.info },
+    active: { bg: '#fff7ed', accent: Colors.warning },
+    total: { bg: '#f0fdf4', accent: Colors.success },
+} as const;
 
 function formatCurrency(amount: number): string {
     return new Intl.NumberFormat('vi-VN', {
@@ -40,42 +51,6 @@ function formatDate(dateStr: string | null | undefined): string {
     });
 }
 
-function groupOrdersByDate(orders: Order[]): { title: string; data: Order[] }[] {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const groups: Record<string, Order[]> = {};
-
-    for (const order of orders) {
-        const eventDate = order.event_date ? new Date(order.event_date) : null;
-        let key = 'Khác';
-
-        if (eventDate) {
-            eventDate.setHours(0, 0, 0, 0);
-            if (eventDate.getTime() === today.getTime()) {
-                key = '📅 Hôm nay';
-            } else if (eventDate.getTime() === tomorrow.getTime()) {
-                key = '📅 Ngày mai';
-            } else if (eventDate > today) {
-                key = '📅 Sắp tới';
-            } else {
-                key = '📅 Đã qua';
-            }
-        }
-
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(order);
-    }
-
-    // Sort: Hôm nay first, Ngày mai second, Sắp tới third, rest last
-    const priority = ['📅 Hôm nay', '📅 Ngày mai', '📅 Sắp tới', '📅 Đã qua', 'Khác'];
-    return priority
-        .filter(k => groups[k]?.length)
-        .map(title => ({ title, data: groups[title] }));
-}
-
 export default function OrderListScreen() {
     const router = useRouter();
     const [refreshing, setRefreshing] = useState(false);
@@ -87,32 +62,37 @@ export default function OrderListScreen() {
         setRefreshing(false);
     }, [refetch]);
 
-    const grouped = groupOrdersByDate(orders);
-
-    // Stats
-    const activeCount = orders.filter(o => ['CONFIRMED', 'IN_PROGRESS'].includes(o.status)).length;
-    const todayCount = orders.filter(o => {
-        if (!o.event_date) return false;
-        const d = new Date(o.event_date);
+    // Memoize computed stats
+    const { activeCount, todayCount } = useMemo(() => {
         const today = new Date();
-        return d.toDateString() === today.toDateString();
-    }).length;
+        const todayStr = today.toDateString();
+        let active = 0;
+        let todayN = 0;
+        for (const o of orders) {
+            if (['CONFIRMED', 'IN_PROGRESS'].includes(o.status)) active++;
+            if (o.event_date && new Date(o.event_date).toDateString() === todayStr) todayN++;
+        }
+        return { activeCount: active, todayCount: todayN };
+    }, [orders]);
 
-    const renderItem = ({ item }: { item: Order }) => {
+    const renderItem = useCallback(({ item }: { item: Order }) => {
         const status = STATUS_CONFIG[item.status] || STATUS_CONFIG.PENDING;
 
         return (
-            <TouchableOpacity
-                style={styles.card}
-                activeOpacity={0.7}
-                onPress={() => router.push(`/orders/${item.id}`)}
+            <Pressable
+                style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+                onPress={() => { hapticLight(); router.push(`/orders/${item.id}`); }}
+                accessibilityLabel={`Đơn hàng ${item.code}, khách ${item.customer_name}, trạng thái ${status.label}, ${formatCurrency(item.final_amount)}`}
+                accessibilityRole="button"
+                accessibilityHint="Nhấn để xem chi tiết đơn hàng"
+                android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
             >
                 <View style={styles.cardHeader}>
                     <View style={styles.cardHeaderLeft}>
                         <Text style={styles.orderCode}>{item.code}</Text>
                     </View>
-                    <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-                        <Text style={styles.statusIcon}>{status.icon}</Text>
+                    <View style={[styles.statusChip, { backgroundColor: status.bg }]}>
+                        <MaterialIcons name={status.icon} size={12} color={status.text} />
                         <Text style={[styles.statusText, { color: status.text }]}>
                             {status.label}
                         </Text>
@@ -120,75 +100,108 @@ export default function OrderListScreen() {
                 </View>
 
                 <View style={styles.cardContent}>
-                    <Text style={styles.customerName} numberOfLines={1}>
-                        👤 {item.customer_name}
-                    </Text>
-                    {item.event_location && (
-                        <Text style={styles.metaText} numberOfLines={1}>
-                            📍 {item.event_location}
+                    <View style={styles.metaRow}>
+                        <MaterialIcons name="person" size={14} color={Colors.textSecondary} />
+                        <Text style={styles.customerName} numberOfLines={1}>
+                            {item.customer_name}
                         </Text>
+                    </View>
+                    {item.event_location && (
+                        <View style={styles.metaRow}>
+                            <MaterialIcons name="place" size={14} color={Colors.textSecondary} />
+                            <Text style={styles.metaText} numberOfLines={1}>{item.event_location}</Text>
+                        </View>
                     )}
                     <View style={styles.cardMeta}>
-                        <Text style={styles.metaText}>
-                            {item.event_date ? formatDate(item.event_date) : 'Chưa có ngày'}
-                            {item.guest_count ? ` · ${item.guest_count} khách` : ''}
-                        </Text>
+                        <View style={styles.metaRow}>
+                            <MaterialIcons name="event" size={14} color={Colors.textSecondary} />
+                            <Text style={styles.metaText}>
+                                {item.event_date ? formatDate(item.event_date) : 'Chưa có ngày'}
+                                {item.guest_count ? ` · ${item.guest_count} khách` : ''}
+                            </Text>
+                        </View>
                         <Text style={styles.metaAmount}>
                             {formatCurrency(item.final_amount)}
                         </Text>
                     </View>
                 </View>
-            </TouchableOpacity>
+            </Pressable>
         );
-    };
+    }, [router]);
+
+    const keyExtractor = useCallback((item: Order) => item.id, []);
 
     return (
-        <View style={styles.container}>
-            {/* Stats */}
-            <View style={styles.statsRow}>
-                <View style={[styles.statCard, { backgroundColor: '#eff6ff' }]}>
-                    <Text style={[styles.statNumber, { color: Colors.info }]}>{todayCount}</Text>
-                    <Text style={styles.statLabel}>Hôm nay</Text>
+        <SafeAreaView style={styles.safeArea} edges={['top']}>
+            <OfflineBanner />
+            <View style={styles.container}>
+                {/* Stats */}
+                <View style={styles.statsRow}>
+                    <View
+                        style={[styles.statCard, { backgroundColor: STAT_COLORS.today.bg }]}
+                        accessibilityLabel={`Hôm nay: ${todayCount} đơn hàng`}
+                        accessibilityRole="text"
+                    >
+                        <MaterialIcons name="today" size={18} color={STAT_COLORS.today.accent} />
+                        <Text style={[styles.statNumber, { color: STAT_COLORS.today.accent }]}>{todayCount}</Text>
+                        <Text style={styles.statLabel}>Hôm nay</Text>
+                    </View>
+                    <View
+                        style={[styles.statCard, { backgroundColor: STAT_COLORS.active.bg }]}
+                        accessibilityLabel={`Đang xử lý: ${activeCount} đơn hàng`}
+                        accessibilityRole="text"
+                    >
+                        <MaterialIcons name="pending-actions" size={18} color={STAT_COLORS.active.accent} />
+                        <Text style={[styles.statNumber, { color: STAT_COLORS.active.accent }]}>{activeCount}</Text>
+                        <Text style={styles.statLabel}>Đang xử lý</Text>
+                    </View>
+                    <View
+                        style={[styles.statCard, { backgroundColor: STAT_COLORS.total.bg }]}
+                        accessibilityLabel={`Tổng: ${orders.length} đơn hàng`}
+                        accessibilityRole="text"
+                    >
+                        <MaterialIcons name="receipt-long" size={18} color={STAT_COLORS.total.accent} />
+                        <Text style={[styles.statNumber, { color: STAT_COLORS.total.accent }]}>{orders.length}</Text>
+                        <Text style={styles.statLabel}>Tổng đơn</Text>
+                    </View>
                 </View>
-                <View style={[styles.statCard, { backgroundColor: '#fff7ed' }]}>
-                    <Text style={[styles.statNumber, { color: Colors.warning }]}>{activeCount}</Text>
-                    <Text style={styles.statLabel}>Đang xử lý</Text>
-                </View>
-                <View style={[styles.statCard, { backgroundColor: '#f0fdf4' }]}>
-                    <Text style={[styles.statNumber, { color: Colors.success }]}>{orders.length}</Text>
-                    <Text style={styles.statLabel}>Tổng đơn</Text>
-                </View>
-            </View>
 
-            <FlatList
-                data={orders}
-                keyExtractor={(item) => item.id}
-                renderItem={renderItem}
-                contentContainerStyle={styles.list}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
-                        tintColor={Colors.primary}
-                    />
-                }
-                ListEmptyComponent={
-                    !isLoading ? (
-                        <View style={styles.empty}>
-                            <Text style={styles.emptyIcon}>📋</Text>
-                            <Text style={styles.emptyTitle}>Chưa có đơn hàng</Text>
-                            <Text style={styles.emptyText}>
-                                Đơn hàng được phân công sẽ hiển thị tại đây.
-                            </Text>
-                        </View>
-                    ) : null
-                }
-            />
-        </View>
+                <FlatList
+                    data={orders}
+                    keyExtractor={keyExtractor}
+                    renderItem={renderItem}
+                    contentContainerStyle={styles.list}
+                    showsVerticalScrollIndicator={false}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            tintColor={Colors.primary}
+                            colors={[Colors.primary, Colors.primaryDark]}
+                        />
+                    }
+                    ListEmptyComponent={
+                        !isLoading ? (
+                            <View style={styles.empty}>
+                                <MaterialIcons name="receipt-long" size={56} color={Colors.textTertiary} />
+                                <Text style={styles.emptyTitle}>Chưa có đơn hàng</Text>
+                                <Text style={styles.emptyText}>
+                                    Đơn hàng được phân công sẽ hiển thị tại đây.
+                                </Text>
+                            </View>
+                        ) : null
+                    }
+                />
+            </View>
+        </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
+    safeArea: {
+        flex: 1,
+        backgroundColor: Colors.bgSecondary,
+    },
     container: {
         flex: 1,
         backgroundColor: Colors.bgSecondary,
@@ -201,9 +214,10 @@ const styles = StyleSheet.create({
     },
     statCard: {
         flex: 1,
-        borderRadius: BorderRadius.md,
+        borderRadius: BorderRadius.lg,
         padding: Spacing.md,
         alignItems: 'center',
+        gap: 2,
     },
     statNumber: {
         fontSize: FontSize.xxl,
@@ -213,7 +227,6 @@ const styles = StyleSheet.create({
     statLabel: {
         fontSize: FontSize.xs,
         color: Colors.textSecondary,
-        marginTop: 2,
         fontWeight: '500',
     },
     list: {
@@ -225,10 +238,14 @@ const styles = StyleSheet.create({
         borderRadius: BorderRadius.lg,
         overflow: 'hidden',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.06,
-        shadowRadius: 4,
+        shadowRadius: 6,
         elevation: 2,
+    },
+    pressed: {
+        opacity: 0.85,
+        transform: [{ scale: 0.99 }],
     },
     cardHeader: {
         flexDirection: 'row',
@@ -249,15 +266,14 @@ const styles = StyleSheet.create({
         color: Colors.textPrimary,
         fontVariant: ['tabular-nums'],
     },
-    statusBadge: {
+    statusChip: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
         paddingHorizontal: Spacing.sm,
-        paddingVertical: 2,
+        paddingVertical: 3,
         borderRadius: BorderRadius.sm,
     },
-    statusIcon: { fontSize: 12 },
     statusText: {
         fontSize: FontSize.xs,
         fontWeight: '600',
@@ -266,10 +282,16 @@ const styles = StyleSheet.create({
         padding: Spacing.lg,
         gap: Spacing.xs,
     },
+    metaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
     customerName: {
         fontSize: FontSize.md,
         fontWeight: '600',
         color: Colors.textPrimary,
+        flex: 1,
     },
     cardMeta: {
         flexDirection: 'row',
@@ -291,13 +313,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingTop: 80,
         paddingHorizontal: Spacing.xxxl,
+        gap: Spacing.sm,
     },
-    emptyIcon: { fontSize: 48, marginBottom: Spacing.lg },
     emptyTitle: {
         fontSize: FontSize.lg,
         fontWeight: '700',
         color: Colors.textPrimary,
-        marginBottom: Spacing.sm,
     },
     emptyText: {
         fontSize: FontSize.md,

@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { registerPushToken, unregisterPushToken } from './push-service';
 
 // Platform-aware storage adapter
 const storage = {
@@ -68,9 +69,13 @@ export const useAuthStore = create<AuthState>((set) => ({
             isAuthenticated: true,
             isLoading: false,
         });
+        // Register push token after login (non-blocking)
+        registerPushToken().catch(err => console.warn('[Auth] Push token registration failed:', err));
     },
 
     logout: async () => {
+        // Unregister push token before logout (non-blocking)
+        unregisterPushToken().catch(err => console.warn('[Auth] Push token unregister failed:', err));
         await storage.removeItem(TOKEN_KEY);
         await storage.removeItem(USER_KEY);
         set({

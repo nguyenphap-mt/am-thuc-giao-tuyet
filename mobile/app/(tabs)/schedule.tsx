@@ -1,17 +1,19 @@
-// Schedule Screen — My assignments/events
+// Schedule Screen — My assignments/events (Material Design 3)
 import { useState, useCallback } from 'react';
 import {
     View,
     Text,
     FlatList,
-    TouchableOpacity,
+    Pressable,
     StyleSheet,
     RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
+import { MaterialIcons } from '@expo/vector-icons';
 import api from '../../lib/api';
 import { Colors, FontSize, Spacing, BorderRadius } from '../../constants/colors';
+import { hapticLight } from '../../lib/haptics';
 
 interface ScheduleItem {
     order_id: string;
@@ -24,19 +26,12 @@ interface ScheduleItem {
     customer_name: string | null;
 }
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-    PENDING: { bg: '#fff7ed', text: Colors.warning },
-    CONFIRMED: { bg: '#f0fdf4', text: Colors.success },
-    IN_PROGRESS: { bg: '#eff6ff', text: Colors.info },
-    COMPLETED: { bg: '#f0fdf4', text: '#15803d' },
-    DEFAULT: { bg: Colors.bgTertiary, text: Colors.textSecondary },
-};
-
-const STATUS_LABELS: Record<string, string> = {
-    PENDING: 'Chờ xác nhận',
-    CONFIRMED: 'Đã xác nhận',
-    IN_PROGRESS: 'Đang thực hiện',
-    COMPLETED: 'Hoàn thành',
+const STATUS_CONFIG: Record<string, { bg: string; text: string; icon: keyof typeof MaterialIcons.glyphMap; label: string }> = {
+    PENDING: { bg: '#fff7ed', text: Colors.warning, icon: 'schedule', label: 'Chờ xác nhận' },
+    CONFIRMED: { bg: '#f0fdf4', text: Colors.success, icon: 'check-circle', label: 'Đã xác nhận' },
+    IN_PROGRESS: { bg: '#eff6ff', text: Colors.info, icon: 'play-circle-filled', label: 'Đang thực hiện' },
+    COMPLETED: { bg: '#f0fdf4', text: '#15803d', icon: 'verified', label: 'Hoàn thành' },
+    DEFAULT: { bg: Colors.bgTertiary, text: Colors.textSecondary, icon: 'circle', label: '' },
 };
 
 function formatDate(dateStr: string | null): string {
@@ -72,20 +67,28 @@ export default function ScheduleScreen() {
     }, [refetch]);
 
     const renderItem = ({ item }: { item: ScheduleItem }) => {
-        const statusStyle = STATUS_COLORS[item.status] || STATUS_COLORS.DEFAULT;
+        const statusCfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.DEFAULT;
 
         return (
-            <TouchableOpacity
-                style={styles.card}
-                activeOpacity={0.7}
-                onPress={() => router.push(`/event/${item.order_id}`)}
+            <Pressable
+                style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+                onPress={() => { hapticLight(); router.push(`/event/${item.order_id}`); }}
+                accessibilityLabel={`Sự kiện ${item.event_name}`}
+                accessibilityRole="button"
+                android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
             >
                 {/* Date bar */}
                 <View style={styles.dateBar}>
-                    <Text style={styles.dateText}>{formatDate(item.start_time)}</Text>
-                    <Text style={styles.timeText}>
-                        {formatTime(item.start_time)} — {formatTime(item.end_time)}
-                    </Text>
+                    <View style={styles.dateRow}>
+                        <MaterialIcons name="event" size={16} color={Colors.textPrimary} />
+                        <Text style={styles.dateText}>{formatDate(item.start_time)}</Text>
+                    </View>
+                    <View style={styles.timeRow}>
+                        <MaterialIcons name="schedule" size={14} color={Colors.textSecondary} />
+                        <Text style={styles.timeText}>
+                            {formatTime(item.start_time)} — {formatTime(item.end_time)}
+                        </Text>
+                    </View>
                 </View>
 
                 {/* Content */}
@@ -95,29 +98,35 @@ export default function ScheduleScreen() {
                     </Text>
 
                     {item.customer_name && (
-                        <Text style={styles.customerName}>🤝 {item.customer_name}</Text>
+                        <View style={styles.metaRow}>
+                            <MaterialIcons name="handshake" size={14} color={Colors.textSecondary} />
+                            <Text style={styles.metaText}>{item.customer_name}</Text>
+                        </View>
                     )}
 
                     {item.location && (
-                        <Text style={styles.location} numberOfLines={1}>
-                            📍 {item.location}
-                        </Text>
+                        <View style={styles.metaRow}>
+                            <MaterialIcons name="place" size={14} color={Colors.textSecondary} />
+                            <Text style={styles.metaText} numberOfLines={1}>{item.location}</Text>
+                        </View>
                     )}
 
                     <View style={styles.footer}>
                         {item.role && (
                             <View style={styles.roleBadge}>
+                                <MaterialIcons name="badge" size={12} color={Colors.textPrimary} />
                                 <Text style={styles.roleText}>{item.role}</Text>
                             </View>
                         )}
-                        <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
-                            <Text style={[styles.statusText, { color: statusStyle.text }]}>
-                                {STATUS_LABELS[item.status] || item.status}
+                        <View style={[styles.statusChip, { backgroundColor: statusCfg.bg }]}>
+                            <MaterialIcons name={statusCfg.icon} size={12} color={statusCfg.text} />
+                            <Text style={[styles.statusText, { color: statusCfg.text }]}>
+                                {statusCfg.label || item.status}
                             </Text>
                         </View>
                     </View>
                 </View>
-            </TouchableOpacity>
+            </Pressable>
         );
     };
 
@@ -133,12 +142,13 @@ export default function ScheduleScreen() {
                         refreshing={refreshing}
                         onRefresh={onRefresh}
                         tintColor={Colors.primary}
+                        colors={[Colors.primary, Colors.primaryDark]}
                     />
                 }
                 ListEmptyComponent={
                     !isLoading ? (
                         <View style={styles.empty}>
-                            <Text style={styles.emptyIcon}>📅</Text>
+                            <MaterialIcons name="event-available" size={56} color={Colors.textTertiary} />
                             <Text style={styles.emptyTitle}>Chưa có lịch làm việc</Text>
                             <Text style={styles.emptyText}>
                                 Bạn sẽ nhận được thông báo khi được phân công sự kiện mới.
@@ -166,10 +176,14 @@ const styles = StyleSheet.create({
         borderRadius: BorderRadius.lg,
         overflow: 'hidden',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.06,
-        shadowRadius: 4,
+        shadowRadius: 6,
         elevation: 2,
+    },
+    pressed: {
+        opacity: 0.85,
+        transform: [{ scale: 0.99 }],
     },
     dateBar: {
         flexDirection: 'row',
@@ -179,10 +193,20 @@ const styles = StyleSheet.create({
         paddingVertical: Spacing.sm,
         backgroundColor: Colors.bgTertiary,
     },
+    dateRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
     dateText: {
         fontSize: FontSize.sm,
         fontWeight: '600',
         color: Colors.textPrimary,
+    },
+    timeRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
     },
     timeText: {
         fontSize: FontSize.sm,
@@ -198,13 +222,15 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: Colors.textPrimary,
     },
-    customerName: {
-        fontSize: FontSize.sm,
-        color: Colors.textSecondary,
+    metaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
     },
-    location: {
+    metaText: {
         fontSize: FontSize.sm,
         color: Colors.textSecondary,
+        flex: 1,
     },
     footer: {
         flexDirection: 'row',
@@ -213,9 +239,12 @@ const styles = StyleSheet.create({
         marginTop: Spacing.xs,
     },
     roleBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
         backgroundColor: Colors.bgTertiary,
         paddingHorizontal: Spacing.sm,
-        paddingVertical: 2,
+        paddingVertical: 3,
         borderRadius: BorderRadius.sm,
     },
     roleText: {
@@ -223,9 +252,12 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: Colors.textPrimary,
     },
-    statusBadge: {
+    statusChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
         paddingHorizontal: Spacing.sm,
-        paddingVertical: 2,
+        paddingVertical: 3,
         borderRadius: BorderRadius.sm,
     },
     statusText: {
@@ -236,16 +268,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingTop: 100,
         paddingHorizontal: Spacing.xxxl,
-    },
-    emptyIcon: {
-        fontSize: 48,
-        marginBottom: Spacing.lg,
+        gap: Spacing.sm,
     },
     emptyTitle: {
         fontSize: FontSize.lg,
         fontWeight: '700',
         color: Colors.textPrimary,
-        marginBottom: Spacing.sm,
     },
     emptyText: {
         fontSize: FontSize.md,

@@ -3,12 +3,13 @@ import { useState } from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
+    Pressable,
     StyleSheet,
     Alert,
     ScrollView,
     ActivityIndicator,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
@@ -62,7 +63,7 @@ export default function EventDetailScreen() {
             });
 
             Alert.alert(
-                type === 'in' ? '✅ Check-in thành công' : '✅ Check-out thành công',
+                type === 'in' ? 'Check-in thành công' : 'Check-out thành công',
                 `${type === 'in' ? 'Đã ghi nhận check-in' : 'Đã ghi nhận check-out'} lúc ${new Date().toLocaleTimeString('vi-VN')}`,
             );
 
@@ -79,7 +80,7 @@ export default function EventDetailScreen() {
             <View style={styles.container}>
                 <Stack.Screen options={{ title: 'Chi tiết sự kiện' }} />
                 <View style={styles.notFound}>
-                    <Text style={styles.notFoundIcon}>🔍</Text>
+                    <MaterialIcons name="search" size={48} color={Colors.textTertiary} />
                     <Text style={styles.notFoundText}>Không tìm thấy sự kiện</Text>
                 </View>
             </View>
@@ -122,7 +123,7 @@ export default function EventDetailScreen() {
             {/* Event Info */}
             <View style={styles.infoCard}>
                 <View style={styles.infoRow}>
-                    <Text style={styles.infoIcon}>📅</Text>
+                    <MaterialIcons name="event" size={20} color={Colors.textSecondary} />
                     <View>
                         <Text style={styles.infoLabel}>Ngày</Text>
                         <Text style={styles.infoValue}>{eventDate}</Text>
@@ -132,7 +133,7 @@ export default function EventDetailScreen() {
                 <View style={styles.divider} />
 
                 <View style={styles.infoRow}>
-                    <Text style={styles.infoIcon}>⏰</Text>
+                    <MaterialIcons name="schedule" size={20} color={Colors.textSecondary} />
                     <View>
                         <Text style={styles.infoLabel}>Thời gian</Text>
                         <Text style={styles.infoValue}>{startTime}</Text>
@@ -143,7 +144,7 @@ export default function EventDetailScreen() {
                     <>
                         <View style={styles.divider} />
                         <View style={styles.infoRow}>
-                            <Text style={styles.infoIcon}>📍</Text>
+                            <MaterialIcons name="place" size={20} color={Colors.textSecondary} />
                             <View style={{ flex: 1 }}>
                                 <Text style={styles.infoLabel}>Địa điểm</Text>
                                 <Text style={styles.infoValue}>{event.location}</Text>
@@ -156,7 +157,7 @@ export default function EventDetailScreen() {
                     <>
                         <View style={styles.divider} />
                         <View style={styles.infoRow}>
-                            <Text style={styles.infoIcon}>🤝</Text>
+                            <MaterialIcons name="handshake" size={20} color={Colors.textSecondary} />
                             <View>
                                 <Text style={styles.infoLabel}>Khách hàng</Text>
                                 <Text style={styles.infoValue}>{event.customer_name}</Text>
@@ -169,7 +170,7 @@ export default function EventDetailScreen() {
                     <>
                         <View style={styles.divider} />
                         <View style={styles.infoRow}>
-                            <Text style={styles.infoIcon}>👤</Text>
+                            <MaterialIcons name="person" size={20} color={Colors.textSecondary} />
                             <View>
                                 <Text style={styles.infoLabel}>Vai trò</Text>
                                 <Text style={styles.infoValue}>{event.role}</Text>
@@ -183,7 +184,7 @@ export default function EventDetailScreen() {
             <View style={styles.checkInSection}>
                 <Text style={styles.sectionTitle}>Chấm công</Text>
 
-                <TouchableOpacity
+                <Pressable
                     onPress={() => handleCheckIn('in')}
                     disabled={checkingIn}
                     style={styles.checkInWrapper}
@@ -196,14 +197,14 @@ export default function EventDetailScreen() {
                             <ActivityIndicator color="#fff" />
                         ) : (
                             <>
-                                <Text style={styles.checkInIcon}>📥</Text>
+                                <MaterialIcons name="login" size={20} color={Colors.textInverse} />
                                 <Text style={styles.checkInText}>Check-in</Text>
                             </>
                         )}
                     </LinearGradient>
-                </TouchableOpacity>
+                </Pressable>
 
-                <TouchableOpacity
+                <Pressable
                     onPress={() => handleCheckIn('out')}
                     disabled={checkingIn}
                     style={styles.checkInWrapper}
@@ -216,12 +217,12 @@ export default function EventDetailScreen() {
                             <ActivityIndicator color="#fff" />
                         ) : (
                             <>
-                                <Text style={styles.checkInIcon}>📤</Text>
+                                <MaterialIcons name="logout" size={20} color={Colors.textInverse} />
                                 <Text style={styles.checkInText}>Check-out</Text>
                             </>
                         )}
                     </LinearGradient>
-                </TouchableOpacity>
+                </Pressable>
             </View>
         </ScrollView>
     );

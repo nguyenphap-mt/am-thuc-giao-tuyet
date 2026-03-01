@@ -4,7 +4,7 @@ import {
     View,
     Text,
     TextInput,
-    TouchableOpacity,
+    Pressable,
     StyleSheet,
     ScrollView,
     Alert,
@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, FontSize, Spacing, BorderRadius } from '../../constants/colors';
 import { useCreatePR } from '../../lib/hooks/usePurchase';
+import { hapticLight, hapticMedium, hapticWarning } from '../../lib/haptics';
 
 interface LineItem {
     item_name: string;
@@ -104,10 +105,10 @@ export default function CreatePRScreen() {
 
     return (
         <KeyboardAvoidingView
-            style={{ flex: 1 }}
+            style={styles.flex1}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-            <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+            <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 {/* Title */}
                 <View style={styles.field}>
                     <Text style={styles.label}>
@@ -127,16 +128,21 @@ export default function CreatePRScreen() {
                     <Text style={styles.label}>Mức ưu tiên</Text>
                     <View style={styles.priorityRow}>
                         {PRIORITIES.map((p) => (
-                            <TouchableOpacity
+                            <Pressable
                                 key={p.value}
-                                style={[
+                                style={({ pressed }) => [
                                     styles.priorityChip,
                                     priority === p.value && {
                                         backgroundColor: p.color + '20',
                                         borderColor: p.color,
                                     },
+                                    pressed && { opacity: 0.7 },
                                 ]}
-                                onPress={() => setPriority(p.value)}
+                                onPress={() => { hapticLight(); setPriority(p.value); }}
+                                accessibilityLabel={`Mức ưu tiên ${p.label}`}
+                                accessibilityRole="button"
+                                accessibilityState={{ selected: priority === p.value }}
+                                android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
                             >
                                 <Text
                                     style={[
@@ -146,7 +152,7 @@ export default function CreatePRScreen() {
                                 >
                                     {p.label}
                                 </Text>
-                            </TouchableOpacity>
+                            </Pressable>
                         ))}
                     </View>
                 </View>
@@ -155,9 +161,15 @@ export default function CreatePRScreen() {
                 <View style={styles.field}>
                     <View style={styles.sectionHeader}>
                         <Text style={styles.label}>Mặt hàng</Text>
-                        <TouchableOpacity style={styles.addBtn} onPress={addLine}>
+                        <Pressable
+                            style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.7 }]}
+                            onPress={() => { hapticLight(); addLine(); }}
+                            accessibilityLabel="Thêm mặt hàng mới"
+                            accessibilityRole="button"
+                            android_ripple={{ color: 'rgba(0,0,0,0.08)' }}
+                        >
                             <Text style={styles.addBtnText}>＋ Thêm</Text>
-                        </TouchableOpacity>
+                        </Pressable>
                     </View>
 
                     {lines.map((line, i) => (
@@ -165,9 +177,14 @@ export default function CreatePRScreen() {
                             <View style={styles.lineHeader}>
                                 <Text style={styles.lineNumber}>#{i + 1}</Text>
                                 {lines.length > 1 && (
-                                    <TouchableOpacity onPress={() => removeLine(i)}>
-                                        <Text style={styles.removeBtn}>✕</Text>
-                                    </TouchableOpacity>
+                                    <Pressable
+                                        onPress={() => { hapticWarning(); removeLine(i); }}
+                                        accessibilityLabel={`Xóa mặt hàng ${i + 1}`}
+                                        accessibilityRole="button"
+                                        style={({ pressed }) => pressed && { opacity: 0.6 }}
+                                    >
+                                        <Text style={styles.removeBtnText}>✕</Text>
+                                    </Pressable>
                                 )}
                             </View>
 
@@ -239,10 +256,13 @@ export default function CreatePRScreen() {
                 </View>
 
                 {/* Submit */}
-                <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={handleSubmit}
+                <Pressable
+                    style={({ pressed }) => pressed && { opacity: 0.85 }}
+                    onPress={() => { hapticMedium(); handleSubmit(); }}
                     disabled={createPR.isPending}
+                    accessibilityLabel="Tạo yêu cầu mua hàng"
+                    accessibilityRole="button"
+                    android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
                 >
                     <LinearGradient
                         colors={[Colors.gradientStart, Colors.gradientMid, Colors.gradientEnd]}
@@ -251,12 +271,12 @@ export default function CreatePRScreen() {
                         style={styles.submitBtn}
                     >
                         <Text style={styles.submitText}>
-                            {createPR.isPending ? 'Đang tạo...' : '🛒 Tạo yêu cầu mua hàng'}
+                            {createPR.isPending ? 'Đang tạo…' : 'Tạo yêu cầu mua hàng'}
                         </Text>
                     </LinearGradient>
-                </TouchableOpacity>
+                </Pressable>
 
-                <View style={{ height: 40 }} />
+                <View style={styles.bottomSpacer} />
             </ScrollView>
         </KeyboardAvoidingView>
     );
@@ -354,7 +374,7 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: Colors.primary,
     },
-    removeBtn: {
+    removeBtnText: {
         fontSize: FontSize.lg,
         color: Colors.error,
         fontWeight: '600',
@@ -413,4 +433,6 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: Colors.textInverse,
     },
+    bottomSpacer: { height: 40 },
+    flex1: { flex: 1 },
 });

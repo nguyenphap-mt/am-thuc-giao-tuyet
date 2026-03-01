@@ -56,6 +56,8 @@ else:
     ALLOWED_ORIGINS = [
         "http://localhost:3000",
         "http://localhost:4500",
+        "http://localhost:8081",         # Expo Web (Metro bundler)
+        "http://localhost:8082",         # Expo Web (fallback port)
         "https://amthucgiaotuyet.vercel.app",
     ]
     _allow_credentials = True
@@ -113,6 +115,11 @@ app.include_router(hr_router.router, prefix="/api/v1/hr",
 # Bypasses HR module guard so Chef/Staff/Sales can manage their own leave
 from backend.modules.hr.infrastructure.leave_self_service_router import router as leave_self_service_router
 app.include_router(leave_self_service_router, prefix="/api/v1/hr")
+
+# Employee Self-Service Timesheet & Payroll — accessible by ALL authenticated users
+# Bypasses HR module guard so all staff can view their own attendance & salary
+from backend.modules.hr.infrastructure.hr_self_service_router import router as hr_self_service_router
+app.include_router(hr_self_service_router, prefix="/api/v1/hr")
 app.include_router(finance_router.router, prefix="/api/v1/finance",
                    dependencies=[Depends(require_permission("finance"))])
 app.include_router(crm_router.router, prefix="/api/v1/crm",
@@ -127,6 +134,11 @@ app.include_router(dashboard_router.router, prefix="/api/v1",
                    dependencies=[Depends(require_permission("dashboard"))])
 app.include_router(mobile_router.router, prefix="/api/v1",
                    dependencies=[Depends(require_permission("mobile"))])
+
+# Mobile Push Token (open to all authenticated users — self-registers)
+from backend.modules.mobile.infrastructure import push_router as mobile_push_router
+app.include_router(mobile_push_router.router)
+
 app.include_router(notification_router.router, prefix="/api/v1",
                    dependencies=[Depends(require_permission("notification"))])
 

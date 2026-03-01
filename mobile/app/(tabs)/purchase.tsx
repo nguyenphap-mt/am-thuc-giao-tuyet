@@ -1,23 +1,25 @@
-// Purchase Requisition List — "Mua hàng" tab
+// Purchase Requisition List — Material Design 3
 import { useState, useCallback } from 'react';
 import {
     View,
     Text,
     FlatList,
-    TouchableOpacity,
+    Pressable,
     StyleSheet,
     RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, FontSize, Spacing, BorderRadius } from '../../constants/colors';
 import { usePRList, useProcurementStats, type PurchaseRequisition } from '../../lib/hooks/usePurchase';
+import { hapticLight, hapticMedium } from '../../lib/haptics';
 
-const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string; icon: string }> = {
-    PENDING: { bg: '#fff7ed', text: Colors.warning, label: 'Chờ duyệt', icon: '⏳' },
-    APPROVED: { bg: '#f0fdf4', text: Colors.success, label: 'Đã duyệt', icon: '✅' },
-    REJECTED: { bg: '#fef2f2', text: Colors.error, label: 'Từ chối', icon: '❌' },
-    CONVERTED: { bg: '#eff6ff', text: Colors.info, label: 'Đã chuyển PO', icon: '🔄' },
+const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string; icon: keyof typeof MaterialIcons.glyphMap }> = {
+    PENDING: { bg: '#fff7ed', text: Colors.warning, label: 'Chờ duyệt', icon: 'schedule' },
+    APPROVED: { bg: '#f0fdf4', text: Colors.success, label: 'Đã duyệt', icon: 'check-circle' },
+    REJECTED: { bg: '#fef2f2', text: Colors.error, label: 'Từ chối', icon: 'cancel' },
+    CONVERTED: { bg: '#eff6ff', text: Colors.info, label: 'Đã chuyển PO', icon: 'sync' },
 };
 
 const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
@@ -61,18 +63,21 @@ export default function PurchaseScreen() {
     const renderStatsCards = () => (
         <View style={styles.statsRow}>
             <View style={[styles.statCard, { backgroundColor: '#fff7ed' }]}>
+                <MaterialIcons name="schedule" size={18} color={Colors.warning} />
                 <Text style={[styles.statNumber, { color: Colors.warning }]}>
                     {stats?.pending_prs ?? 0}
                 </Text>
                 <Text style={styles.statLabel}>Chờ duyệt</Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: '#f0fdf4' }]}>
+                <MaterialIcons name="check-circle" size={18} color={Colors.success} />
                 <Text style={[styles.statNumber, { color: Colors.success }]}>
                     {stats?.approved_prs ?? 0}
                 </Text>
                 <Text style={styles.statLabel}>Đã duyệt</Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: '#eff6ff' }]}>
+                <MaterialIcons name="shopping-cart" size={18} color={Colors.info} />
                 <Text style={[styles.statNumber, { color: Colors.info }]}>
                     {stats?.total_requisitions ?? 0}
                 </Text>
@@ -87,10 +92,12 @@ export default function PurchaseScreen() {
         const lineCount = item.lines?.length ?? 0;
 
         return (
-            <TouchableOpacity
-                style={styles.card}
-                activeOpacity={0.7}
-                onPress={() => router.push(`/purchase/${item.id}`)}
+            <Pressable
+                style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+                onPress={() => { hapticLight(); router.push(`/purchase/${item.id}`); }}
+                accessibilityLabel={`Yêu cầu mua hàng ${item.code}`}
+                accessibilityRole="button"
+                android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
             >
                 {/* Header */}
                 <View style={styles.cardHeader}>
@@ -102,8 +109,8 @@ export default function PurchaseScreen() {
                             </Text>
                         </View>
                     </View>
-                    <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-                        <Text style={styles.statusIcon}>{status.icon}</Text>
+                    <View style={[styles.statusChip, { backgroundColor: status.bg }]}>
+                        <MaterialIcons name={status.icon} size={12} color={status.text} />
                         <Text style={[styles.statusText, { color: status.text }]}>
                             {status.label}
                         </Text>
@@ -116,20 +123,22 @@ export default function PurchaseScreen() {
                         {item.title}
                     </Text>
                     <View style={styles.cardMeta}>
-                        <Text style={styles.metaText}>
-                            📦 {lineCount} mặt hàng
-                        </Text>
+                        <View style={styles.metaRow}>
+                            <MaterialIcons name="inventory-2" size={14} color={Colors.textSecondary} />
+                            <Text style={styles.metaText}>{lineCount} mặt hàng</Text>
+                        </View>
                         <Text style={styles.metaAmount}>
                             {formatCurrency(item.total_amount)}
                         </Text>
                     </View>
                     {item.created_at && (
-                        <Text style={styles.dateText}>
-                            📅 {formatDate(item.created_at)}
-                        </Text>
+                        <View style={styles.metaRow}>
+                            <MaterialIcons name="event" size={14} color={Colors.textTertiary} />
+                            <Text style={styles.dateText}>{formatDate(item.created_at)}</Text>
+                        </View>
                     )}
                 </View>
-            </TouchableOpacity>
+            </Pressable>
         );
     };
 
@@ -140,18 +149,20 @@ export default function PurchaseScreen() {
                 keyExtractor={(item) => item.id}
                 renderItem={renderItem}
                 contentContainerStyle={styles.list}
+                showsVerticalScrollIndicator={false}
                 ListHeaderComponent={renderStatsCards}
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={onRefresh}
                         tintColor={Colors.primary}
+                        colors={[Colors.primary, Colors.primaryDark]}
                     />
                 }
                 ListEmptyComponent={
                     !isLoading ? (
                         <View style={styles.empty}>
-                            <Text style={styles.emptyIcon}>🛒</Text>
+                            <MaterialIcons name="shopping-cart" size={56} color={Colors.textTertiary} />
                             <Text style={styles.emptyTitle}>Chưa có yêu cầu mua hàng</Text>
                             <Text style={styles.emptyText}>
                                 Nhấn nút (+) bên dưới để tạo phiếu yêu cầu mua hàng mới.
@@ -162,10 +173,12 @@ export default function PurchaseScreen() {
             />
 
             {/* FAB */}
-            <TouchableOpacity
-                style={styles.fab}
-                activeOpacity={0.8}
-                onPress={() => router.push('/purchase/create')}
+            <Pressable
+                style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85 }]}
+                onPress={() => { hapticMedium(); router.push('/purchase/create'); }}
+                accessibilityLabel="Tạo yêu cầu mua hàng"
+                accessibilityRole="button"
+                android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
             >
                 <LinearGradient
                     colors={[Colors.gradientStart, Colors.gradientMid, Colors.gradientEnd]}
@@ -173,9 +186,9 @@ export default function PurchaseScreen() {
                     end={{ x: 1, y: 0 }}
                     style={styles.fabGradient}
                 >
-                    <Text style={styles.fabIcon}>＋</Text>
+                    <MaterialIcons name="add" size={28} color={Colors.textInverse} />
                 </LinearGradient>
-            </TouchableOpacity>
+            </Pressable>
         </View>
     );
 }
@@ -198,9 +211,10 @@ const styles = StyleSheet.create({
     },
     statCard: {
         flex: 1,
-        borderRadius: BorderRadius.md,
+        borderRadius: BorderRadius.lg,
         padding: Spacing.md,
         alignItems: 'center',
+        gap: 2,
     },
     statNumber: {
         fontSize: FontSize.xxl,
@@ -210,7 +224,6 @@ const styles = StyleSheet.create({
     statLabel: {
         fontSize: FontSize.xs,
         color: Colors.textSecondary,
-        marginTop: 2,
         fontWeight: '500',
     },
     // Card
@@ -219,10 +232,14 @@ const styles = StyleSheet.create({
         borderRadius: BorderRadius.lg,
         overflow: 'hidden',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.06,
-        shadowRadius: 4,
+        shadowRadius: 6,
         elevation: 2,
+    },
+    pressed: {
+        opacity: 0.85,
+        transform: [{ scale: 0.99 }],
     },
     cardHeader: {
         flexDirection: 'row',
@@ -252,16 +269,13 @@ const styles = StyleSheet.create({
         fontSize: FontSize.xs,
         fontWeight: '600',
     },
-    statusBadge: {
+    statusChip: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
         paddingHorizontal: Spacing.sm,
-        paddingVertical: 2,
+        paddingVertical: 3,
         borderRadius: BorderRadius.sm,
-    },
-    statusIcon: {
-        fontSize: 12,
     },
     statusText: {
         fontSize: FontSize.xs,
@@ -283,6 +297,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginTop: Spacing.xs,
     },
+    metaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
     metaText: {
         fontSize: FontSize.sm,
         color: Colors.textSecondary,
@@ -302,16 +321,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingTop: 80,
         paddingHorizontal: Spacing.xxxl,
-    },
-    emptyIcon: {
-        fontSize: 48,
-        marginBottom: Spacing.lg,
+        gap: Spacing.sm,
     },
     emptyTitle: {
         fontSize: FontSize.lg,
         fontWeight: '700',
         color: Colors.textPrimary,
-        marginBottom: Spacing.sm,
     },
     emptyText: {
         fontSize: FontSize.md,
@@ -336,10 +351,5 @@ const styles = StyleSheet.create({
         borderRadius: 28,
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    fabIcon: {
-        fontSize: 28,
-        color: Colors.textInverse,
-        fontWeight: '300',
     },
 });

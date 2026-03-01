@@ -1,11 +1,9 @@
 // App configuration
 export const Config = {
-    // API Base URL - Change to your backend URL
-    API_BASE_URL: __DEV__ ? 'http://10.0.2.2:8000' : 'https://api.giaotuyet.com',
+    // API Base URL — Render.com backend
+    API_BASE_URL: 'https://am-thuc-api-b9so.onrender.com',
 
-    // For iOS simulator, use localhost
-    // For Android emulator, use 10.0.2.2 (maps to host machine's localhost)
-    // For physical device, use your LAN IP
+    // Fallback for local development (emulators)
     API_BASE_URL_IOS: 'http://localhost:8000',
     API_BASE_URL_ANDROID: 'http://10.0.2.2:8000',
 
@@ -27,7 +25,6 @@ export const Config = {
 import { Platform } from 'react-native';
 
 export function getApiBaseUrl(): string {
-    if (!__DEV__) return Config.API_BASE_URL;
-    if (Platform.OS === 'web') return 'http://localhost:8000';
-    return Platform.OS === 'ios' ? Config.API_BASE_URL_IOS : Config.API_BASE_URL_ANDROID;
+    // Always use Render backend (works on all platforms via HTTPS)
+    return Config.API_BASE_URL;
 }

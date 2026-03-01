@@ -4,14 +4,16 @@ import {
     View,
     Text,
     ScrollView,
-    TouchableOpacity,
+    Pressable,
     StyleSheet,
     RefreshControl,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, FontSize, Spacing, BorderRadius } from '../../constants/colors';
 import { useDashboardStats, useTodayOrders } from '../../lib/hooks/useDashboard';
+import { hapticLight } from '../../lib/haptics';
 
 function formatCurrency(amount: number): string {
     if (amount >= 1_000_000) {
@@ -62,32 +64,47 @@ export default function DashboardScreen() {
                 end={{ x: 1, y: 0 }}
                 style={styles.header}
             >
-                <Text style={styles.headerTitle}>📊 Dashboard</Text>
+                <View style={styles.headerRow}>
+                    <MaterialIcons name="dashboard" size={24} color={Colors.textInverse} />
+                    <Text style={styles.headerTitle}>Dashboard</Text>
+                </View>
                 <Text style={styles.headerSubtitle}>Tổng quan hôm nay</Text>
             </LinearGradient>
 
             {/* KPI Cards */}
             <View style={styles.kpiGrid}>
                 <View style={[styles.kpiCard, { borderLeftColor: Colors.success }]}>
-                    <Text style={styles.kpiLabel}>💰 Doanh thu tháng</Text>
+                    <View style={styles.kpiLabelRow}>
+                        <MaterialIcons name="trending-up" size={14} color={Colors.textSecondary} />
+                        <Text style={styles.kpiLabel}>Doanh thu tháng</Text>
+                    </View>
                     <Text style={[styles.kpiValue, { color: Colors.success }]}>
                         {formatCurrency(stats?.revenue?.this_month ?? 0)}₫
                     </Text>
                 </View>
                 <View style={[styles.kpiCard, { borderLeftColor: Colors.info }]}>
-                    <Text style={styles.kpiLabel}>📋 Đơn đang xử lý</Text>
+                    <View style={styles.kpiLabelRow}>
+                        <MaterialIcons name="receipt-long" size={14} color={Colors.textSecondary} />
+                        <Text style={styles.kpiLabel}>Đơn đang xử lý</Text>
+                    </View>
                     <Text style={[styles.kpiValue, { color: Colors.info }]}>
                         {(stats?.orders?.confirmed ?? 0) + (stats?.orders?.in_progress ?? 0)}
                     </Text>
                 </View>
                 <View style={[styles.kpiCard, { borderLeftColor: Colors.warning }]}>
-                    <Text style={styles.kpiLabel}>💸 Chi phí tháng</Text>
+                    <View style={styles.kpiLabelRow}>
+                        <MaterialIcons name="payments" size={14} color={Colors.textSecondary} />
+                        <Text style={styles.kpiLabel}>Chi phí tháng</Text>
+                    </View>
                     <Text style={[styles.kpiValue, { color: Colors.warning }]}>
                         {formatCurrency(stats?.expenses?.this_month ?? 0)}₫
                     </Text>
                 </View>
                 <View style={[styles.kpiCard, { borderLeftColor: Colors.error }]}>
-                    <Text style={styles.kpiLabel}>🔴 Công nợ quá hạn</Text>
+                    <View style={styles.kpiLabelRow}>
+                        <MaterialIcons name="warning" size={14} color={Colors.textSecondary} />
+                        <Text style={styles.kpiLabel}>Công nợ quá hạn</Text>
+                    </View>
                     <Text style={[styles.kpiValue, { color: Colors.error }]}>
                         {formatCurrency(stats?.receivables?.overdue ?? 0)}₫
                     </Text>
@@ -96,58 +113,74 @@ export default function DashboardScreen() {
 
             {/* Today's Events */}
             <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                    📅 Sự kiện hôm nay ({todayOrders.length})
-                </Text>
+                <View style={styles.sectionTitleRow}>
+                    <MaterialIcons name="event" size={20} color={Colors.textPrimary} />
+                    <Text style={styles.sectionTitle}>
+                        Sự kiện hôm nay ({todayOrders.length})
+                    </Text>
+                </View>
                 {todayOrders.length === 0 ? (
                     <View style={styles.emptyEvents}>
                         <Text style={styles.emptyText}>Không có sự kiện hôm nay</Text>
                     </View>
                 ) : (
                     todayOrders.map((order: any) => (
-                        <TouchableOpacity
+                        <Pressable
                             key={order.id}
-                            style={styles.eventCard}
-                            onPress={() => router.push(`/orders/${order.id}`)}
+                            style={({ pressed }) => [styles.eventCard, pressed && { opacity: 0.85 }]}
+                            onPress={() => { hapticLight(); router.push(`/orders/${order.id}`); }}
+                            accessibilityLabel={`Đơn hàng ${order.code} - ${order.customer_name}`}
+                            accessibilityRole="button"
+                            android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
                         >
                             <View style={styles.eventLeft}>
                                 <Text style={styles.eventCode}>{order.code}</Text>
                                 <Text style={styles.eventCustomer}>{order.customer_name}</Text>
                                 {order.event_location && (
-                                    <Text style={styles.eventLocation}>📍 {order.event_location}</Text>
+                                    <View style={styles.eventLocationRow}>
+                                        <MaterialIcons name="place" size={12} color={Colors.textSecondary} />
+                                        <Text style={styles.eventLocation}>{order.event_location}</Text>
+                                    </View>
                                 )}
                             </View>
                             <Text style={styles.eventAmount}>
                                 {formatFullCurrency(order.total_amount ?? order.final_amount ?? 0)}
                             </Text>
-                        </TouchableOpacity>
+                        </Pressable>
                     ))
                 )}
             </View>
 
             {/* Quick Actions */}
             <View style={styles.section}>
-                <Text style={styles.sectionTitle}>⚡ Truy cập nhanh</Text>
+                <View style={styles.sectionTitleRow}>
+                    <MaterialIcons name="flash-on" size={20} color={Colors.textPrimary} />
+                    <Text style={styles.sectionTitle}>Truy cập nhanh</Text>
+                </View>
                 <View style={styles.quickGrid}>
                     {[
-                        { label: '📋 Đơn hàng', route: '/orders' },
-                        { label: '📦 Kho', route: '/inventory' },
-                        { label: '🛒 Mua hàng', route: '/(tabs)/purchase' },
-                        { label: '👥 CRM', route: '/crm' },
+                        { label: 'Đơn hàng', icon: 'receipt-long' as keyof typeof MaterialIcons.glyphMap, route: '/orders' },
+                        { label: 'Kho', icon: 'inventory-2' as keyof typeof MaterialIcons.glyphMap, route: '/inventory' },
+                        { label: 'Mua hàng', icon: 'shopping-cart' as keyof typeof MaterialIcons.glyphMap, route: '/(tabs)/purchase' },
+                        { label: 'CRM', icon: 'people' as keyof typeof MaterialIcons.glyphMap, route: '/crm' },
                     ].map((item) => (
-                        <TouchableOpacity
+                        <Pressable
                             key={item.route}
-                            style={styles.quickBtn}
-                            onPress={() => router.push(item.route as any)}
+                            style={({ pressed }) => [styles.quickBtn, pressed && { backgroundColor: Colors.bgTertiary }]}
+                            onPress={() => { hapticLight(); router.push(item.route as any); }}
+                            accessibilityLabel={item.label}
+                            accessibilityRole="button"
+                            android_ripple={{ color: 'rgba(0,0,0,0.06)' }}
                         >
+                            <MaterialIcons name={item.icon} size={24} color={Colors.primary} />
                             <Text style={styles.quickBtnText}>{item.label}</Text>
-                        </TouchableOpacity>
+                        </Pressable>
                     ))}
                 </View>
             </View>
 
-            <View style={{ height: 40 }} />
-        </ScrollView>
+            <View style={styles.bottomSpacer} />
+        </ScrollView >
     );
 }
 
@@ -161,6 +194,10 @@ const styles = StyleSheet.create({
         borderBottomLeftRadius: BorderRadius.xl,
         borderBottomRightRadius: BorderRadius.xl,
     },
+    headerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md },
+    kpiLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    eventLocationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     headerTitle: {
         fontSize: FontSize.xxl,
         fontWeight: '800',
@@ -269,4 +306,5 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: Colors.textPrimary,
     },
+    bottomSpacer: { height: 40 },
 });

@@ -4,7 +4,7 @@ import {
     View,
     Text,
     TextInput,
-    TouchableOpacity,
+    Pressable,
     StyleSheet,
     KeyboardAvoidingView,
     Platform,
@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore } from '../../lib/auth-store';
 import { getApiBaseUrl } from '../../constants/config';
 import { Colors, FontSize, Spacing, BorderRadius } from '../../constants/colors';
+import { hapticMedium } from '../../lib/haptics';
 
 export default function LoginScreen() {
     const [email, setEmail] = useState('');
@@ -113,10 +114,13 @@ export default function LoginScreen() {
                         />
                     </View>
 
-                    <TouchableOpacity
-                        onPress={handleLogin}
+                    <Pressable
+                        onPress={() => { hapticMedium(); handleLogin(); }}
                         disabled={isSubmitting}
-                        style={styles.buttonWrapper}
+                        style={({ pressed }) => [styles.buttonWrapper, pressed && { opacity: 0.85 }]}
+                        accessibilityLabel="Đăng nhập"
+                        accessibilityRole="button"
+                        android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
                     >
                         <LinearGradient
                             colors={[Colors.gradientStart, Colors.gradientMid, Colors.gradientEnd]}
@@ -130,7 +134,7 @@ export default function LoginScreen() {
                                 <Text style={styles.buttonText}>Đăng nhập</Text>
                             )}
                         </LinearGradient>
-                    </TouchableOpacity>
+                    </Pressable>
                 </View>
 
                 {/* Footer */}
